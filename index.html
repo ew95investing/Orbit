@@ -1855,7 +1855,18 @@ function findPivots(candles){
   }
   return{highs,lows};
 }
-function fibLevels(hi,lo){const diff=hi-lo;return[0,0.236,0.382,0.5,0.618,0.786,1].map(r=>({r,price:hi-diff*r}));}
+/* fibLevels: 不再只给0~100%回撤,同时给出双向斐波那契扩展(127.2%~261.8%)——
+   回撤位覆盖"当前摆动区间内"的价位,扩展位覆盖"突破/跌破该区间后延续"的更远价位。
+   这样无论TP离入场价多近或多远,理论上都能落在某个真实的斐波那契位附近,
+   而不必退回到一个和形态、图线毫无关系的纯ATR倍数估算。*/
+function fibLevels(hi,lo){
+  const diff=hi-lo;
+  const retr=[0,0.236,0.382,0.5,0.618,0.786,1].map(r=>({r,price:hi-diff*r,kind:"retr"}));
+  const extR=[1.272,1.414,1.618,2.0,2.618];
+  const extDown=extR.map(r=>({r,price:hi-diff*r,kind:"ext"}));  // 向下扩展: 跌破摆动低点后的延续目标
+  const extUp=extR.map(r=>({r,price:lo+diff*r,kind:"ext"}));    // 向上扩展: 突破摆动高点后的延续目标
+  return retr.concat(extDown,extUp);
+}
 
 /* ── MYSTIC ENGINE ── */
 function moonPhaseLabel(d){
@@ -2001,11 +2012,30 @@ function buildVolumeProfile(candles,bins=24){
 function buildStructureLevels(candles,price,highs,lows,volProfile){
   const fibHi=highs.length?Math.max(...highs.slice(-5).map(h=>h.price)):Math.max(...candles.slice(-80).map(c=>c.high));
   const fibLo=lows.length?Math.min(...lows.slice(-5).map(l=>l.price)):Math.min(...candles.slice(-80).map(c=>c.low));
-  const fibs=fibLevels(fibHi,fibLo).filter(f=>f.r>0&&f.r<1);
+  const fibs=fibLevels(fibHi,fibLo).filter(f=>f.price>0);
   const candidates=[];
   highs.slice(-6).forEach(h=>candidates.push({price:h.price,src:"摆动高点(缠论分型)",w:1}));
   lows.slice(-6).forEach(l=>candidates.push({price:l.price,src:"摆动低点(缠论分型)",w:1}));
-  fibs.forEach(f=>candidates.push({price:f.price,src:`Fib ${(f.r*100).toFixed(1)}% 回撤`,w:0.6}));
+  fibs.forEach(f=>candidates.push({price:f.price,src:`Fib ${(f.r*100).toFixed(1)}% ${f.kind==="ext"?"扩展":"回撤"}`,w:f.kind==="ext"?0.55:0.6}));
+  // 趋势线(图线支撑/压力): 连接最近两个摆动高点/最近两个摆动低点,按斜率外推到当前K线位置。
+  // 这是真正的一条"线",不是水平点位,用来满足"图线支撑"这一确认维度,与斐波那契、分型点、
+  // POC/HVN 一起构成多重结构共振,而不只是孤立的价格点。
+  if(highs.length>=2){
+    const h1=highs[highs.length-2],h2=highs[highs.length-1],span=h2.i-h1.i;
+    if(span>0){
+      const slope=(h2.price-h1.price)/span;
+      const lineVal=h2.price+slope*((candles.length-1)-h2.i);
+      if(isFinite(lineVal)&&lineVal>0)candidates.push({price:lineVal,src:`趋势线(连接摆动高点,${slope>=0?"上倾":"下倾"})`,w:0.9});
+    }
+  }
+  if(lows.length>=2){
+    const l1=lows[lows.length-2],l2=lows[lows.length-1],span=l2.i-l1.i;
+    if(span>0){
+      const slope=(l2.price-l1.price)/span;
+      const lineVal=l2.price+slope*((candles.length-1)-l2.i);
+      if(isFinite(lineVal)&&lineVal>0)candidates.push({price:lineVal,src:`趋势线(连接摆动低点,${slope>=0?"上倾":"下倾"})`,w:0.9});
+    }
+  }
   if(volProfile.poc!=null)candidates.push({price:volProfile.poc,src:"POC 成交成本中枢",w:1.6});
   (volProfile.hvns||[]).forEach(h=>candidates.push({price:h.price,src:"高成交密集区 HVN",w:1.1}));
   candidates.sort((a,b)=>a.price-b.price);
@@ -2189,6 +2219,89 @@ function topBottomStructureVote(oiv,funding,candles){
   return{state,dir,detail};
 }
 
+/* 机会有效性/可靠性判定(SETUP RELIABILITY GATE) — 在生成任何入场价之前,先回答用户最根本的问题:
+   "这里真的有一个可以交易的机会吗?趋势判断真的准确、真的可靠吗?" 而不是不管三七二十一,
+   先在现价下方拉一个点位就说"这里买"。
+   本判定不只看加权得分比(score/maxScore,容易被少数几个高权重指标主导、造成虚假的"强烈"观感),
+   而是同时要求"指标同向占比"(21项指标里有多少项真的指向同一个方向,而不是只是加权分高)达标,
+   两者都过线才算"可信趋势";任一项不过线,即使方向判断非中性,也只能算"弱倾向",在入场卡片和
+   策略摘要里会被明确标注为低可信度、需要谨慎对待——而不是用同一套"可以挂单入场"的措辞一概而论。 */
+function assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,voteTotal,regime){
+  const ratio=maxScore>0?Math.abs(score/maxScore):0;
+  const dom=Math.max(voteBull,voteBear);
+  const agreementPct=voteTotal?dom/voteTotal*100:0;
+  const regimeNote=regime==="trend"?"当前处于趋势市,顺势方向的回调入场逻辑成立性较高":
+    regime==="range"?"当前处于震荡市,追单边趋势的逻辑本身不成立,回调更可能只是区间来回而非趋势延续":
+    "当前处于趋势特征不明确的过渡区,方向判断本身还在形成中";
+  if(dirSign===0){
+    return{tier:"none",label:"无方向 · 不构成交易机会",cls:"bear",
+      detail:`加权得分比仅 ${(ratio*100).toFixed(0)}%,${voteTotal}项指标中仅 ${dom}项同向(${agreementPct.toFixed(0)}%)→ 尚未形成任何可交易的方向共识。此时任何"在现价下方随意拉一个点位"式的入场都没有依据,不是真正的交易机会,应空仓观望,等待方向明确后再考虑。`};
+  }
+  const strong=ratio>=0.52&&agreementPct>=55;
+  const moderate=ratio>=0.30&&agreementPct>=45;
+  if(strong){
+    return{tier:"reliable",label:"趋势可信度: 高",cls:"bull",
+      detail:`加权得分比 ${(ratio*100).toFixed(0)}% 且 ${dom}/${voteTotal} 项指标同向(${agreementPct.toFixed(0)}%),两把尺子同时确认。${regimeNote}。这是一次有统计依据支撑的回调入场机会,可按计划挂单。`};
+  }
+  if(moderate){
+    return{tier:"moderate",label:"趋势可信度: 中",cls:"amb",
+      detail:`加权得分比 ${(ratio*100).toFixed(0)}%,指标同向占比 ${agreementPct.toFixed(0)}%,方向有一定依据但内部分歧不小。${regimeNote}。建议轻仓试探或等共振加强后再全仓入场,不宜把这一笔限价单当作高把握机会重仓。`};
+  }
+  return{tier:"weak",label:"趋势可信度: 低 · 谨慎",cls:"bear",
+    detail:`得分比仅 ${(ratio*100).toFixed(0)}%、指标同向占比仅 ${agreementPct.toFixed(0)}%,${voteTotal-dom}项指标明确唱反调 → 这更像是噪音里的轻微倾向,而非经过验证的趋势。${regimeNote}。此时挂单等回调,大概率遇到的不是"回调后延续",而是"价格根本不回头、单边跑掉,或者跌破还继续跌"——建议观望,或只用最小仓位试探并严格遵守下方失效条件。`};
+}
+
+/* ── DIRECTIONAL OUTLOOK — 华尔街式做法: 永远给出一个概率化的方向判断 + 仓位/杠杆/周期建议,
+   而不是用"中性=不能交易"这种二元判断把用户晾在原地。真正的机构交易台在信号模糊时不会说
+   "无法判断",而是照样给方向(哪怕只是51%对49%的边际倾向),但会用仓位大小去表达"把握有多大"——
+   高把握=正常/偏大仓位,低把握=极小仓位或观察仓,而不是完全不给意见。
+   "中性"这个状态被替换成一个从0~100连续的把握度(conviction),仓位与杠杆随把握度平滑衰减,
+   而不是砍成"有信号就给计划,没信号就不给"这种断崖式的二元逻辑。 */
+function computeDirectionalOutlook(score,maxScore,voteBull,voteBear,voteTotal,regime,er,dirSign){
+  const ratio=maxScore>0?score/maxScore:0; // -1..1,正=偏多力量占优
+  const leanDir=ratio>=0?1:-1; // 弱倾向(仅供参考的边际方向),即使得分比极接近0也会给出符号
+  // confirmed = 是否达到"可信方向"门槛(与顶部 中性/BULLISH/BEARISH 徽章、机会可信度用同一把尺子 dirSign)。
+  // 这是修复"顶部说中性、底部却坚定喊SHORT"矛盾的关键: dirSign===0 时,不允许下方摘要/交易计划
+  // 把 leanDir 这个连noise都算得出符号的边际倾向,包装成一个像模像样的方向判断。
+  const confirmed=dirSign!==0;
+  const longProbPct=Math.round(Math.max(5,Math.min(95,50+ratio*45)));
+  const shortProbPct=100-longProbPct;
+  const leanProbPct=leanDir>0?longProbPct:shortProbPct;
+  const dom=Math.max(voteBull,voteBear);
+  const agreementPct=voteTotal?Math.round(dom/voteTotal*100):0;
+  // 把握度(conviction) = 得分强度(55%权重)+ 指标同向占比(45%权重)+ 市场状态清晰度加成
+  // (趋势市方向更可信+6,震荡市追单边逻辑打折-4,过渡区不加不减)
+  const regimeBonus=regime==="trend"?6:regime==="range"?-4:0;
+  let conviction=Math.abs(ratio)*100*0.55+agreementPct*0.45+regimeBonus;
+  conviction=Math.max(0,Math.min(100,Math.round(conviction)));
+
+  let sizeTier;
+  if(conviction>=70)sizeTier={label:"高把握",cls:"bull",posMin:4,posMax:7,levMin:3,levMax:5,
+    note:"多因子强共振,可按标准偏上仓位参与,分批止盈按计划执行"};
+  else if(conviction>=55)sizeTier={label:"中等把握",cls:"amb",posMin:2,posMax:4,levMin:2,levMax:3,
+    note:"方向有依据但非满分共振,建议标准仓位,严格执行止损与失效撤单价"};
+  else if(conviction>=40)sizeTier={label:"把握有限",cls:"amb",posMin:0.8,posMax:2,levMin:1,levMax:2,
+    note:"倾向存在但不算清晰,建议轻仓试探,不宜重仓押注这一笔"};
+  else sizeTier={label:"把握很低",cls:"bear",posMin:0.3,posMax:0.8,levMin:1,levMax:1,
+    note:"指标分歧较大,建议仅用观察仓/极小仓位试错,或直接观望等待把握度提升,不建议正式重仓建仓"};
+
+  // 短线/长线周期建议: 趋势市 + ER(效率系数)高(价格是真的在朝一个方向有效移动,而不是原地来回噪音)
+  // → 适合放大周期博波段(TP2/TP3);震荡市或过渡区 → 只适合短线日内(TP1),避免隔夜被区间反复打止损。
+  let timeframe;
+  if(regime==="trend"&&(er==null||er>=0.35)){
+    timeframe={label:"波段 / 长线",
+      note:"趋势明确且价格运动效率较高,建议以TP2~TP3为主要目标分批止盈,可跨日持有"};
+  }else if(regime==="range"){
+    timeframe={label:"短线 / 日内",
+      note:"当前处于震荡区间,建议只做TP1目标,快进快出,不建议隔夜持有以免被区间反复打止损"};
+  }else{
+    timeframe={label:"短线优先",
+      note:"趋势特征尚不明确(过渡区),建议先以短线/日内参与,待趋势确立、把握度提升后再考虑放大周期"};
+  }
+
+  return{leanDir,dirSign,confirmed,longProbPct,shortProbPct,leanProbPct,agreementPct,conviction,sizeTier,timeframe};
+}
+
 /* ── TRADE PLAN with TIME HORIZONS ── */
 const HORIZONS=[
   {label:"TP1",maxMins:240,horizon:"4h 内",hint:"短线目标 · 4小时内"},
@@ -2205,7 +2318,7 @@ const HORIZONS=[
    太远(>2.2×ATR)大概率结构已经变化、行情不会再回来,limit 单会永远挂着不成交。
    预计等待时间(ETA)钳制在 30 分钟 ~ 8 小时 —— 太短(几分钟)不现实,太长(几天)又失去"等回调"的意义,
    符合用户要求的"半小时到几小时"回调窗口。 */
-function computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinutes,sigmaVal){
+function computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinutes,sigmaVal,reliability){
   const minDist=atrVal*0.25;   // 回调至少要有 0.25×ATR,否则不算有效回调,只是噪音
   const maxDist=atrVal*2.2;    // 回调超过 2.2×ATR 视为结构可能已破坏,限价单大概率吃不到
   const pool=(dirSign>0?structure.supports:structure.resistances)
@@ -2249,12 +2362,31 @@ function computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinute
     fillProb=Math.max(25,Math.min(85,Math.round(fillProb/5)*5));
   }
   const pctFromPrice=(entryPrice-price)/price*100;
-  return{price:entryPrice,marketPrice:price,dist,pctFromPrice,eta:etaMin,prob:fillProb,sources:entrySources,method,weight:entryWeight};
+
+  // 可信度对"成交后有效"的折算 — fillProb 只回答"价格能不能打到这个点位",不回答"打到之后是不是
+  // 健康的回调延续"。可信度低(弱倾向/无方向)时,即使某个点位被打到,也更可能是趋势单边穿透而非
+  // 真正的回调确认,因此在展示概率时按可信度做一次折算,避免"成交概率85%"这种数字在低可信度场景下
+  // 造成"这笔一定稳"的错觉。
+  const relMult=reliability?(reliability.tier==="reliable"?1:reliability.tier==="moderate"?0.88:reliability.tier==="weak"?0.72:0.6):1;
+  fillProb=Math.max(5,Math.round(fillProb*relMult));
+
+  // 失效条件(INVALIDATION) — 直接回答"挂单后却一路跌(或一路涨),那这单子不就没用了吗"这个问题:
+  // 入场价本身只是"愿意接回调的价格",不代表价格必然会体面地回头。如果价格在挂单成交前,继续朝着
+  // "原有单边方向"(即入场方向的反方向)运行,并超过入场价再往前 1×ATR,说明市场根本没有走出一次
+  // 正常回调 —— 这是趋势延续跌破/涨破,而不是"深一点的回调",此时应该撤单离场,而不是继续挂着等,
+  // 更不能因为"更便宜/更贵了"就把单子往下/往上继续拖。
+  const invalidatePrice=dirSign>0?entryPrice-atrVal*1.0:entryPrice+atrVal*1.0;
+  const invalidateNote=dirSign>0
+    ?`若价格在成交前跌破 ${fmtPrice(invalidatePrice)}(入场价再往下1×ATR),说明这不是健康回调,而是趋势延续下跌 → 应撤单,不追多、不下移限价`
+    :`若价格在成交前涨破 ${fmtPrice(invalidatePrice)}(入场价再往上1×ATR),说明这不是健康回调,而是趋势延续上涨 → 应撤单,不追空、不上移限价`;
+
+  return{price:entryPrice,marketPrice:price,dist,pctFromPrice,eta:etaMin,prob:fillProb,sources:entrySources,method,weight:entryWeight,
+    invalidatePrice,invalidateNote};
 }
 
-function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal){
+function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability){
   // entry = 限价回调入场价(非当前市价) — 所有后续 TP/SL/RR 均以此为基准计算
-  const entryInfo=computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinutes,sigmaVal);
+  const entryInfo=computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinutes,sigmaVal,reliability);
   const entry=entryInfo.price;
   // Minimum distances per TP tier: TP1≥1×ATR, TP2≥2×ATR, TP3≥3.2×ATR — ensures realistic non-trivial targets,均以限价入场价为起点
   // 上限从原先的65×ATR大幅收紧到18×ATR: 过远的"结构位"即便存在,也早已脱离该资产已实现波动率能支撑的合理范围,
@@ -2345,7 +2477,7 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     t.raceWinProb=Math.round(raceProbability(logTpDist,logSlDist)*100);
     t.rr=risk>0?(Math.abs(t.price-entry)/risk).toFixed(2):"–"; // 该档自己的盈亏比,而非只借用TP1那一个数字
   });
-  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,tps,rr,sigma:sigmaVal};
+  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,tps,rr,sigma:sigmaVal,reliability};
 }
 
 /* ── SIGNAL ENGINE ── */
@@ -2445,7 +2577,8 @@ function computeSignal(candles,intervalLabel,symbol){
   const structure=buildStructureLevels(candles,price,highs,lows,volProfile);
   const nearestFib=fibLevels(structure.fibHi,structure.fibLo).reduce((p,c)=>Math.abs(c.price-price)<Math.abs(p.price-price)?c:p);
   const fibDir=price>=structure.fibHi*0.995?1:price<=structure.fibLo*1.005?-1:0;
-  votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir,detail:`最近位 Fib ${(nearestFib.r*100).toFixed(1)}% ≈ ${fmtPrice(nearestFib.price)}`});
+  const nearestFibKind=nearestFib.kind==="ext"?"扩展":"回撤";
+  votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir,detail:`最近位 Fib ${(nearestFib.r*100).toFixed(1)}% ${nearestFibKind} ≈ ${fmtPrice(nearestFib.price)}`});
 
   const m=market.get(symbol);
   const cf=cashFlowVote(oiHistory,cvdHistory,m?m.funding:null);
@@ -2511,11 +2644,24 @@ function computeSignal(candles,intervalLabel,symbol){
   // Update table badge
   if(m)m.signalDir=dirSign;
 
+  // 指标同向占比 — 与加权得分比是两把不同的尺子:得分比可能被少数高权重指标拉高,
+  // 而这里看的是"21项指标里到底有多少项真的指向同一个方向",两者都过线才算真正可信的趋势。
+  const voteBull=votes.filter(v=>v.dir>0.05).length, voteBear=votes.filter(v=>v.dir<-0.05).length;
+  const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,votes.length,regime);
+  // 方向性展望: 达到方向确认门槛(dirSign≠0)时给出概率化方向 + 仓位/杠杆/周期建议;
+  // 未达门槛(dirSign===0,即顶部徽章显示"中性 NEUTRAL"、可信度显示"无方向"的情况)时,
+  // 不再让下面的交易计划/摘要卡片自说自话地用一个连noise都能算出符号的边际倾向去
+  // 冒充确定方向——这正是之前"上面中性、下面SHORT"矛盾的根源。
+  const outlook=computeDirectionalOutlook(score,maxScore,voteBull,voteBear,votes.length,regime,er,dirSign);
+
   const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240}[intervalLabel]||5;
   const sigmaVal=barLogReturnSigma(closes); // 该周期下的真实已实现波动率,驱动所有TP/SL的时间与概率估算
-  let plan;
-  if(dirSign!==0){plan={mode:"trend",main:buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal)};}
-  else{plan={mode:"range",longPlan:buildTradePlan(1,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal),shortPlan:buildTradePlan(-1,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal)};}
+  // dirSign===0 → 未形成方向共识,不构建挂在"某一侧结构位"上的限价单/TP/SL(那样做等于替一个
+  // 没有方向依据的判断硬点一个假装有依据的价位)。改为返回 noSetup 占位对象,渲染层据此
+  // 显示"无方向·不构成交易机会"而不是一整套看似煞有介事的交易计划。
+  const plan={mode:"trend",main:dirSign!==0
+    ?buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability)
+    :{dir:0,noSetup:true,reliability,entry:null,entryInfo:null,sl:null,slSources:[],tps:[],rr:"–",sigma:sigmaVal}};
 
   const moon=moonPhaseLabel(new Date());
   const solarTerms=getLunarSolarTerms();
@@ -2523,7 +2669,7 @@ function computeSignal(candles,intervalLabel,symbol){
   const mercury=getMercuryStatus();
 
   return{price,votes,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,stLine:st.line,stTrend:st.trend,topBottom:tbs};
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook};
 }
 
 /* ── SIGNAL GROUPING: maps each of the ~21 flat indicators into 4 human categories
@@ -2640,10 +2786,37 @@ function renderChartBiasBadge(sig){
 /* Full signal detail (bias header + all indicator votes) — now rendered as the first card
    inside the single unified scroll area below the chart, instead of a separately-scrolling
    side rail. Keeps everything about a coin in one continuous, top-to-bottom read. */
-function renderSignalDetail(sig){
+/* 首屏一眼看全局 — 用户明确要求点开币种后先看到可视化的 donut/pattern,再看 TP/SL 时间线,
+   最后才是别的信息。这里把"综合信号 bias 头 + donut/bento 总览"拆成独立函数,
+   在 renderModalScrollNow 里排在 TP/SL 计划之前;逐项指标明细(硬核模式)仍保留在原位置、
+   TP/SL之后,避免首屏信息过载。 */
+function renderSignalGlance(sig){
   if(!sig)return `<div class="sig-empty">指标数据不足<br>(需≥30根K线历史)</div>`;
-  const density=window.__sigUI?window.__sigUI.density:"brief";
   const regimeCls=sig.regime==="trend"?"bull":sig.regime==="range"?"bear":"neutral";
+  const rel=sig.reliability;
+  return `
+    <div class="signal-detail-block">
+      <div class="sig-block">
+        <div class="sig-h"><span>综合信号 · ${esc(sig.intervalLabel)}</span><span class="live-badge">LIVE</span></div>
+        <div class="sig-bias ${sig.biasCls}">${sig.biasLabel}</div>
+        <div class="sig-conf">共振度 ${sig.confluence}% · 加权得分 ${sig.score>0?'+':''}${sig.score.toFixed(2)}/${sig.maxScore.toFixed(1)} · <span class="${rel.cls}">⚖️ ${esc(rel.label)}</span></div>
+        <div class="conf-bar"><div class="conf-fill" style="width:${Math.max(0,Math.min(100,sig.confluence))}%;background:${sig.biasCls==='bull'?'var(--up)':sig.biasCls==='bear'?'var(--down)':'var(--amber)'}"></div></div>
+        <div class="sig-note" style="margin-top:8px;">市场状态 <span class="ind-tag ${regimeCls}" style="font-size:10px;">${esc(sig.regimeLabel)}</span> · Choppiness(14) ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"} · ER(10) ${sig.er!=null?sig.er.toFixed(2):"–"} → ${sig.regime==="trend"?"顺势类指标(EMA/Vegas/Supertrend/结构/VWAP)权重↑1.4×,反转类(RSI/布林/BIAS)降至0.6×":sig.regime==="range"?"反转类指标(RSI/布林/BIAS)权重↑1.4×,顺势类降至0.6×":"权重均等(过渡区,趋势特征不明显)"}</div>
+      </div>
+      <div class="sig-block">
+        <div class="sig-h"><span>📡 信号总览 · 一眼看全局</span>
+          <div class="density-switch">
+            <button class="${(window.__sigUI?window.__sigUI.density:"brief")==="brief"?"active":""}" onclick="setSigDensity('brief')">简报</button>
+            <button class="${(window.__sigUI?window.__sigUI.density:"brief")==="pro"?"active":""}" onclick="setSigDensity('pro')">硬核</button>
+          </div>
+        </div>
+        ${renderSignalOverview(sig)}
+      </div>
+    </div>`;
+}
+function renderSignalDetail(sig){
+  if(!sig)return "";
+  const density=window.__sigUI?window.__sigUI.density:"brief";
 
   const groups={}; SIG_GROUP_ORDER.forEach(k=>groups[k]=[]);
   sig.votes.forEach(v=>groups[sigGroupOf(v)].push(v));
@@ -2677,26 +2850,7 @@ function renderSignalDetail(sig){
     proSection=`<div class="sig-block"><div class="sig-note" style="text-align:center;padding:2px 0;">💡 点击上方卡片查看该分组明细,或切换「硬核」查看全部 ${sig.votes.length} 项指标原始数据与动态权重</div></div>`;
   }
 
-  return `
-    <div class="signal-detail-block">
-      <div class="sig-block">
-        <div class="sig-h"><span>综合信号 · ${esc(sig.intervalLabel)}</span><span class="live-badge">LIVE</span></div>
-        <div class="sig-bias ${sig.biasCls}">${sig.biasLabel}</div>
-        <div class="sig-conf">共振度 ${sig.confluence}% · 加权得分 ${sig.score>0?'+':''}${sig.score.toFixed(2)}/${sig.maxScore.toFixed(1)}</div>
-        <div class="conf-bar"><div class="conf-fill" style="width:${Math.max(0,Math.min(100,sig.confluence))}%;background:${sig.biasCls==='bull'?'var(--up)':sig.biasCls==='bear'?'var(--down)':'var(--amber)'}"></div></div>
-        <div class="sig-note" style="margin-top:8px;">市场状态 <span class="ind-tag ${regimeCls}" style="font-size:10px;">${esc(sig.regimeLabel)}</span> · Choppiness(14) ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"} · ER(10) ${sig.er!=null?sig.er.toFixed(2):"–"} → ${sig.regime==="trend"?"顺势类指标(EMA/Vegas/Supertrend/结构/VWAP)权重↑1.4×,反转类(RSI/布林/BIAS)降至0.6×":sig.regime==="range"?"反转类指标(RSI/布林/BIAS)权重↑1.4×,顺势类降至0.6×":"权重均等(过渡区,趋势特征不明显)"}</div>
-      </div>
-      <div class="sig-block">
-        <div class="sig-h"><span>📡 信号总览 · 一眼看全局</span>
-          <div class="density-switch">
-            <button class="${density==="brief"?"active":""}" onclick="setSigDensity('brief')">简报</button>
-            <button class="${density==="pro"?"active":""}" onclick="setSigDensity('pro')">硬核</button>
-          </div>
-        </div>
-        ${renderSignalOverview(sig)}
-      </div>
-      ${proSection}
-    </div>`;
+  return `<div class="signal-detail-block">${proSection}</div>`;
 }
 
 /* ── RENDER: TRADE PLAN ── */
@@ -2739,6 +2893,7 @@ function entryCardHTML(plan){
     </div>
     <div class="prob-bar"><div class="prob-fill" style="width:${ei.prob}%;background:var(--amber);"></div></div>
     <div class="src">📍 现价 ${fmtPrice(ei.marketPrice)} → 限价挂单 ${fmtPrice(plan.entry)}(非市价单)· ${esc(ei.sources.slice(0,2).join(" + "))}</div>
+    <div class="src" style="color:var(--down);margin-top:3px;">⛔ 失效撤单价 ${fmtPrice(ei.invalidatePrice)} — ${esc(ei.invalidateNote)}</div>
   </div>`;
 }
 function timelineHTML(plan){
@@ -2750,6 +2905,7 @@ function timelineHTML(plan){
   const nodes=[
     {lbl:"现价",price:ei.marketPrice,px:fmtPrice(ei.marketPrice),meta:"当前市价 · 不直接入场",color:"var(--dim2)",kind:"mkt"},
     {lbl:"限价入场",price:plan.entry,px:fmtPrice(plan.entry),meta:(plan.dir>0?"做多 LONG · ":"做空 SHORT · ")+`<span class="eta-live">${esc(fmtEtaFull(ei.eta))}</span>`,color:"var(--amber)",kind:"entry"},
+    {lbl:"⛔失效撤单",price:ei.invalidatePrice,px:fmtPrice(ei.invalidatePrice),meta:"成交前触及则撤单,非健康回调",color:"var(--down)",kind:"sl"},
     {lbl:"SL 止损",price:plan.sl,px:fmtPrice(plan.sl),meta:`盈亏比 R:R ${plan.rr}(对TP1) · ${esc((plan.slSources||[]).slice(0,1).join(""))}`,color:"var(--down)",kind:"sl"},
   ].concat(plan.tps.map(t=>({lbl:t.label,price:t.price,px:fmtPrice(t.price),meta:`${esc(t.horizon.split("·")[0].trim())} · R:R ${t.rr} · 先达胜率 ${t.raceWinProb}%`,color:"var(--up)",kind:"tp"})));
 
@@ -2776,32 +2932,31 @@ function timelineHTML(plan){
   </div>`;
 }
 function renderTradePlanSection(sig){
-  if(sig.plan.mode==="trend"){
-    const p=sig.plan.main;
+  const rel=sig.reliability;
+  const outlook=sig.outlook;
+  const st=outlook.sizeTier;
+  const p=sig.plan.main;
+  // dirSign===0(未过方向确认门槛,顶部徽章为"中性 NEUTRAL")→ 不渲染挂在某一侧结构位上的
+  // 假交易计划,直接显示与顶部一致的"无方向"结论,避免"上面中性、下面却给SHORT计划"的矛盾。
+  if(p.noSetup){
     return `
-      <div class="section-title">📊 TP / SL 交易计划 <span class="dim" style="font-size:9px;">方向: ${p.dir>0?"做多 LONG 🟢":"做空 SHORT 🔴"}</span></div>
-      <div class="section-note">全部按限价单(LIMIT)设计,不追市价:入场价为价格朝${p.dir>0?"下方支撑/回踩":"上方压力/反抽"}结构位回调后的挂单价,而非当前市价,需等待 rebound 打到该价位才成交(预计30分钟~8小时)。目标位来自缠论分型摆动高低点、斐波那契回撤、Volume Profile POC/HVN、VWAP 多重共振确认。TP1固定4h窗口 / TP2固定24h窗口 / TP3固定3日窗口 — 每档"窗口内触碰概率"由该资产近100根K线真实已实现波动率(对数收益标准差)代入反射原理公式计算,不是拿距离硬除以ATR编出来的分钟数,因此不会出现"35分钟内涨10%"这类不符合该资产真实波动速度的说法。"先达胜率"则是止盈与止损两边对数距离之比(赌徒破产公式/鞅的最优停时定理精确解),与时间无关,是判断这笔限价单是否值得挂的核心数字。止损设于限价入场价外侧最近结构失效点+ATR缓冲。三档目标按到入场价的距离严格递增(TP1&lt;TP2&lt;TP3),对应的盈亏比 R:R 和持有时间也依次变大 —— 设计上是给<b>分批止盈</b>用的梯度(例如TP1先落袋一部分、剩余仓位博TP2/TP3,而非到TP1就必须清仓),具体分几档、每档留多少仓位由你自己按风险偏好决定,不代表必须在TP1全平。以上概率均为基于历史已实现波动率的统计估计,不构成回测验证过的胜率,也不构成投资建议,请自行核实并控制仓位风险。</div>
+      <div class="section-title">📊 TP / SL 交易计划 <span class="dim neutral" style="font-size:9px;">方向: 中性 NEUTRAL · 不构成交易机会</span></div>
+      <div class="neutral-banner" style="border-color:rgba(198,165,101,.35);background:rgba(198,165,101,.06);">
+        <b class="neutral">⚖ 中性 NEUTRAL(把握度 ${outlook.conviction}/100) → 未形成方向共识,不构成交易机会。</b> ${esc(rel.detail)}
+        <div class="dim" style="font-size:11px;margin-top:4px;">弱倾向仅供参考(未达方向确认门槛,不是交易信号): 多${outlook.longProbPct}% / 空${outlook.shortProbPct}% · 建议仓位 ${st.posMin}%–${st.posMax}% 净值 · 杠杆 ${st.levMin}–${st.levMax}x(即观察仓/极小仓位试错)。</div>
+      </div>
+      <div class="section-note">此时任何限价单挂在支撑或压力结构位上,都是在替一个尚未成立的方向硬点位置——不是"回调后再入场",而是在赌一个还没有统计依据的方向。建议空仓观望,等待加权得分比与指标同向占比同时明确改善后(见上方⚖机会可信度依据)再考虑挂单。</div>`;
+  }
+  // 把握度横幅取代原先的"中性=空仓观望"二元判断:方向已确认(dirSign≠0)时,给方向 + 用仓位/杠杆表达把握大小。
+  const convBanner=`<div class="neutral-banner" style="border-color:${st.cls==='bull'?'rgba(90,155,120,.35)':st.cls==='bear'?'rgba(184,85,95,.35)':'rgba(198,165,101,.35)'};background:${st.cls==='bull'?'rgba(90,155,120,.06)':st.cls==='bear'?'rgba(184,85,95,.06)':'rgba(198,165,101,.06)'};">
+    <b class="${st.cls}">⚖ ${esc(st.label)}(把握度 ${outlook.conviction}/100) → 方向 ${p.dir>0?"偏多 LONG":"偏空 SHORT"} · 概率 ~${outlook.leanProbPct}% · 建议仓位 ${st.posMin}%–${st.posMax}% 净值 · 杠杆 ${st.levMin}–${st.levMax}x · ${esc(outlook.timeframe.label)}。</b> ${esc(st.note)} ${esc(rel.detail)}
+  </div>`;
+  return `
+      <div class="section-title">📊 TP / SL 交易计划 <span class="dim" style="font-size:9px;">方向: ${p.dir>0?"做多 LONG 🟢":"做空 SHORT 🔴"} · ${esc(st.label)}</span></div>
+      ${convBanner}
+      <div class="section-note">全部按限价单(LIMIT)设计,不追市价:入场价为价格朝${p.dir>0?"下方支撑/回踩":"上方压力/反抽"}结构位回调后的挂单价,而非当前市价,需等待 rebound 打到该价位才成交(预计30分钟~8小时)。目标位来自缠论分型摆动高低点、斐波那契回撤/扩展、趋势线(连接摆动点位)、Volume Profile POC/HVN、VWAP 多重共振确认;周边确实缺乏任何结构确认位时才会退回ATR估算,并会在下方"📍来源"中明确标注。TP1固定4h窗口 / TP2固定24h窗口 / TP3固定3日窗口 — 每档"窗口内触碰概率"由该资产近100根K线真实已实现波动率(对数收益标准差)代入反射原理公式计算,不是拿距离硬除以ATR编出来的分钟数,因此不会出现"35分钟内涨10%"这类不符合该资产真实波动速度的说法。"先达胜率"则是止盈与止损两边对数距离之比(赌徒破产公式/鞅的最优停时定理精确解),与时间无关,是判断这笔限价单是否值得挂的核心数字。止损设于限价入场价外侧最近结构失效点+ATR缓冲;挂单成交前若价格反向击穿"失效撤单价"(入场价再往不利方向1×ATR),说明这不是健康回调而是趋势单边延续,应撤单离场,不追价、不下移/上移限价。三档目标按到入场价的距离严格递增(TP1&lt;TP2&lt;TP3),对应的盈亏比 R:R 和持有时间也依次变大 —— 设计上是给<b>分批止盈</b>用的梯度(例如TP1先落袋一部分、剩余仓位博TP2/TP3,而非到TP1就必须清仓),具体分几档、每档留多少仓位由你自己按风险偏好决定,不代表必须在TP1全平。以上概率、仓位与杠杆建议均为基于历史已实现波动率与信号共振度的启发式估计,不构成回测验证过的胜率,也不构成投资建议,请自行结合自身风险承受能力核实与调整。</div>
       ${timelineHTML(p)}
       <div class="plan-grid" style="margin-top:12px;">${entryCardHTML(p)}${slCardHTML(p)}${p.tps.map(t=>tpCardHTML(t)).join("")}</div>`;
-  }
-  const L=sig.plan.longPlan,S=sig.plan.shortPlan;
-  return `
-    <div class="section-title">📊 TP / SL 交易计划 <span class="dim" style="font-size:9px;">当前中性 — 无持仓,条件触发预案</span></div>
-    <div class="neutral-banner">
-      <b>⚠ 当前无方向共识 → 空仓观望(NO POSITION)。</b>
-      以下两套方案是<b>互斥的条件单</b>,不是同时下场的建议:只在价格<b style="color:var(--up)">突破上方阻力并回踩确认</b>时才启用左侧做多方案,或只在价格<b style="color:var(--down)">跌破下方支撑并反抽确认</b>时才启用右侧做空方案 —— <u>二选一,哪个先触发就只做哪个,另一个自动作废,绝不同时开两笔仓位对锁</u>。在任一条件触发前,不建议入场。
-    </div>
-    <div class="two-col neutral-plan-grid">
-      <div class="neutral-plan-col">
-        <div class="sig-note neutral-plan-head">▲ IF 突破上方结构 → <b style="color:var(--up)">做多 LONG</b><span class="cond-badge">待触发</span></div>
-        ${timelineHTML(L)}<div class="plan-grid" style="margin-top:10px;">${entryCardHTML(L)}${slCardHTML(L)}${L.tps.map(t=>tpCardHTML(t)).join("")}</div>
-      </div>
-      <div class="neutral-or-divider"><span>或 OR</span></div>
-      <div class="neutral-plan-col">
-        <div class="sig-note neutral-plan-head">▼ IF 跌破下方结构 → <b style="color:var(--down)">做空 SHORT</b><span class="cond-badge">待触发</span></div>
-        ${timelineHTML(S)}<div class="plan-grid" style="margin-top:10px;">${entryCardHTML(S)}${slCardHTML(S)}${S.tps.map(t=>tpCardHTML(t)).join("")}</div>
-      </div>
-    </div>`;
 }
 
 /* ── RENDER: STRUCTURE ── */
@@ -2829,7 +2984,7 @@ function renderStructureSection(sig){
   }).join("");
   return`
     <div class="section-title">📐 支撑 / 压力 结构位</div>
-    <div class="section-note">来源: 摆动高低点(缠论分型) + 斐波那契回撤 + Volume Profile POC/HVN。■方块数代表多种方法同时确认(共振越多,可信度越高)。</div>
+    <div class="section-note">来源: 摆动高低点(缠论分型) + 斐波那契回撤/扩展 + 趋势线(连接摆动点位) + Volume Profile POC/HVN。■方块数代表多种方法同时确认(共振越多,可信度越高)。</div>
     <div class="two-col">
       <div>
         <div class="sig-h"><span>上方压力 RESISTANCE</span></div>
@@ -3129,8 +3284,30 @@ function closeModal(){
   document.getElementById("modalOverlay").classList.remove("open");
   if(klineWs){klineWs.close();klineWs=null;}
   if(modalRenderTimer){clearTimeout(modalRenderTimer);modalRenderTimer=null;}
+  if(detailHeaderTimer){clearInterval(detailHeaderTimer);detailHeaderTimer=null;}
   selectedSymbol=null;currentDeribit=null;currentCgCross=null;
   renderCryptoTable();
+}
+/* 价格/24h/资金费率/OI/CVD 顶部小抬头(detSub) — 之前只在打开弹窗那一瞬间写入一次,
+   之后哪怕底层 market.get(symbol) 早已被 WebSocket(!ticker@arr / aggTrade / markPrice)
+   实时更新,这一行文字也不会跟着动,导致挂着看几分钟后价格是"死"的。
+   现在每 DETAIL_HEADER_REFRESH_MS(5秒)重新从 market 读一次并重绘 —— 5秒是在"够跟手"和
+   "不做无意义的高频DOM重绘"之间的折中(底层数据本身来自Binance推送,可能比5秒更快更新,
+   但这一行文字本就是给人读的摘要,没必要跟着每一笔tick闪烁;如果想要更贴近实时,把下面
+   DETAIL_HEADER_REFRESH_MS 改成 2000~3000 即可,10000 则更省性能、更适合弱网/低端设备)。*/
+const DETAIL_HEADER_REFRESH_MS=5000;
+let detailHeaderTimer=null;
+function renderDetailHeader(symbol){
+  const m=market.get(symbol);
+  if(!m)return;
+  document.getElementById("detSym").textContent=symbol;
+  document.getElementById("detSub").innerHTML=`
+    <span>价格 <b>${fmtPrice(m.price)}</b></span>
+    <span>24h <b class="${m.pct>=0?'up':'down'}">${fmtPct(m.pct)}</b></span>
+    <span>资金费率 <b>${m.funding!=null?m.funding.toFixed(4)+"%":"–"}</b></span>
+    <span>OI <b>${m.oi!=null?fmtNum(m.oi):"–"}</b></span>
+    <span>CVD <b class="${(m.cvd||0)>=0?'up':'down'}">${fmtNum(m.cvd)}</b></span>
+    <span class="dim" style="font-size:9px;" title="每${DETAIL_HEADER_REFRESH_MS/1000}秒自动刷新一次">⟳ ${DETAIL_HEADER_REFRESH_MS/1000}s</span>`;
 }
 async function openCryptoModal(symbol){
   selectedSymbol=symbol;fundingHistory=[];longShortHistory=[];currentLongShortRatio=null;
@@ -3143,6 +3320,8 @@ async function openCryptoModal(symbol){
   await loadCryptoDetail(symbol);
   loadExtras(symbol);
   if(!trackedSet.has(symbol)){subscribeAggTrade(symbol);if(!oiPollQueue.includes(symbol))oiPollQueue.push(symbol);}
+  if(detailHeaderTimer)clearInterval(detailHeaderTimer);
+  detailHeaderTimer=setInterval(()=>{if(selectedSymbol)renderDetailHeader(selectedSymbol);},DETAIL_HEADER_REFRESH_MS);
 }
 async function loadExtras(symbol){
   const base=symbol.replace("USDT","");
@@ -3197,13 +3376,7 @@ async function loadExtras(symbol){
 }
 async function loadCryptoDetail(symbol){
   const m=market.get(symbol);
-  document.getElementById("detSym").textContent=symbol;
-  document.getElementById("detSub").innerHTML=`
-    <span>价格 <b>${fmtPrice(m.price)}</b></span>
-    <span>24h <b class="${m.pct>=0?'up':'down'}">${fmtPct(m.pct)}</b></span>
-    <span>资金费率 <b>${m.funding!=null?m.funding.toFixed(4)+"%":"–"}</b></span>
-    <span>OI <b>${m.oi!=null?fmtNum(m.oi):"–"}</b></span>
-    <span>CVD <b class="${(m.cvd||0)>=0?'up':'down'}">${fmtNum(m.cvd)}</b></span>`;
+  renderDetailHeader(symbol);
   try{
     // Binance caps a single klines call at 1500 bars. Vegas隧道(EMA144/169) and reliable
     // pattern/structure reads need real lookback, so page backward for a 2nd batch → up to
@@ -3370,16 +3543,20 @@ function renderStrategySummary(sig){
   const price=sig.price;
   const atrVal=sig.atr;
   const atrPct=(atrVal/price*100).toFixed(2);
-  const isNeutral=sig.dirSign===0;
-  const plan=sig.plan.mode==="trend"?sig.plan.main:null;
-  const direction=sig.dirSign>0?"做多 LONG 🟢":sig.dirSign<0?"做空 SHORT 🔴":"中性观望 · 空仓 ⚪";
-  const dirCls=sig.dirSign>0?"bull":sig.dirSign<0?"bear":"amb";
+  const plan=sig.plan.main;
+  const outlook=sig.outlook;
+  // outlook.confirmed 与顶部徽章(biasLabel/biasCls)、可信度(reliability)共用同一把尺子 dirSign,
+  // 未确认时(dirSign===0)一律显示"中性 NEUTRAL",不能再让弱倾向 leanDir 冒充确定方向——
+  // 这一行是修复"顶部中性、底部SHORT"矛盾的核心。
+  const direction=outlook.confirmed?(outlook.leanDir>0?"偏多 LONG 🟢":"偏空 SHORT 🔴"):"中性 NEUTRAL";
+  const dirCls=outlook.confirmed?(outlook.leanDir>0?"bull":"bear"):"neutral";
   // Risk per TP — 以限价挂单入场价(plan.entry)为基准,而非当前市价,因为全部按 LIMIT 单执行
-  const entryPx=plan?plan.entry:price;
-  const risk=plan?Math.abs(entryPx-plan.sl):0;
-  const riskPct=entryPx>0?(risk/entryPx*100).toFixed(2):"–";
-  const reward1=plan&&plan.tps[0]?Math.abs(plan.tps[0].price-entryPx):0;
-  const rr1=risk>0?(reward1/risk).toFixed(2):"–";
+  // (plan.noSetup 时 entry/sl/tps 均为空,不构成交易机会,不计算风险回报比)
+  const entryPx=plan.entry;
+  const risk=plan.noSetup?null:Math.abs(entryPx-plan.sl);
+  const riskPct=(!plan.noSetup&&entryPx>0)?(risk/entryPx*100).toFixed(2):"–";
+  const reward1=(!plan.noSetup&&plan.tps[0])?Math.abs(plan.tps[0].price-entryPx):0;
+  const rr1=(!plan.noSetup&&risk>0)?(reward1/risk).toFixed(2):"–";
   // Volume momentum
   const volMom=sig.votes.find(v=>v.name.includes("量能"));
   const cashFlow=sig.votes.find(v=>v.name.includes("资金流"));
@@ -3392,40 +3569,39 @@ function renderStrategySummary(sig){
   const liq=getLiqStats(selectedSymbol,3600000);
   if(liq.count>5&&(liq.sellUsd+liq.buyUsd)>100000)risks.push(`近1h 大额爆仓 $${fmtUsd(liq.sellUsd+liq.buyUsd)} → 情绪极值`);
   if(Math.abs(sig.solarTerms.daysAway)<=2)risks.push(`节气变盘窗口: ${sig.solarTerms.term.name} ±2日`);
-  // Entry timing — 判断依据须与"综合方向判断"同一把尺(score/maxScore 比值),
-  // 而非单独用 confluence 分桶,否则会出现"中性观望"却又说"共振强可入场"的自相矛盾。
-  const ratio=sig.maxScore>0?sig.score/sig.maxScore:0;
-  let entryNote;
-  if(isNeutral){
-    entryNote=`多空得分比仅 ${(ratio*100).toFixed(0)}%,未过方向阈值(±15%)→ <b>建议空仓观望</b>,等待任一方向触发结构位后再入场(见下方条件预案,二选一,勿同时开仓)。`;
-  }else if(Math.abs(ratio)>=0.52){
-    entryNote=`共振强烈(${(Math.abs(ratio)*100).toFixed(0)}%),信号质量高,可按计划挂单等待入场`;
-  }else if(Math.abs(ratio)>=0.30){
-    entryNote=`${sig.dirSign>0?"偏多":"偏空"}共振良好(${(Math.abs(ratio)*100).toFixed(0)}%),建议等待限价单触发确认后入场,勿追市价`;
-  }else{
-    entryNote=`${sig.dirSign>0?"偏多":"偏空"}倾向但共振偏弱(${(Math.abs(ratio)*100).toFixed(0)}%),建议轻仓试探或等待共振加强`;
-  }
+  const rel=sig.reliability;
+  const st=outlook.sizeTier;
   return`
     <div class="section-title">🎯 综合交易策略建议</div>
     <div class="strat-box">
       <div class="strat-title">⚡ ORBIT STRATEGY DIGEST · ${esc(sig.intervalLabel)} 级别</div>
       <div class="strat-row">
-        <span class="strat-label">综合方向判断</span>
-        <span class="strat-val ${dirCls}">${direction}</span>
+        <span class="strat-label">方向 · 概率</span>
+        <span class="strat-val ${dirCls}"><b>${direction}</b> · 概率 ~${outlook.leanProbPct}%(多${outlook.longProbPct}% / 空${outlook.shortProbPct}%)</span>
+      </div>
+      <div class="strat-row">
+        <span class="strat-label">建议周期</span>
+        <span class="strat-val">${esc(outlook.timeframe.label)} — ${esc(outlook.timeframe.note)}</span>
+      </div>
+      <div class="strat-row">
+        <span class="strat-label">💰 建议仓位 / 杠杆</span>
+        <span class="strat-val ${st.cls}"><b>${esc(st.label)}(把握度 ${outlook.conviction}/100)</b> · 仓位 ${st.posMin}%–${st.posMax}% 净值 · 杠杆 ${st.levMin}–${st.levMax}x<br><span class="dim" style="font-size:11px;">${esc(st.note)}</span></span>
+      </div>
+      <div class="strat-row">
+        <span class="strat-label">市场趋势</span>
+        <span class="strat-val">${esc(sig.regimeLabel)} · Choppiness(14) ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"} · ER(10) ${sig.er!=null?sig.er.toFixed(2):"–"}</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">信号共振度</span>
-        <span class="strat-val ${sig.confluence>=60?"bull":sig.confluence>=45?"amb":"bear"}">${sig.confluence}% · ${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore} 票</span>
+        <span class="strat-val ${sig.confluence>=60?"bull":sig.confluence>=45?"amb":"bear"}">${sig.confluence}% · ${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore} 票 · 指标同向 ${outlook.agreementPct}%</span>
       </div>
       <div class="strat-row">
-        <span class="strat-label">入场时机评估</span>
-        <span class="strat-val">${entryNote}</span>
+        <span class="strat-label">⚖️ 机会可信度依据</span>
+        <span class="strat-val ${rel.cls}">${esc(rel.detail)}</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">限价挂单价位</span>
-        <span class="strat-val">${isNeutral?
-          `⚠ 无单方向,以下为<b>触发式</b>条件价(仅达到对应价位+回踩确认才可能成立其中一个,不同时挂两边): ▲ 做多触发 <b style="color:var(--up)">${fmtPrice(sig.plan.longPlan.entry)}</b> <span class="prob-tag">概率~${sig.plan.longPlan.entryInfo.prob}%</span> · ▼ 做空触发 <b style="color:var(--down)">${fmtPrice(sig.plan.shortPlan.entry)}</b> <span class="prob-tag">概率~${sig.plan.shortPlan.entryInfo.prob}%</span>`
-          :`<b style="color:var(--amber)">${fmtPrice(plan.entry)}</b> · 现价 ${fmtPrice(price)} · <span class="prob-tag">成交概率 ~${plan.entryInfo.prob}%</span> · <span class="eta-live">预计 ${esc(fmtEtaFull(plan.entryInfo.eta))}打到</span>`}</span>
+        <span class="strat-val">${plan.noSetup?'<span class="neutral">未形成方向共识,不给出挂单价位——见下方⚖机会可信度依据</span>':`<b style="color:var(--amber);">${fmtPrice(plan.entry)}</b> · 现价 ${fmtPrice(price)} · <span class="prob-tag">成交概率 ~${plan.entryInfo.prob}%</span> · <span class="eta-live">预计 ${esc(fmtEtaFull(plan.entryInfo.eta))}打到</span> · <span style="color:var(--down);">⛔失效撤单 ${fmtPrice(plan.entryInfo.invalidatePrice)}</span>`}</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">结构现状</span>
@@ -3441,11 +3617,11 @@ function renderStrategySummary(sig){
       </div>
       <div class="strat-row">
         <span class="strat-label">首选 TP1 盈亏比</span>
-        <span class="strat-val ${isNeutral?"amb":+rr1>=2?"bull":+rr1>=1?"amb":"bear"}">${isNeutral?`多 R:R ${sig.plan.longPlan.rr} · 空 R:R ${sig.plan.shortPlan.rr}(触发对应方向后适用)`:`R:R = ${rr1} · 风险 ${riskPct}% of price`}</span>
+        <span class="strat-val ${plan.noSetup?"neutral":(+rr1>=2?"bull":+rr1>=1?"amb":"bear")}">${plan.noSetup?"– 无方向,不构成交易机会":`R:R = ${rr1} · 风险 ${riskPct}% of price`}</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">止损逻辑</span>
-        <span class="strat-val">结构失效点 + ${(0.35*100/100).toFixed(0)}×ATR 缓冲 · ${isNeutral?`多单SL <b class="down">${fmtPrice(sig.plan.longPlan.sl)}</b> / 空单SL <b class="down">${fmtPrice(sig.plan.shortPlan.sl)}</b>`:`<b class="down">${plan?fmtPrice(plan.sl):"–"}</b>`}</span>
+        <span class="strat-val">${plan.noSetup?'<span class="neutral">未建仓,无止损位</span>':`结构失效点 + 0×ATR 缓冲 · <b class="down">${fmtPrice(plan.sl)}</b>`}</span>
       </div>
       ${risks.length?`<div class="strat-row">
         <span class="strat-label">风险提示</span>
@@ -3582,11 +3758,13 @@ function renderModalScrollNow(sig){
   const isFirst=modalRenderCount===0;
   modalRenderCount++;
   const savedScroll=document.getElementById("modalBody")?.scrollTop||0;
-  // Summary / TP-SL / timeline first (per your ask), granular vote-by-vote detail after —
-  // the chart itself starts collapsed (see .modal-top / #chartToggleBtn), so this ordering
-  // is genuinely the first thing you see on open, not just first-in-a-tall-scroll.
+  // Ordering, per explicit request: ① 可视化 donut/pattern 总览(一眼看全局,含K线形态)
+  // → ② TP/SL 时间线与交易计划(含机会可信度评估、失效撤单价)→ ③ 其余明细信息。
+  // 桌面便签(desk note)是最短的一句话摘要,放在最顶端合理;overview 紧随其后,
+  // 而不是像之前那样被压到 TP/SL 计划之后才看到。
   el.innerHTML=`
     ${buildDeskNote(sig)}
+    ${renderSignalGlance(sig)}
     ${renderStrategySummary(sig)}
     ${renderTradePlanSection(sig)}
     ${renderSignalDetail(sig)}
