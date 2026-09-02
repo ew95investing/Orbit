@@ -359,6 +359,31 @@
   .ind-tag.bull{color:var(--up);border-color:rgba(46,204,142,.4);background:var(--up-bg);}
   .ind-tag.bear{color:var(--down);border-color:rgba(240,79,87,.4);background:var(--down-bg);}
   .ind-tag.neutral{color:var(--dim);background:#171d29;}
+
+  .opp-panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;margin:0 20px 14px;overflow:hidden;}
+  .opp-head{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .opp-title{font-size:12px;letter-spacing:1.5px;color:var(--dim2);text-transform:uppercase;font-weight:700;}
+  .opp-sub{font-size:11px;color:var(--dim2);}
+  .opp-status{margin-left:auto;font-size:10.5px;color:var(--dim2);}
+  .opp-body{display:grid;grid-template-columns:1fr 1fr;}
+  .opp-col{padding:10px 12px;}
+  .opp-col+.opp-col{border-left:1px solid var(--line);}
+  .opp-col-head{font-size:11px;letter-spacing:.5px;margin-bottom:8px;font-weight:700;}
+  .opp-col-head.bull{color:var(--up);}
+  .opp-col-head.bear{color:var(--down);}
+  .opp-card{border:1px solid var(--line2);border-radius:5px;background:var(--panel2);padding:8px 10px;margin-bottom:7px;cursor:pointer;transition:border-color .15s;}
+  .opp-card:hover{border-color:var(--amber);}
+  .opp-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .opp-card-sym{font-weight:700;font-size:13px;}
+  .opp-card-conv{font-size:12px;font-weight:700;}
+  .opp-card-meta{font-size:10.5px;color:var(--dim2);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .opp-card-reason{font-size:11px;color:var(--dim);margin-top:5px;line-height:1.4;}
+  .opp-empty{font-size:11.5px;color:var(--dim2);padding:10px 4px;}
+  @media(max-width:640px){
+    .opp-panel{margin:0 0 14px;}
+    .opp-body{grid-template-columns:1fr;}
+    .opp-col+.opp-col{border-left:none;border-top:1px solid var(--line);}
+  }
   .sig-note{font-size:12px;color:var(--dim2);line-height:1.55;margin-top:3px;padding-left:2px;}
   .mystic-block{font-size:12px;border-top:1px dashed rgba(154,114,240,.3);padding:10px 13px;background:rgba(154,114,240,.04);}
   .mystic-title{font-size:12px;color:var(--purple);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
@@ -508,6 +533,22 @@
   .live-badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--up);}
   .live-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--up);box-shadow:0 0 5px var(--up);animation:blink 1.5s infinite;}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+  /* ── 信号动效: 只用在真正"活的/待确认"的状态上,而不是到处加动画 ──
+     1) 时间轴上的"现价"节点是全轴唯一实时跳动的值(其余TP/SL/入场都是固定目标价),
+        给它一圈雷达ping,直观区分"这个点在动"和"这些点是静止的计划位"。
+     2) 顶部方向徽章(BULLISH/BEARISH)在方向已确认(dirSign≠0)时呼吸发光,强度隐含"这是一个
+        正在被实时重新计算的活信号",中性(NEUTRAL)时不发光,避免"没有方向也在提示你什么"的误导。
+     3) 限价入场卡的"等回调/等反抽"是唯一处于"挂单未成交、正在等待"状态的徽章,给它一个呼吸圆点,
+        和其余已经算好、不会变的静态徽章(结构确认/ATR延伸等)做区分。 */
+  @keyframes livePingRing{0%{transform:scale(.6);opacity:.85;}100%{transform:scale(2.6);opacity:0;}}
+  .axis-item.mkt .dot2{position:relative;}
+  .axis-item.mkt .dot2::after{content:'';position:absolute;inset:-5px;border-radius:50%;border:1px solid currentColor;animation:livePingRing 2.2s ease-out infinite;}
+  @keyframes biasGlowBull{0%,100%{box-shadow:0 0 0 rgba(90,155,120,0);}50%{box-shadow:0 0 16px rgba(90,155,120,.4);}}
+  @keyframes biasGlowBear{0%,100%{box-shadow:0 0 0 rgba(184,85,95,0);}50%{box-shadow:0 0 16px rgba(184,85,95,.4);}}
+  .chart-bias-badge.live-bull{animation:biasGlowBull 2.8s ease-in-out infinite;}
+  .chart-bias-badge.live-bear{animation:biasGlowBear 2.8s ease-in-out infinite;}
+  .horizon-badge.pending{position:relative;padding-left:16px;}
+  .horizon-badge.pending::before{content:'';position:absolute;left:6px;top:50%;width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:currentColor;box-shadow:0 0 5px currentColor;animation:blink 1.4s infinite;}
 
   .cg-badge{font-size:13px;color:var(--dim);}
   .cg-badge b{color:var(--text);}
@@ -849,6 +890,18 @@
 
   </div></div>
 
+  <div class="opp-panel" id="oppPanel">
+    <div class="opp-head">
+      <span class="opp-title">机会雷达 · 主流币最佳机会</span>
+      <span class="opp-sub" id="oppUniverseNote">–</span>
+      <span class="opp-status" id="oppStatus">等待首次扫描…</span>
+    </div>
+    <div class="opp-body">
+      <div class="opp-col"><div class="opp-col-head bull">📈 做多候选 TOP</div><div id="oppLongList" class="opp-empty">扫描中…</div></div>
+      <div class="opp-col"><div class="opp-col-head bear">📉 做空候选 TOP</div><div id="oppShortList" class="opp-empty">扫描中…</div></div>
+    </div>
+  </div>
+
   <div class="controls">
     <span class="ctl-label">搜索</span>
     <input id="search" placeholder="BTC / ETH / PEPE …" style="width:150px;">
@@ -1017,6 +1070,16 @@ let emaSeries20=null, emaSeries50=null, emaSeriesVegas144=null, emaSeriesVegas16
 let vwapSeries=null, supertrendSeries=null;
 let oiHistory=[], cvdHistory=[], lastCandles=[], lastSignalComputeAt=0;
 let fundingHistory=[], longShortHistory=[], currentLongShortRatio=null;
+// BTC 收盘价缓存,供 volRegimeBetaVote 算山寨币对BTC的Beta/相关性用。独立于主K线流,
+// 按当前图表周期缓存60秒,避免每次切换币种都重新拉一次BTC K线(BTC本身切换币种时不需要算自己的Beta)。
+let btcCloseCache={interval:null,closes:[],fetchedAt:0};
+async function ensureBtcCloses(interval){
+  if(btcCloseCache.interval===interval&&btcCloseCache.closes.length&&Date.now()-btcCloseCache.fetchedAt<60000)return;
+  try{
+    const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=BTCUSDT&interval=${interval}&limit=150`);
+    btcCloseCache={interval,closes:kl.map(k=>+k[4]),fetchedAt:Date.now()};
+  }catch(e){ /* best-effort: Beta票在缺BTC数据时会自行降级为仅波动率状态,不阻塞主流程 */ }
+}
 let topLongShortHistory=[], currentTopLongShortRatio=null;
 let takerRatioHistory=[], currentTakerRatio=null;
 let currentDeribit=null, currentCgCross=null;
@@ -1127,7 +1190,7 @@ function init(){
   updateStickyOffset();
   window.addEventListener("resize",()=>requestAnimationFrame(updateStickyOffset));
   document.getElementById("topN").addEventListener("change",e=>{topNCount=parseInt(e.target.value,10);refreshTopN(true);renderCryptoTable();});
-  document.getElementById("interval").addEventListener("change",e=>{chartInterval=e.target.value;if(selectedSymbol)loadCryptoDetail(selectedSymbol);});
+  document.getElementById("interval").addEventListener("change",e=>{chartInterval=e.target.value;if(selectedSymbol)loadCryptoDetail(selectedSymbol);opportunityResults.clear();scheduleOpportunityRescan();});
   document.getElementById("search").addEventListener("input",renderCryptoTable);
   document.getElementById("toggleAllCrypto").addEventListener("click",(e)=>{
     showAllCrypto=!showAllCrypto;
@@ -1223,6 +1286,9 @@ async function initCrypto(){
     clearError("crypto"); renderCryptoTable(); refreshTopN(true); connectWS(); startOiPoller(); startRestFallbackPoller();
     if(rankTimer)clearInterval(rankTimer);
     rankTimer=setInterval(()=>refreshTopN(false),RANK_REFRESH_MS);
+    // give the OI poller / aggTrade CVD stream ~15s to accumulate a first data point per
+    // symbol before the first opportunity scan runs, so the earliest scan isn't all "数据不足"
+    setTimeout(setupOpportunityScan,15000);
   }catch(e){
     console.error("crypto init failed",e); setStatus("crypto","err","error");
     document.getElementById("tbodyCrypto").innerHTML='<tr><td colspan="10" class="dim" style="text-align:center;padding:28px;">加载失败</td></tr>';
@@ -1239,6 +1305,131 @@ function refreshTopN(force){
   trackedSet=newSet; oiPollQueue=[...trackedSet];
   document.getElementById("statTracked").textContent=trackedSet.size;
   renderCryptoTable();
+  scheduleOpportunityRescan();
+}
+
+/* ============================================================
+   OPPORTUNITY RADAR — background scan of the full deep signal
+   engine (computeSignal, same one the modal uses) across the
+   MAINSTREAM subset of whatever's already tracked (Top N by
+   volume ∩ CG_ID_MAP's curated major-coin list), so a meme coin
+   temporarily spiking on volume can't sneak into "best opportunities".
+   Not a market-wide scanner by design — the point is depth+focus
+   on coins worth actually trading, not breadth across everything.
+============================================================ */
+const OPP_SCAN_INTERVAL_MS = 90000;
+const OPP_CONCURRENCY = 4;
+const OPP_TOP_N = 5;
+let opportunityResults = new Map(); // symbol -> {sig, ts}
+let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
+
+function mainstreamUniverse(){
+  // Deliberately NOT the whole market: only coins that are both (a) currently in the
+  // volume-ranked tracked set (respects the Top20/25/30/40 dropdown) and (b) recognized
+  // as an established/major coin via the existing CG_ID_MAP — this is the "主流币,不要
+  // 太多小币" filter, using data already in the file rather than a new API dependency.
+  return [...trackedSet].filter(sym=>!!CG_ID_MAP[sym.replace("USDT","")]);
+}
+
+async function poolRun(items, worker, concurrency){
+  let idx=0;
+  const n=Math.min(concurrency,items.length);
+  const runners=new Array(n).fill(0).map(async()=>{
+    while(idx<items.length){
+      const i=idx++;
+      try{ await worker(items[i]); }catch(e){ /* one symbol failing shouldn't stop the scan */ }
+    }
+  });
+  await Promise.all(runners);
+}
+
+async function fetchSignalContext(symbol){
+  const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${chartInterval}&limit=300`);
+  const candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+  const m=market.get(symbol);
+  const oiHist=(m&&m.oiHist&&m.oiHist.length)?m.oiHist.map(o=>({time:Math.floor(o.t/1000),value:o.oi})):[];
+  const cvdHist=(m&&m.cvdHist&&m.cvdHist.length)?m.cvdHist:[];
+  let lsRatio=null,topLsRatio=null,topLsTrendSrc=[],takerRatio=null;
+  try{
+    const[ls,tls,tr]=await Promise.all([
+      fetchJSON(REST+`/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m&limit=20`),
+      fetchJSON(REST+`/futures/data/topLongShortPositionRatio?symbol=${symbol}&period=5m&limit=20`),
+      fetchJSON(REST+`/futures/data/takerlongshortRatio?symbol=${symbol}&period=5m&limit=5`),
+    ]);
+    if(ls&&ls.length)lsRatio=+ls[ls.length-1].longShortRatio;
+    if(tls&&tls.length){topLsTrendSrc=tls.map(x=>({time:Math.floor(x.timestamp/1000),value:+x.longShortRatio}));topLsRatio=topLsTrendSrc[topLsTrendSrc.length-1].value;}
+    if(tr&&tr.length)takerRatio=+tr[tr.length-1].buySellRatio;
+  }catch(e){ /* ratio endpoints are best-effort — computeSignal's vote functions all null-guard */ }
+  return{candles,ctx:{oiHist,cvdHist,lsRatio,topLsRatio,topLsTrendSrc,takerRatio,fundingHist:[]}};
+}
+
+async function scanOneOpportunity(symbol){
+  const{candles,ctx}=await fetchSignalContext(symbol);
+  if(candles.length<50)return;
+  const sig=computeSignal(candles,chartInterval,symbol,ctx);
+  if(!sig)return;
+  opportunityResults.set(symbol,{sig,ts:Date.now()});
+}
+
+async function runOpportunityScan(){
+  if(opportunityScanning)return;
+  opportunityScanning=true;
+  setOppStatus("扫描中…");
+  const universe=mainstreamUniverse();
+  // drop stale results for coins no longer in the universe (e.g. topN dropdown changed)
+  [...opportunityResults.keys()].forEach(s=>{if(!universe.includes(s))opportunityResults.delete(s);});
+  await poolRun(universe, scanOneOpportunity, OPP_CONCURRENCY);
+  opportunityScanning=false;
+  renderOpportunityRadar();
+  setOppStatus(`已更新 · ${new Date().toLocaleTimeString("zh-CN",{hour12:false})}`);
+}
+function setOppStatus(text){const el=document.getElementById("oppStatus");if(el)el.textContent=text;}
+function setupOpportunityScan(){
+  if(opportunityScanTimer)clearInterval(opportunityScanTimer);
+  runOpportunityScan();
+  opportunityScanTimer=setInterval(runOpportunityScan, OPP_SCAN_INTERVAL_MS);
+}
+// topN changes / tracked-set churn shouldn't spam re-scans — debounce to one scan ~2s after things settle
+function scheduleOpportunityRescan(){
+  if(!opportunityScanTimer)return; // not started yet (initial boot) — setupOpportunityScan() will run first pass itself
+  if(opportunityRescanDebounce)clearTimeout(opportunityRescanDebounce);
+  opportunityRescanDebounce=setTimeout(runOpportunityScan,2000);
+}
+
+function oppCardHTML(symbol,r){
+  const sig=r.sig,m=market.get(symbol);
+  const topVote=[...sig.votes].filter(v=>Math.sign(v.dir)===sig.dirSign&&Math.abs(v.dir)>0.05)
+    .sort((a,b)=>Math.abs(b.dir*b.w)-Math.abs(a.dir*a.w))[0];
+  const cls=sig.dirSign>0?"up":"down";
+  return `<div class="opp-card" data-symbol="${symbol}">
+    <div class="opp-card-top">
+      <span class="opp-card-sym">${symbol.replace("USDT","")}</span>
+      <span class="opp-card-conv ${cls}">${sig.outlook.conviction}% 把握</span>
+    </div>
+    <div class="opp-card-meta">
+      <span>${fmtPrice(m?m.price:sig.price)}</span>
+      <span>${esc(sig.regimeLabel)}</span>
+      <span class="ind-tag ${sig.reliability.cls}" style="font-size:9px;padding:1px 5px;">${esc(sig.reliability.label)}</span>
+      <span>${esc(sig.outlook.sizeTier.label)}</span>
+      <span>${esc(sig.outlook.timeframe.label)}</span>
+    </div>
+    ${topVote?`<div class="opp-card-reason">${esc(topVote.name)}: ${esc(topVote.detail)}</div>`:""}
+  </div>`;
+}
+function renderOpportunityRadar(){
+  const noteEl=document.getElementById("oppUniverseNote");
+  const universe=mainstreamUniverse();
+  if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 每${Math.round(OPP_SCAN_INTERVAL_MS/1000)}秒滚动刷新`;
+  const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
+    .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
+  const longs=rows.filter(x=>x.r.sig.dirSign>0).sort((a,b)=>b.r.sig.outlook.conviction-a.r.sig.outlook.conviction).slice(0,OPP_TOP_N);
+  const shorts=rows.filter(x=>x.r.sig.dirSign<0).sort((a,b)=>b.r.sig.outlook.conviction-a.r.sig.outlook.conviction).slice(0,OPP_TOP_N);
+  const longEl=document.getElementById("oppLongList"),shortEl=document.getElementById("oppShortList");
+  if(longEl)longEl.innerHTML=longs.length?longs.map(x=>oppCardHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">当前主流币里暂无高把握度做多机会,继续观察</div>';
+  if(shortEl)shortEl.innerHTML=shorts.length?shorts.map(x=>oppCardHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">当前主流币里暂无高把握度做空机会,继续观察</div>';
+  document.querySelectorAll(".opp-card").forEach(el=>{
+    el.addEventListener("click",()=>openCryptoModal(el.dataset.symbol));
+  });
 }
 
 /* ── WEBSOCKET ── */
@@ -1294,6 +1485,17 @@ function handleAggTrade(t){
   const m=market.get(t.s);if(!m)return;
   const qty=parseFloat(t.q);const delta=t.m?-qty:qty;
   m.cvd=(m.cvd||0)+delta;
+  // Per-symbol CVD history for EVERY tracked coin (not just the one open in the modal) —
+  // throttled to ~1 point/3s so it stays cheap across dozens of simultaneously tracked
+  // symbols, but still has enough resolution for the background Opportunity Radar scan
+  // (squeezeCvdVote/cashFlowVote only ever look back 12-60 bars).
+  const nowSec=Math.floor(t.T/1000);
+  if(!m.cvdHist)m.cvdHist=[];
+  const lastPt=m.cvdHist[m.cvdHist.length-1];
+  if(!lastPt||nowSec-lastPt.time>=3){
+    m.cvdHist.push({time:nowSec,value:m.cvd});
+    if(m.cvdHist.length>400)m.cvdHist.shift();
+  }
   if(selectedSymbol===t.s){
     cvdHistory.push({time:Math.floor(t.T/1000),value:m.cvd});
     if(cvdHistory.length>2000)cvdHistory.shift();
@@ -1676,6 +1878,38 @@ function ema(vals,period){const out=new Array(vals.length).fill(null);const k=2/
 function rsi(closes,period=14){const out=new Array(closes.length).fill(null);let gain=0,loss=0;for(let i=1;i<closes.length;i++){const ch=closes[i]-closes[i-1];const g=Math.max(ch,0),l=Math.max(-ch,0);if(i<=period){gain+=g;loss+=l;if(i===period){const rs=(gain/period)/((loss/period)||1e-9);out[i]=100-100/(1+rs);}}else{gain=(gain*(period-1)+g)/period;loss=(loss*(period-1)+l)/period;const rs=gain/(loss||1e-9);out[i]=100-100/(1+rs);}}return out;}
 function macd(closes,fast=12,slow=26,sig=9){const ef=ema(closes,fast),es=ema(closes,slow);const line=closes.map((_,i)=>(ef[i]!=null&&es[i]!=null)?ef[i]-es[i]:null);const cleanLine=line.map(v=>v==null?0:v);const sigLine=ema(cleanLine,sig).map((v,i)=>line[i]==null?null:v);const hist=line.map((v,i)=>(v!=null&&sigLine[i]!=null)?v-sigLine[i]:null);return{line,sigLine,hist};}
 function bollinger(closes,period=20,mult=2){const mid=sma(closes,period);const out={upper:[],mid,lower:[]};for(let i=0;i<closes.length;i++){if(mid[i]==null){out.upper.push(null);out.lower.push(null);continue;}let s=0;for(let j=i-period+1;j<=i;j++)s+=Math.pow(closes[j]-mid[i],2);const sd=Math.sqrt(s/period);out.upper.push(mid[i]+mult*sd);out.lower.push(mid[i]-mult*sd);}return out;}
+/* KDJ(9,3,3) — 经典超买超卖摆荡指标,与布林带/BIAS同属 meanrev 类,震荡市权重自动上调×1.4 */
+function kdj(highs,lows,closes,period=9,kSm=3,dSm=3){
+  const n=closes.length;
+  const rsv=new Array(n).fill(null);
+  for(let i=period-1;i<n;i++){
+    let hh=-Infinity,ll=Infinity;
+    for(let j=i-period+1;j<=i;j++){if(highs[j]>hh)hh=highs[j];if(lows[j]<ll)ll=lows[j];}
+    rsv[i]=hh===ll?50:(closes[i]-ll)/(hh-ll)*100;
+  }
+  const K=new Array(n).fill(null),D=new Array(n).fill(null),J=new Array(n).fill(null);
+  let prevK=50,prevD=50;
+  for(let i=0;i<n;i++){
+    if(rsv[i]==null)continue;
+    prevK=(prevK*(kSm-1)+rsv[i])/kSm;
+    prevD=(prevD*(dSm-1)+prevK)/dSm;
+    K[i]=prevK;D[i]=prevD;J[i]=3*prevK-2*prevD;
+  }
+  return{K,D,J};
+}
+function kdjVote(K,D,J){
+  const n=K.length;let i=n-1;while(i>0&&K[i]==null)i--;
+  if(i<1||K[i]==null||D[i]==null)return{dir:0,detail:"数据不足"};
+  const k=K[i],d=D[i],j=J[i],pk=K[i-1],pd=D[i-1];
+  let dir=0,label;
+  if(pk!=null&&pd!=null&&pk<pd&&k>d&&k<40){dir=0.75;label=`低位金叉(K${k.toFixed(1)}上穿D${d.toFixed(1)}) → 短线转多`;}
+  else if(pk!=null&&pd!=null&&pk>pd&&k<d&&k>60){dir=-0.75;label=`高位死叉(K${k.toFixed(1)}下穿D${d.toFixed(1)}) → 短线转空`;}
+  else if(k>d){dir=Math.max(0.1,Math.min(0.5,(k-d)/20));label=`K(${k.toFixed(1)})上穿D(${d.toFixed(1)}),偏多`;}
+  else{dir=Math.min(-0.1,Math.max(-0.5,(k-d)/20));label=`K(${k.toFixed(1)})下穿D(${d.toFixed(1)}),偏空`;}
+  if(j!=null&&j>100){label+=` · J=${j.toFixed(0)}超买`;dir=Math.min(dir,-0.15);}
+  if(j!=null&&j<0){label+=` · J=${j.toFixed(0)}超卖`;dir=Math.max(dir,0.15);}
+  return{dir,detail:label};
+}
 function atr(candles,period=14){const trs=[];for(let i=0;i<candles.length;i++){if(i===0){trs.push(candles[i].high-candles[i].low);continue;}trs.push(Math.max(candles[i].high-candles[i].low,Math.abs(candles[i].high-candles[i-1].close),Math.abs(candles[i].low-candles[i-1].close)));}return ema(trs,period);}
 
 /* ══════════════════════════════════════════════════════════════
@@ -2219,11 +2453,87 @@ function topBottomStructureVote(oiv,funding,candles){
   return{state,dir,detail};
 }
 
+/* ══════════════════════════════════════════════════════════════
+   动量因子 (Momentum Factor) — 风险调整时序动量(Time-Series Momentum,
+   Moskowitz/Ooi/Pedersen 一类学术因子的简化实现): 用"区间收益 ÷ 该区间理论波动
+   (σ×√N)"把动量转换成一个类夏普比率的无量纲分数,而不是直接比较不同资产/不同周期
+   下毫无可比性的原始涨跌幅。同时取 20 根(短)与 55 根(中)两个回看窗口取平均,
+   减少单一窗口选取偏差(look-back bias)。这是与上面 EMA/MACD/RSI 等"价格形态类"
+   指标完全不同的机制: 那些看的是均线/摆动位置,这里看的是"排除掉波动率噪音后,
+   净收益本身有多显著",是量化因子模型里独立的一类风险因子。
+════════════════════════════════════════════════════════════════ */
+function momentumFactorVote(closes,sigmaVal){
+  const n=closes.length;
+  if(n<60||!sigmaVal)return{dir:0,detail:"K线样本不足或波动率数据缺失,暂无法计算风险调整动量"};
+  const px=closes[n-1];
+  const LB=[20,55].filter(L=>n>L);
+  if(!LB.length)return{dir:0,detail:"样本不足,暂无法计算风险调整动量"};
+  const scores=LB.map(L=>{
+    const ret=Math.log(px/closes[n-1-L]);
+    const denom=sigmaVal*Math.sqrt(L);
+    return denom>0?ret/denom:0;
+  });
+  const avg=scores.reduce((a,b)=>a+b,0)/scores.length;
+  // ±1.2σ 附近视为"强动量"上限,超出部分压缩(tanh 风格软限幅),避免单次极端行情把这一票的
+  // 权重打满、盖过其余20项指标的共同意见。
+  const dir=Math.max(-1,Math.min(1,avg/1.2));
+  let label;
+  if(avg>=1.0)label="强动量(顺势显著)";
+  else if(avg>=0.35)label="温和动量";
+  else if(avg<=-1.0)label="强反向动量(超涨/超跌修正风险偏高)";
+  else if(avg<=-0.35)label="温和反向动量";
+  else label="动量中性(噪音区间)";
+  const detail=`${LB.map((L,i)=>`${L}根 ${scores[i]>=0?"+":""}${scores[i].toFixed(2)}σ`).join(" · ")}(区间收益÷该区间理论波动,类夏普分数) → ${label}`;
+  return{dir,detail};
+}
+
+/* ══════════════════════════════════════════════════════════════
+   波动率状态 + Beta 风险因子 (Vol Regime / Beta) — 与"动量"和"趋势"不同,
+   这一项本身不代表方向(dir 恒为 0,不参与加权得分与多空判断),它回答的是完全独立的问题:
+   "就算方向判断对了,这笔仓位该冒多大的风险"。两个子指标:
+   1) 波动率状态: 近30根已实现波动率 ÷ 近100根已实现波动率。>1.35 视为"扩张"(近期比常态更剧烈,
+      止损更容易被插针扫到);<0.7 视为"收缩"(近期比常态更平静,警惕收窄后方向性突破)。
+   2) 对BTC Beta/相关性: 用日志收益协方差/BTC收益方差算出的线性Beta——山寨币相对BTC的系统性风险
+      放大倍数,是仓位管理里的标准做法(不是主观感觉"这币波动大",而是算出来的数字)。
+   这两个数字会在下方"把握度→仓位/杠杆建议"里被用来实际下调杠杆上限,而不只是摆在这里好看。
+════════════════════════════════════════════════════════════════ */
+function volRegimeBetaVote(closes,sigmaVal,btcCloses,symbol){
+  if(!sigmaVal||closes.length<40)return{dir:0,detail:"数据不足,暂无法评估波动率状态与Beta",ratio:null,beta:null,corr:null,regimeLabel:"–"};
+  const shortSigma=barLogReturnSigma(closes.slice(-31));
+  const ratio=(shortSigma&&sigmaVal)?shortSigma/sigmaVal:null;
+  let regimeLabel="常态",regimeNote="波动率处于近期正常区间";
+  if(ratio!=null){
+    if(ratio>=1.35){regimeLabel="扩张";regimeNote="近30根波动率显著高于近100根常态,行情弹性增大但插针风险也更高";}
+    else if(ratio<=0.7){regimeLabel="收缩";regimeNote="近30根波动率显著低于近100根常态,警惕收窄蓄势后的方向性突破";}
+  }
+  let beta=null,corr=null,betaTxt="";
+  if(symbol!=="BTCUSDT"&&btcCloses&&btcCloses.length>=40){
+    const n=Math.min(closes.length,btcCloses.length);
+    const a=[],b=[];
+    for(let i=1;i<n;i++){
+      const ca=closes[closes.length-n+i],pa=closes[closes.length-n+i-1];
+      const cb=btcCloses[btcCloses.length-n+i],pb=btcCloses[btcCloses.length-n+i-1];
+      if(ca>0&&pa>0&&cb>0&&pb>0){a.push(Math.log(ca/pa));b.push(Math.log(cb/pb));}
+    }
+    if(a.length>=30){
+      const ma=a.reduce((s,x)=>s+x,0)/a.length,mb=b.reduce((s,x)=>s+x,0)/b.length;
+      let cov=0,varB=0,varA=0;
+      for(let i=0;i<a.length;i++){cov+=(a[i]-ma)*(b[i]-mb);varB+=(b[i]-mb)*(b[i]-mb);varA+=(a[i]-ma)*(a[i]-ma);}
+      cov/=a.length-1;varB/=a.length-1;varA/=a.length-1;
+      beta=varB>0?cov/varB:null;
+      corr=(varA>0&&varB>0)?cov/Math.sqrt(varA*varB):null;
+      if(beta!=null)betaTxt=` · 对BTC Beta ${beta.toFixed(2)}(相关性 ${corr!=null?corr.toFixed(2):"–"})`;
+    }
+  }
+  const detail=`已实现波动率状态: ${regimeLabel}(近30根/近100根σ比值 ${ratio!=null?ratio.toFixed(2):"–"}) — ${regimeNote}${betaTxt}`;
+  return{dir:0,detail,ratio,beta,corr,regimeLabel};
+}
+
 /* 机会有效性/可靠性判定(SETUP RELIABILITY GATE) — 在生成任何入场价之前,先回答用户最根本的问题:
    "这里真的有一个可以交易的机会吗?趋势判断真的准确、真的可靠吗?" 而不是不管三七二十一,
    先在现价下方拉一个点位就说"这里买"。
    本判定不只看加权得分比(score/maxScore,容易被少数几个高权重指标主导、造成虚假的"强烈"观感),
-   而是同时要求"指标同向占比"(21项指标里有多少项真的指向同一个方向,而不是只是加权分高)达标,
+   而是同时要求"指标同向占比"(N项指标里有多少项真的指向同一个方向,而不是只是加权分高)达标,
    两者都过线才算"可信趋势";任一项不过线,即使方向判断非中性,也只能算"弱倾向",在入场卡片和
    策略摘要里会被明确标注为低可信度、需要谨慎对待——而不是用同一套"可以挂单入场"的措辞一概而论。 */
 function assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,voteTotal,regime){
@@ -2257,7 +2567,7 @@ function assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,voteTot
    高把握=正常/偏大仓位,低把握=极小仓位或观察仓,而不是完全不给意见。
    "中性"这个状态被替换成一个从0~100连续的把握度(conviction),仓位与杠杆随把握度平滑衰减,
    而不是砍成"有信号就给计划,没信号就不给"这种断崖式的二元逻辑。 */
-function computeDirectionalOutlook(score,maxScore,voteBull,voteBear,voteTotal,regime,er,dirSign){
+function computeDirectionalOutlook(score,maxScore,voteBull,voteBear,voteTotal,regime,er,dirSign,volRisk){
   const ratio=maxScore>0?score/maxScore:0; // -1..1,正=偏多力量占优
   const leanDir=ratio>=0?1:-1; // 弱倾向(仅供参考的边际方向),即使得分比极接近0也会给出符号
   // confirmed = 是否达到"可信方向"门槛(与顶部 中性/BULLISH/BEARISH 徽章、机会可信度用同一把尺子 dirSign)。
@@ -2284,6 +2594,21 @@ function computeDirectionalOutlook(score,maxScore,voteBull,voteBear,voteTotal,re
     note:"倾向存在但不算清晰,建议轻仓试探,不宜重仓押注这一笔"};
   else sizeTier={label:"把握很低",cls:"bear",posMin:0.3,posMax:0.8,levMin:1,levMax:1,
     note:"指标分歧较大,建议仅用观察仓/极小仓位试错,或直接观望等待把握度提升,不建议正式重仓建仓"};
+
+  // 波动率/Beta 风险因子对仓位与杠杆的实际下调 —— 上面的把握度(conviction)只回答"方向判断有多可信",
+  // 完全没有回答"就算判断对了,这笔仓位该冒多大风险"这个独立问题。真实交易台的仓位管理是两个维度
+  // 叠加决定的: 把握度决定基础仓位/杠杆区间,波动率状态与系统性风险(Beta)在此基础上做二次收紧——
+  // 高把握但高波动率/高Beta,依然应该降杠杆,而不是无脑按把握度给满杠杆。
+  const volNotes=[];
+  if(volRisk&&volRisk.ratio!=null&&volRisk.ratio>=1.35){
+    sizeTier.levMax=Math.max(1,sizeTier.levMax-1);sizeTier.levMin=Math.min(sizeTier.levMin,sizeTier.levMax);
+    volNotes.push("波动率处于扩张状态,已下调杠杆上限");
+  }
+  if(volRisk&&volRisk.beta!=null&&Math.abs(volRisk.beta)>=1.5){
+    sizeTier.levMax=Math.max(1,sizeTier.levMax-1);sizeTier.levMin=Math.min(sizeTier.levMin,sizeTier.levMax);
+    volNotes.push(`对BTC Beta达${volRisk.beta.toFixed(1)},系统性风险偏高,建议进一步控制杠杆`);
+  }
+  if(volNotes.length)sizeTier.note+=" · "+volNotes.join(" · ");
 
   // 短线/长线周期建议: 趋势市 + ER(效率系数)高(价格是真的在朝一个方向有效移动,而不是原地来回噪音)
   // → 适合放大周期博波段(TP2/TP3);震荡市或过渡区 → 只适合短线日内(TP1),避免隔夜被区间反复打止损。
@@ -2481,8 +2806,15 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
 }
 
 /* ── SIGNAL ENGINE ── */
-function computeSignal(candles,intervalLabel,symbol){
+function computeSignal(candles,intervalLabel,symbol,ctx){
   if(!candles||candles.length<30)return null;
+  // ctx lets a background batch scan (Opportunity Radar) feed in per-symbol OI/CVD/ratio
+  // data without touching the modal's own single-symbol globals below. When omitted
+  // (the normal modal call site), it falls back to exactly those globals — so this is a
+  // pure extension, the existing single-symbol chart path behaves 100% as before.
+  ctx=ctx||{oiHist:oiHistory,cvdHist:cvdHistory,lsRatio:currentLongShortRatio,
+    topLsRatio:currentTopLongShortRatio,topLsTrendSrc:topLongShortHistory,
+    takerRatio:currentTakerRatio,fundingHist:fundingHistory};
   const closes=candles.map(c=>c.close);
   const last=candles[candles.length-1],price=last.close;
   const li=closes.length-1;
@@ -2530,6 +2862,9 @@ function computeSignal(candles,intervalLabel,symbol){
   const volTrendDown=priorVolAvg>0&&recentVolAvg<priorVolAvg*0.9;
 
   const votes=[];
+  const sigmaVal=barLogReturnSigma(closes); // 该周期下的真实已实现波动率(近100根对数收益标准差)——
+  // 提到最前面统一算一次: 既驱动下面新增的动量/波动率因子,也驱动下方TP/SL的时间与概率估算(反射原理),
+  // 避免同一个数字被算两遍、两处还可能因为窗口不同而对不上。
   votes.push({name:`EMA${adaptEmaFast}/50 趋势(自适应)`,cat:"trend",dir:(eFast!=null&&e50!=null)?(price>eFast&&eFast>e50?1:price<eFast&&eFast<e50?-1:0):0,
     detail:(eFast!=null&&e50!=null)?`ER=${er!=null?er.toFixed(2):"–"} → EMA${adaptEmaFast}=${fmtPrice(eFast)} / EMA50=${fmtPrice(e50)}`:"数据不足"});
   votes.push({name:"Vegas隧道(EMA144/169)",cat:"trend",dir:vegas.dir,detail:vegas.detail});
@@ -2539,6 +2874,9 @@ function computeSignal(candles,intervalLabel,symbol){
     detail:mh!=null?`Hist ${mh.toFixed(5)} (前${mhPrev!=null?mhPrev.toFixed(5):'–'})`:"–"});
   votes.push({name:"布林带位置",cat:"meanrev",dir:(bbU==null)?0:(price>bbM&&price<bbU?1:price<bbM&&price>bbL?-1:0),
     detail:bbU!=null?`上轨 ${fmtPrice(bbU)} / 中 ${fmtPrice(bbM)} / 下 ${fmtPrice(bbL)}`:"–"});
+  const kdjRaw=kdj(candles.map(c=>c.high),candles.map(c=>c.low),closes);
+  const kdjv=kdjVote(kdjRaw.K,kdjRaw.D,kdjRaw.J);
+  votes.push({name:"KDJ(9,3,3)",cat:"meanrev",dir:kdjv.dir,detail:kdjv.detail});
   votes.push({name:"量能方向+量能趋势",cat:"neutral",dir:Math.abs(volMom)>0.15?Math.sign(volMom):0,
     detail:`上涨量 vs 下跌量: ${volMom>=0?"买方":"卖方"}占优(${(Math.abs(volMom)*100).toFixed(0)}%) · 近10根量能${volTrendUp?"放大↑(确认动能)":volTrendDown?"萎缩↓(动能减弱)":"持平"}`});
   votes.push({name:"K线形态",cat:"neutral",dir:pattern.dir,detail:`${pattern.label} — ${pattern.detail}`});
@@ -2581,30 +2919,36 @@ function computeSignal(candles,intervalLabel,symbol){
   votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir,detail:`最近位 Fib ${(nearestFib.r*100).toFixed(1)}% ${nearestFibKind} ≈ ${fmtPrice(nearestFib.price)}`});
 
   const m=market.get(symbol);
-  const cf=cashFlowVote(oiHistory,cvdHistory,m?m.funding:null);
+  const cf=cashFlowVote(ctx.oiHist,ctx.cvdHist,m?m.funding:null);
   votes.push({name:"资金流 (OI+CVD+费率)",cat:"neutral",dir:Math.max(-1,Math.min(1,cf.dir)),detail:cf.detail});
 
-  const scv=squeezeCvdVote(bb,closes,candles,cvdHistory);
+  const scv=squeezeCvdVote(bb,closes,candles,ctx.cvdHist);
   votes.push({name:"量能挤压+CVD背离(疑似吸筹/派发)",cat:"neutral",dir:scv.dir,detail:scv.detail});
 
-  const oiv=oiChangeVote(oiHistory,candles);
+  const oiv=oiChangeVote(ctx.oiHist,candles);
   votes.push({name:"持仓量变化率 OI Δ%(1h)",cat:"trend",dir:oiv.dir,detail:oiv.detail});
 
-  const lsv=longShortVote(currentLongShortRatio);
+  const lsv=longShortVote(ctx.lsRatio);
   votes.push({name:"多空比(散户账户,反向拥挤度)",cat:"meanrev",dir:lsv.dir,detail:lsv.detail});
 
-  const ttTrend=seriesSlopeSign(topLongShortHistory);
-  const ttv=topTraderVote(currentTopLongShortRatio,currentLongShortRatio,ttTrend);
+  const ttTrend=seriesSlopeSign(ctx.topLsTrendSrc);
+  const ttv=topTraderVote(ctx.topLsRatio,ctx.lsRatio,ttTrend);
   votes.push({name:"大户多空比(顶级交易员,反向指标+散户背离)",cat:"meanrev",dir:ttv.dir,detail:ttv.detail});
 
-  const trv=takerRatioVote(currentTakerRatio);
+  const trv=takerRatioVote(ctx.takerRatio);
   votes.push({name:"吃单买卖比(主动性订单流)",cat:"trend",dir:trv.dir,detail:trv.detail});
 
-  const fsv=fundingStreakVote(fundingHistory);
+  const fsv=fundingStreakVote(ctx.fundingHist);
   votes.push({name:"资金费率连续性(Funding Streak)",cat:"meanrev",dir:fsv.dir,detail:fsv.detail});
 
   const tbs=topBottomStructureVote(oiv,m?m.funding:null,candles);
   votes.push({name:"顶/底部结构预警(OI+费率+价格三因子)",cat:"neutral",dir:tbs.dir,detail:tbs.detail});
+
+  const momF=momentumFactorVote(closes,sigmaVal);
+  votes.push({name:"动量因子 Momentum(风险调整,20/55根)",cat:"trend",dir:momF.dir,detail:momF.detail});
+
+  const volRisk=volRegimeBetaVote(closes,sigmaVal,(typeof btcCloseCache!=="undefined"&&btcCloseCache.interval===intervalLabel)?btcCloseCache.closes:null,symbol);
+  votes.push({name:"波动率状态+Beta(风险因子,不参与方向判断)",cat:"neutral",dir:0,detail:volRisk.detail});
 
   const liq=getLiqStats(symbol,3600000);
   let liqDir=0,liqDetail="近1h 清算数据不足(样本<3) — 提示: 本项仅统计本页打开期间接收到的 Binance forceOrder 实时流,不含历史/其他交易所清算,样本量有限时请优先参考上方多空比与OI变化率";
@@ -2645,17 +2989,16 @@ function computeSignal(candles,intervalLabel,symbol){
   if(m)m.signalDir=dirSign;
 
   // 指标同向占比 — 与加权得分比是两把不同的尺子:得分比可能被少数高权重指标拉高,
-  // 而这里看的是"21项指标里到底有多少项真的指向同一个方向",两者都过线才算真正可信的趋势。
+  // 而这里看的是"N项指标里到底有多少项真的指向同一个方向",两者都过线才算真正可信的趋势。
   const voteBull=votes.filter(v=>v.dir>0.05).length, voteBear=votes.filter(v=>v.dir<-0.05).length;
   const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,votes.length,regime);
   // 方向性展望: 达到方向确认门槛(dirSign≠0)时给出概率化方向 + 仓位/杠杆/周期建议;
   // 未达门槛(dirSign===0,即顶部徽章显示"中性 NEUTRAL"、可信度显示"无方向"的情况)时,
   // 不再让下面的交易计划/摘要卡片自说自话地用一个连noise都能算出符号的边际倾向去
   // 冒充确定方向——这正是之前"上面中性、下面SHORT"矛盾的根源。
-  const outlook=computeDirectionalOutlook(score,maxScore,voteBull,voteBear,votes.length,regime,er,dirSign);
+  const outlook=computeDirectionalOutlook(score,maxScore,voteBull,voteBear,votes.length,regime,er,dirSign,volRisk);
 
   const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240}[intervalLabel]||5;
-  const sigmaVal=barLogReturnSigma(closes); // 该周期下的真实已实现波动率,驱动所有TP/SL的时间与概率估算
   // dirSign===0 → 未形成方向共识,不构建挂在"某一侧结构位"上的限价单/TP/SL(那样做等于替一个
   // 没有方向依据的判断硬点一个假装有依据的价位)。改为返回 noSetup 占位对象,渲染层据此
   // 显示"无方向·不构成交易机会"而不是一整套看似煞有介事的交易计划。
@@ -2672,7 +3015,7 @@ function computeSignal(candles,intervalLabel,symbol){
     regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook};
 }
 
-/* ── SIGNAL GROUPING: maps each of the ~21 flat indicators into 4 human categories
+/* ── SIGNAL GROUPING: maps each of the ~23 flat indicators into 4 human categories
    so they can be scanned as a Bento grid instead of a wall of same-colour bars.
    Reuses the existing vote.cat field where possible; the small leftover "neutral"
    bucket is split by keyword into 结构/形态 vs 资金面/衍生品. Purely a display
@@ -2780,7 +3123,10 @@ function renderSignalOverview(sig){
 function renderChartBiasBadge(sig){
   const el=document.getElementById("chartBiasBadge");
   if(!el)return;
-  if(!sig){el.innerHTML=`<div class="bb-sub">指标数据不足(需≥30根K线)</div>`;return;}
+  if(!sig){el.className="chart-bias-badge";el.innerHTML=`<div class="bb-sub">指标数据不足(需≥30根K线)</div>`;return;}
+  // 只在方向已确认(dirSign≠0)时呼吸发光——中性/无方向不该被动效暗示"有信号",这与下方
+  // TP/SL 计划"中性时不给假计划"是同一条原则:动效本身也是一种信息,不能传达错误的确定性。
+  el.className="chart-bias-badge"+(sig.dirSign>0?" live-bull":sig.dirSign<0?" live-bear":"");
   el.innerHTML=`<div class="bb-lbl ${sig.biasCls}">${esc(sig.biasLabel)}</div><div class="bb-sub">共振度 ${sig.confluence}% · ${esc(sig.intervalLabel)} · ${esc(sig.regimeLabel)}</div>`;
 }
 /* Full signal detail (bias header + all indicator votes) — now rendered as the first card
@@ -2869,14 +3215,14 @@ function tpCardHTML(t){
     </div>
     <div class="src" style="margin-top:2px;">⏱ ${etaTxt}</div>
     <div class="prob-bar"><div class="prob-fill" style="width:${pct}%;background:${t.label==="TP1"?"var(--up)":t.label==="TP2"?"#4f8a68":"#3c6b52"}"></div></div>
-    <div class="src">📍 ${esc(t.sources.slice(0,2).join(" + "))}</div>
+    <div class="src">📍 ${esc(t.sources.join(" + "))}${t.sources.length>1?` <span class="atr-badge" style="margin-left:2px;">${t.sources.length}重共振</span>`:""}</div>
   </div>`;
 }
 function slCardHTML(plan){
   return `<div class="tp-card sl">
     <div class="row1"><span class="lab">SL 止损</span><span class="down">${fmtPrice(plan.sl)}</span></div>
     <div class="row2"><span><span class="rr-badge" title="止损距离,是下方每一档TP各自R:R的分母">对TP1 R:R ${plan.rr}</span></span><span>${plan.dir>0?"做多 LONG":"做空 SHORT"}</span></div>
-    <div class="src">📍 距限价入场 ${fmtPrice(Math.abs(plan.entry-plan.sl))} · ${esc(plan.slSources.slice(0,2).join(" + "))}</div>
+    <div class="src">📍 距限价入场 ${fmtPrice(Math.abs(plan.entry-plan.sl))} · ${esc(plan.slSources.join(" + "))}</div>
     ${plan.sigma==null?'<div class="src" style="color:var(--amber);">⚠ 该周期K线样本不足,以下概率退回旧版ATR估算,可信度较低,建议切换更长的K线周期后重新查看</div>':''}
   </div>`;
 }
@@ -2888,11 +3234,11 @@ function entryCardHTML(plan){
     <div class="row1"><span class="lab">LIMIT 入场</span><span style="color:var(--amber);">${fmtPrice(plan.entry)}</span></div>
     <div class="row2"><span class="prob-tag">成交概率 ~${ei.prob}%</span><span class="eta-live">${esc(fmtEtaFull(ei.eta))}</span></div>
     <div class="row3">
-      <span class="horizon-badge" style="border-color:rgba(240,177,50,.3);color:var(--amber);">${esc(waitWord)}</span>
+      <span class="horizon-badge pending" style="border-color:rgba(240,177,50,.3);color:var(--amber);">${esc(waitWord)}</span>
       <span class="atr-badge" style="margin-left:4px;">较现价 ${pctTxt}</span>
     </div>
     <div class="prob-bar"><div class="prob-fill" style="width:${ei.prob}%;background:var(--amber);"></div></div>
-    <div class="src">📍 现价 ${fmtPrice(ei.marketPrice)} → 限价挂单 ${fmtPrice(plan.entry)}(非市价单)· ${esc(ei.sources.slice(0,2).join(" + "))}</div>
+    <div class="src">📍 现价 ${fmtPrice(ei.marketPrice)} → 限价挂单 ${fmtPrice(plan.entry)}(非市价单)· ${esc(ei.sources.join(" + "))}</div>
     <div class="src" style="color:var(--down);margin-top:3px;">⛔ 失效撤单价 ${fmtPrice(ei.invalidatePrice)} — ${esc(ei.invalidateNote)}</div>
   </div>`;
 }
@@ -3377,6 +3723,14 @@ async function loadExtras(symbol){
 async function loadCryptoDetail(symbol){
   const m=market.get(symbol);
   renderDetailHeader(symbol);
+  // Beta/相关性用的BTC收盘价缓存: 不阻塞主K线加载,拉取完成后若还停留在同一个币种就用最新数据
+  // 重新算一次信号(和下面资金流/多空比等异步数据到达后的刷新模式完全一致)。
+  ensureBtcCloses(chartInterval).then(()=>{
+    if(selectedSymbol===symbol&&lastCandles.length){
+      const sig=computeSignal(lastCandles,chartInterval,symbol);
+      renderChartBiasBadge(sig);renderModalScroll(sig);
+    }
+  });
   try{
     // Binance caps a single klines call at 1500 bars. Vegas隧道(EMA144/169) and reliable
     // pattern/structure reads need real lookback, so page backward for a 2nd batch → up to
