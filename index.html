@@ -580,6 +580,16 @@
   .stat-mini .k{font-size:11px;color:var(--dim2);letter-spacing:.3px;}
   .stat-mini .v{font-size:17px;font-weight:700;}
   .stat-mini .note{font-size:11px;color:var(--dim2);}
+  /* ── BACKTEST PANEL ── */
+  .bt-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .bt-progress-wrap{height:6px;border-radius:3px;background:var(--panel2);border:1px solid var(--line2);overflow:hidden;margin:8px 0;}
+  .bt-progress-bar{height:100%;background:var(--amber);transition:width .15s;}
+  .bt-compare-row{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap;}
+  .bt-compare-col{flex:1;min-width:220px;border:1px solid var(--line2);border-radius:6px;padding:10px 12px;background:var(--panel2);}
+  .bt-compare-col .hd{font-size:12px;letter-spacing:1px;color:var(--dim2);text-transform:uppercase;margin-bottom:6px;}
+  .bt-calib{font-size:12px;margin-top:6px;padding:8px 10px;border-radius:5px;border:1px solid var(--line2);background:var(--panel2);line-height:1.5;}
+  .bt-calib.good{border-color:rgba(62,207,142,.35);background:rgba(62,207,142,.06);}
+  .bt-calib.bad{border-color:rgba(240,79,87,.35);background:rgba(240,79,87,.06);}
   .topbottom-banner{border-radius:6px;padding:12px 16px;margin-top:6px;border:1px solid var(--line2);background:var(--panel2);}
   .topbottom-banner.top{border-color:rgba(240,79,87,.35);background:rgba(240,79,87,.06);}
   .topbottom-banner.bottom{border-color:rgba(62,207,142,.35);background:rgba(62,207,142,.06);}
@@ -966,7 +976,7 @@
     </div>
     <div class="modal-body" id="modalBody">
       <div class="chart-toggle-bar" id="chartToggleBar">
-        <span class="ctb-lbl">📈 K线图 · EMA / Vegas隧道 / VWAP / Supertrend</span>
+        <span class="ctb-lbl">📈 K线图 · EMA / Vegas隧道 / VWAP / 锚定VWAP+σ带 / Supertrend</span>
         <button class="ctb-btn" id="chartToggleBtn">展开 ▾</button>
       </div>
       <div class="modal-top" id="modalTop">
@@ -977,7 +987,8 @@
           <span><i style="background:#c6a565"></i>EMA50</span>
           <span><i style="background:#9c85b0"></i>Vegas144</span>
           <span><i style="background:#6f5a8f"></i>Vegas169</span>
-          <span><i style="background:#cdb173"></i>VWAP</span>
+          <span><i style="background:#cdb173"></i>VWAP(窗口)</span>
+          <span><i style="background:#e0b84a"></i>VWAP(摆动锚定)</span>
           <span><i style="background:#c17a4a"></i>Supertrend</span>
         </div>
         <div class="chart-bias-badge" id="chartBiasBadge"></div>
@@ -1068,7 +1079,9 @@ let ws=null, wsReconnectAttempt=0, subscribedStreams=new Set(), lastWsTickAt=0, 
 let chart=null, candleSeries=null, volumeSeries=null, klineWs=null;
 let emaSeries20=null, emaSeries50=null, emaSeriesVegas144=null, emaSeriesVegas169=null;
 let vwapSeries=null, supertrendSeries=null;
+let avwapSeries=null, avwapUpper1=null, avwapLower1=null;
 let oiHistory=[], cvdHistory=[], lastCandles=[], lastSignalComputeAt=0;
+let higherTfCandles=[], higherTfLabel=null, higherTfForSymbol=null;
 let fundingHistory=[], longShortHistory=[], currentLongShortRatio=null;
 // BTC 收盘价缓存,供 volRegimeBetaVote 算山寨币对BTC的Beta/相关性用。独立于主K线流,
 // 按当前图表周期缓存60秒,避免每次切换币种都重新拉一次BTC K线(BTC本身切换币种时不需要算自己的Beta)。
@@ -1079,6 +1092,38 @@ async function ensureBtcCloses(interval){
     const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=BTCUSDT&interval=${interval}&limit=150`);
     btcCloseCache={interval,closes:kl.map(k=>+k[4]),fetchedAt:Date.now()};
   }catch(e){ /* best-effort: Beta票在缺BTC数据时会自行降级为仅波动率状态,不阻塞主流程 */ }
+}
+/* ── 多周期共振(MTF) ── 用户明确问到"1小时和4小时是否会影响结果":答案是会,而且理应会——
+   不同周期反映的是不同交易时长的参与者行为,这不是bug而是市场结构本身的特性。与其让用户自己
+   切换周期去对比,这里在加载任一周期时自动额外拉一份"上一级更大周期"的K线,算出那个更大周期
+   自己的趋势方向(EMA20/50+MACD柱状图,同样是纯价格行为、无未来函数),再和当前周期的信号做
+   一次"多周期是否共振"的确认——两个周期方向一致时,是真正意义上的"大小周期共振",可信度更高;
+   方向相反时(比如1h看多但4h仍是空头结构),说明这更可能是大周期下的一次反抽/回调,而不是新趋势的
+   开始,应该更谨慎。 */
+function higherTfOf(interval){
+  return{"1m":"15m","5m":"1h","15m":"1h","1h":"4h","4h":"1d","1d":"1d"}[interval]||interval;
+}
+async function ensureHigherTf(symbol,interval){
+  const htf=higherTfOf(interval);
+  if(higherTfForSymbol===symbol+"|"+interval&&higherTfCandles.length)return;
+  try{
+    const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${htf}&limit=200`);
+    higherTfCandles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+    higherTfLabel=htf;higherTfForSymbol=symbol+"|"+interval;
+  }catch(e){higherTfCandles=[];higherTfLabel=htf;}
+}
+function computeHigherTfBias(candles){
+  if(!candles||candles.length<55)return{dir:0,detail:"数据不足"};
+  const closes=candles.map(c=>c.close);
+  const e20=ema(closes,20),e50=ema(closes,50);
+  const li=closes.length-1,eF=e20[li],eS=e50[li];
+  const m=macd(closes),mh=m.hist[li],mhPrev=m.hist[li-1];
+  let dir=0;
+  const emaDir=(eF!=null&&eS!=null)?(closes[li]>eF&&eF>eS?1:closes[li]<eF&&eF<eS?-1:0):0;
+  const macdDir=(mh==null||mhPrev==null)?0:(mh>0&&mh>mhPrev?1:mh<0&&mh<mhPrev?-1:0);
+  dir=emaDir+macdDir; // -2..2
+  const dirSign=dir>=1?1:dir<=-1?-1:0;
+  return{dir:dirSign,detail:`EMA20/50 ${emaDir>0?"多头排列":emaDir<0?"空头排列":"缠绕"} · MACD柱 ${macdDir>0?"走强":macdDir<0?"走弱":"持平"}`};
 }
 let topLongShortHistory=[], currentTopLongShortRatio=null;
 let takerRatioHistory=[], currentTakerRatio=null;
@@ -1211,6 +1256,21 @@ function init(){
     if(expanded)requestAnimationFrame(()=>{if(chart)chart.timeScale().fitContent();});
   });
   document.addEventListener("keydown",(e)=>{if(e.key==="Escape"&&document.getElementById("modalOverlay").classList.contains("open"))closeModal();});
+  // 回测面板按钮是随modalScroll整段innerHTML一起动态生成/销毁的,不能在这里直接绑定,
+  // 改用事件委托挂在document上,按钮每次被重新渲染出来也照样能响应点击。
+  document.addEventListener("click",(e)=>{
+    const btn=e.target.closest(".bt-run-btn");
+    if(btn){
+      const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
+      if(symbol&&interval)performBacktestRun(symbol,interval,btSampleSize);
+    }
+  });
+  document.addEventListener("change",(e)=>{
+    if(e.target&&e.target.id==="btSampleSelect"){
+      btSampleSize=parseInt(e.target.value,10)||600;
+      refreshBacktestUIOnly();
+    }
+  });
   setInterval(tickClock,1000); tickClock();
   initOrbitCore();
   initCrypto();
@@ -2022,7 +2082,9 @@ function biasIndicator(closes,period=20){
   return closes.map((c,i)=>ma[i]!=null?(c-ma[i])/ma[i]*100:null);
 }
 
-/* VWAP — 以本次加载的K线窗口起点为锚点的累计成交量加权均价(典型价×量 累计/量累计)。*/
+/* VWAP — 以本次加载的K线窗口起点为锚点的累计成交量加权均价(典型价×量 累计/量累计)。
+   注意: 这个锚点是"这一次API请求恰好拉到多少根历史K线"决定的,跟行情本身没有关系,
+   只是工程上的默认起点,严格来说不是专业交易员理解的"VWAP锚点"——见下方 computeAnchoredVWAP。*/
 function computeVWAP(candles){
   let cumPV=0,cumV=0;
   return candles.map(c=>{
@@ -2031,6 +2093,43 @@ function computeVWAP(candles){
     return cumV>0?cumPV/cumV:null;
   });
 }
+
+/* Anchored VWAP(锚定VWAP)+ 标准差带 — 专业交易员真正在用的VWAP是"从某个有意义的事件点
+   (最近一次显著摆动高点或低点)开始重新累计"的均价,而不是"数据窗口随便从哪根K线开始"。
+   锚点选择: 在最近 lookback 根K线里,取"离现在最近的、且价格位移幅度最大"的摆动高点或低点
+   作为锚点(即最近一次真正的结构转折,而不是随手选一个点)。同时按累计成交量方差算出
+   ±1σ/±2σ带,给出"价格偏离VWAP多少个标准差"这个统计量,可以和布林带一样作为均值回归/
+   超买超卖的确认维度,而不只是一条孤立的线。*/
+function computeAnchoredVWAP(candles,highs,lows,lookback=120){
+  const n=candles.length;
+  if(n<10)return{series:[],anchorIdx:null,anchorLabel:null};
+  const recentPivots=[...highs,...lows].filter(p=>p.i>=n-lookback&&p.i<n-2);
+  let anchorIdx;
+  if(recentPivots.length){
+    // 幅度最大的摆动点(相对锚点搜索窗口内的价格振幅)= 最有"重新定价意义"的转折点
+    const winHigh=Math.max(...candles.slice(Math.max(0,n-lookback)).map(c=>c.high));
+    const winLow=Math.min(...candles.slice(Math.max(0,n-lookback)).map(c=>c.low));
+    const mid=(winHigh+winLow)/2;
+    recentPivots.sort((a,b)=>Math.abs(b.price-mid)-Math.abs(a.price-mid));
+    anchorIdx=recentPivots[0].i;
+  }else{
+    anchorIdx=Math.max(0,n-lookback);
+  }
+  let cumPV=0,cumV=0,cumPV2=0;
+  const series=new Array(n).fill(null);
+  for(let i=anchorIdx;i<n;i++){
+    const c=candles[i],typical=(c.high+c.low+c.close)/3,vol=c.volume||0;
+    cumPV+=typical*vol;cumV+=vol;cumPV2+=typical*typical*vol;
+    if(cumV>0){
+      const vwap=cumPV/cumV;
+      const variance=Math.max(0,cumPV2/cumV-vwap*vwap);
+      const sd=Math.sqrt(variance);
+      series[i]={vwap,upper1:vwap+sd,lower1:vwap-sd,upper2:vwap+2*sd,lower2:vwap-2*sd,sd};
+    }
+  }
+  return{series,anchorIdx,anchorLabel:candles[anchorIdx]?fmtTs(candles[anchorIdx].time):null};
+}
+function fmtTs(t){try{const d=new Date(t*1000);return`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}catch(e){return"";}}
 
 /* volume momentum: measures if volume is increasing on up-bars vs down-bars */
 function volumeMomentum(candles,period=10){
@@ -2243,7 +2342,26 @@ function buildVolumeProfile(candles,bins=24){
   return{bars,poc:priceOf(maxIdx),pocPct:vol[maxIdx]/total,valueAreaHigh:priceOf(hi_i),valueAreaLow:priceOf(lo_i),hvns,total};
 }
 
-function buildStructureLevels(candles,price,highs,lows,volProfile){
+/* 趋势线线性回归拟合 — 用最近N个摆动点(而非仅仅"连接最后两点")做最小二乘回归,
+   返回斜率/截距/拟合优度R²。R²越接近1,说明这些摆动点真的近似排列在一条直线上(这条
+   "线"是市场自己走出来的真实趋势线);R²很低说明这些高点/低点根本不在一条线上,连出来的
+   只是噪音,此时不应该把它当作一条有效趋势线拿去用——这是"连最后两点必定成一条线,无论
+   这条线有没有意义"这个老问题的直接修复。 */
+function linRegTrendline(points){
+  const n=points.length;
+  if(n<2)return null;
+  const sx=points.reduce((s,p)=>s+p.i,0),sy=points.reduce((s,p)=>s+p.price,0);
+  const mx=sx/n,my=sy/n;
+  let num=0,den=0;
+  points.forEach(p=>{num+=(p.i-mx)*(p.price-my);den+=(p.i-mx)*(p.i-mx);});
+  if(den===0)return null;
+  const slope=num/den,intercept=my-slope*mx;
+  let ssRes=0,ssTot=0;
+  points.forEach(p=>{const fit=slope*p.i+intercept;ssRes+=(p.price-fit)**2;ssTot+=(p.price-my)**2;});
+  const r2=ssTot>0?Math.max(0,1-ssRes/ssTot):(ssRes===0?1:0);
+  return{slope,intercept,r2,n};
+}
+function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap){
   const fibHi=highs.length?Math.max(...highs.slice(-5).map(h=>h.price)):Math.max(...candles.slice(-80).map(c=>c.high));
   const fibLo=lows.length?Math.min(...lows.slice(-5).map(l=>l.price)):Math.min(...candles.slice(-80).map(c=>c.low));
   const fibs=fibLevels(fibHi,fibLo).filter(f=>f.price>0);
@@ -2251,27 +2369,40 @@ function buildStructureLevels(candles,price,highs,lows,volProfile){
   highs.slice(-6).forEach(h=>candidates.push({price:h.price,src:"摆动高点(缠论分型)",w:1}));
   lows.slice(-6).forEach(l=>candidates.push({price:l.price,src:"摆动低点(缠论分型)",w:1}));
   fibs.forEach(f=>candidates.push({price:f.price,src:`Fib ${(f.r*100).toFixed(1)}% ${f.kind==="ext"?"扩展":"回撤"}`,w:f.kind==="ext"?0.55:0.6}));
-  // 趋势线(图线支撑/压力): 连接最近两个摆动高点/最近两个摆动低点,按斜率外推到当前K线位置。
-  // 这是真正的一条"线",不是水平点位,用来满足"图线支撑"这一确认维度,与斐波那契、分型点、
-  // POC/HVN 一起构成多重结构共振,而不只是孤立的价格点。
-  if(highs.length>=2){
-    const h1=highs[highs.length-2],h2=highs[highs.length-1],span=h2.i-h1.i;
-    if(span>0){
-      const slope=(h2.price-h1.price)/span;
-      const lineVal=h2.price+slope*((candles.length-1)-h2.i);
-      if(isFinite(lineVal)&&lineVal>0)candidates.push({price:lineVal,src:`趋势线(连接摆动高点,${slope>=0?"上倾":"下倾"})`,w:0.9});
-    }
-  }
-  if(lows.length>=2){
-    const l1=lows[lows.length-2],l2=lows[lows.length-1],span=l2.i-l1.i;
-    if(span>0){
-      const slope=(l2.price-l1.price)/span;
-      const lineVal=l2.price+slope*((candles.length-1)-l2.i);
-      if(isFinite(lineVal)&&lineVal>0)candidates.push({price:lineVal,src:`趋势线(连接摆动低点,${slope>=0?"上倾":"下倾"})`,w:0.9});
-    }
-  }
+  // 趋势线(图线支撑/压力) — 改为对最近N个摆动高点/摆动低点做最小二乘回归(而不是仅仅
+  // "连接最后两点",两点永远能连成一条线,但那条线不一定有任何统计意义),外推到当前K线位置。
+  // 用拟合优度R²同时做两件事: ①低于阈值(0.4)时直接不采纳这条线,避免把纯噪音连出来的假线
+  // 当作真趋势线用;②达标时按R²把它的权重从0.5线性插值到1.15(拟合越好、这条线越"真实"、
+  // 权重越高),这样"这条趋势线有多可信"是一个算出来的数字,而不是固定写死的0.9。
+  const trendlineFit=(pts,label)=>{
+    const use=pts.slice(-5); // 最近5个摆动点做回归,兼顾"够新鲜"与"够抗噪"
+    if(use.length<3)return null; // 少于3点无法评估拟合优度,回退到不生成(而不是硬连2点)
+    const fit=linRegTrendline(use);
+    if(!fit||fit.r2<0.4)return null;
+    const lineVal=fit.slope*(candles.length-1)+fit.intercept;
+    if(!isFinite(lineVal)||lineVal<=0)return null;
+    const w=0.5+Math.min(1,fit.r2)*0.65;
+    return{price:lineVal,src:`趋势线(回归拟合${use.length}个摆动${label},R²=${fit.r2.toFixed(2)},${fit.slope>=0?"上倾":"下倾"})`,w};
+  };
+  const trHigh=trendlineFit(highs,"高点");
+  if(trHigh)candidates.push(trHigh);
+  const trLow=trendlineFit(lows,"低点");
+  if(trLow)candidates.push(trLow);
   if(volProfile.poc!=null)candidates.push({price:volProfile.poc,src:"POC 成交成本中枢",w:1.6});
   (volProfile.hvns||[]).forEach(h=>candidates.push({price:h.price,src:"高成交密集区 HVN",w:1.1}));
+  // 锚定VWAP及其σ带,同样作为结构候选位纳入共振聚类——均值本身+1σ/2σ带,一共最多5条价位,
+  // 与摆动点/斐波那契/趋势线/POC一起参与下面的价位聚类(彼此接近的候选会被合并成同一档,
+  // 合并后的权重相加,这正是"多重指标共振"的实现方式,而不是分开各算各的)。
+  if(anchoredVwap&&anchoredVwap.series&&anchoredVwap.series.length){
+    const last=anchoredVwap.series[anchoredVwap.series.length-1];
+    if(last){
+      candidates.push({price:last.vwap,src:`锚定VWAP(自${anchoredVwap.anchorLabel||"摆动点"}起累计)`,w:1.3});
+      candidates.push({price:last.upper1,src:"VWAP +1σ",w:0.7});
+      candidates.push({price:last.lower1,src:"VWAP -1σ",w:0.7});
+      candidates.push({price:last.upper2,src:"VWAP +2σ",w:0.45});
+      candidates.push({price:last.lower2,src:"VWAP -2σ",w:0.45});
+    }
+  }
   candidates.sort((a,b)=>a.price-b.price);
   const tol=price*0.004;
   const clusters=[];
@@ -2901,6 +3032,19 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   votes.push({name:"VWAP(窗口锚定)",cat:"trend",dir:vwapDist==null?0:(vwapDist>0.15?1:vwapDist<-0.15?-1:0),
     detail:vwapVal!=null?`VWAP ${fmtPrice(vwapVal)} · 价格偏离 ${vwapDist>=0?"+":""}${vwapDist.toFixed(2)}%`:"数据不足"});
 
+  // 锚定VWAP(自最近一次真实摆动转折点起重新累计)+ σ带 — 与上面"窗口锚定VWAP"是两把不同的尺子:
+  // 窗口锚定看的是"这批K线整体的均价重心",锚定VWAP看的是"上一次结构转折以来,市场真实的
+  // 平均成本在哪、现在偏离了多少个标准差",更接近专业交易台判断均值回归/趋势延续的方式。
+  const avwap=computeAnchoredVWAP(candles,highs,lows);
+  const avwapLast=avwap.series.length?avwap.series[avwap.series.length-1]:null;
+  let avwapDir=0,avwapDetail="数据不足(锚点附近K线过少)";
+  if(avwapLast){
+    const z=avwapLast.sd>0?(price-avwapLast.vwap)/avwapLast.sd:0;
+    avwapDir=z>0.5?1:z<-0.5?-1:0;
+    avwapDetail=`锚点 ${avwap.anchorLabel||"–"} · VWAP ${fmtPrice(avwapLast.vwap)} · 偏离 ${z>=0?"+":""}${z.toFixed(2)}σ`;
+  }
+  votes.push({name:"锚定VWAP(摆动点起+σ带)",cat:"trend",dir:avwapDir,detail:avwapDetail});
+
   const lastHigh=highs.length?highs[highs.length-1]:null,prevHigh=highs.length>1?highs[highs.length-2]:null;
   const lastLow=lows.length?lows[lows.length-1]:null,prevLow=lows.length>1?lows[lows.length-2]:null;
   let structDir=0,structDetail="分型点不足(需更多历史K线)";
@@ -2912,11 +3056,21 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   votes.push({name:"缠论 · 笔结构分析",cat:"trend",dir:structDir,detail:structDetail});
 
   const volProfile=buildVolumeProfile(candles);
-  const structure=buildStructureLevels(candles,price,highs,lows,volProfile);
+  const structure=buildStructureLevels(candles,price,highs,lows,volProfile,avwap);
   const nearestFib=fibLevels(structure.fibHi,structure.fibLo).reduce((p,c)=>Math.abs(c.price-price)<Math.abs(p.price-price)?c:p);
   const fibDir=price>=structure.fibHi*0.995?1:price<=structure.fibLo*1.005?-1:0;
   const nearestFibKind=nearestFib.kind==="ext"?"扩展":"回撤";
   votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir,detail:`最近位 Fib ${(nearestFib.r*100).toFixed(1)}% ${nearestFibKind} ≈ ${fmtPrice(nearestFib.price)}`});
+
+  // 多周期共振(MTF): 只在已经拉到"当前周期对应的上一级更大周期"K线、且确认是同一个币种时才纳入投票,
+  // 避免用户刚切换币种/周期、更大周期数据还没取回来时把上一个币种的旧数据当成这个币种的共振结果用。
+  let mtfDir=0,mtfDetail="加载中…";
+  if(typeof higherTfForSymbol!=="undefined"&&higherTfForSymbol===symbol+"|"+intervalLabel&&higherTfCandles.length){
+    const hb=computeHigherTfBias(higherTfCandles);
+    mtfDir=hb.dir;
+    mtfDetail=`${higherTfLabel}周期: ${hb.detail} → ${hb.dir>0?"与更大周期同向偏多":hb.dir<0?"与更大周期同向偏空":"更大周期方向不明确"}`;
+  }
+  votes.push({name:`多周期共振(${intervalLabel}→${typeof higherTfLabel!=="undefined"&&higherTfLabel?higherTfLabel:"–"})`,cat:"trend",dir:mtfDir,detail:mtfDetail});
 
   const m=market.get(symbol);
   const cf=cashFlowVote(ctx.oiHist,ctx.cvdHist,m?m.funding:null);
@@ -3012,7 +3166,226 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   const mercury=getMercuryStatus();
 
   return{price,votes,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook};
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook};
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 走步式回测引擎(WALK-FORWARD BACKTEST) ──
+   用户的核心质疑: "斐波那契/趋势线/图形分析是不是死数据、有没有逻辑、能不能信"。
+   回答方式不是嘴上保证,而是把"实盘会用哪套入场/止盈/止损逻辑"原样搬到历史K线上跑一遍,
+   逐根K线往前走(每一步只用这根K线之前的数据算信号,严禁用到未来数据),记录:
+   ①这根K线上是否会挂出一笔限价单 ②这笔限价单历史上真的成交了没有 ③成交后是先摸到止盈
+   还是先摸到止损。样本量越大,统计出来的胜率/期望值就越能说明"这套方法到底灵不灵"。
+
+   诚实的边界(必须向用户交代清楚,不能假装什么都能回测):
+   实盘信号引擎里还包含资金费率、OI持仓量变化、CVD主动性资金流、大户/散户多空比、
+   清算数据、Deribit期权PCR/IV Skew——这些是"当下实时状态",Binance K线接口根本不提供
+   历史快照,没有任何方式能诚实地回测它们(伪造历史资金费率/OI数据是绝对不可接受的)。
+   因此回测引擎只使用"从K线本身能算出来的"指标子集: EMA/Vegas隧道/RSI/MACD/布林带/KDJ/
+   量能动量/K线形态/Supertrend/BIAS乖离率/VWAP(窗口+摆动锚定)/缠论笔结构/斐波那契/趋势线
+   (回归拟合)——这些恰好也是"图形分析"部分的全部指标,即用户最想验证的那一部分。
+   入场价、止盈、止损、失效撤单价的计算函数(computeLimitEntry / buildTradePlan)与实盘
+   完全是同一套代码,不是另外写的简化版——这是回答"entry price是否始终用同一套逻辑"
+   最直接的方式:不是嘴上说"是",而是回测和实盘物理上调用的是同一个函数。
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+const BT_INTERVAL_MINUTES={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440};
+
+function backtestWeightFor(regime,cat){
+  if(regime==="trend")return cat==="trend"?1.4:cat==="meanrev"?0.6:1.0;
+  if(regime==="range")return cat==="meanrev"?1.4:cat==="trend"?0.6:1.0;
+  return 1.0;
+}
+
+/* 逐根K线的核心投票快照——只使用价格/成交量本身能算出的指标子集(见上方说明)。
+   pre: 在整个回测循环开始前对整段K线只算一次的"全历史因果序列"(EMA/RSI/MACD/BB/ATR/
+   Supertrend/Choppiness/KDJ 等),在这里按 idx 直接取值,避免每一步都重新对整段历史
+   重算一遍造成 O(n²) 的计算量。findPivots/VolumeProfile/结构位/锚定VWAP 这几项需要一个
+   "以idx为终点"的滑动窗口(而不是整段历史),用固定长度(200根)截取,同样只是 O(200)
+   的固定开销,不随 idx 增长而变慢。*/
+function backtestSnapshotAt(candles,idx,intervalLabel,pre){
+  const WIN=200;
+  const winStart=Math.max(0,idx-WIN+1);
+  const winCandles=candles.slice(winStart,idx+1); // 200根定长窗口,末尾=idx,不含未来数据
+  const price=candles[idx].close;
+  const{highs,lows}=findPivots(winCandles);
+  const ciVal=pre.ciF[idx];
+  let regime="mixed";
+  if(ciVal!=null){if(ciVal>=61.8)regime="range";else if(ciVal<=38.2)regime="trend";}
+  const votes=[];
+  const eFast=pre.ema20F[idx],e50=pre.ema50F[idx];
+  votes.push({name:"EMA20/50趋势",cat:"trend",dir:(eFast!=null&&e50!=null)?(price>eFast&&eFast>e50?1:price<eFast&&eFast<e50?-1:0):0});
+  // Vegas隧道(与live版本相同的算法,直接从预算好的causal EMA144/169数组取值,不重新算)
+  {
+    const e144=pre.ema144F[idx],e169=pre.ema169F[idx];
+    let vDir=0;
+    if(e144!=null&&e169!=null&&idx>=20){
+      const bullTunnel=e144>e169,hi=Math.max(e144,e169),lo=Math.min(e144,e169);
+      if(price>hi)vDir=bullTunnel?1:0.5;else if(price<lo)vDir=bullTunnel?-0.5:-1;
+    }
+    votes.push({name:"Vegas隧道",cat:"trend",dir:vDir});
+  }
+  const r=pre.rsiF[idx];
+  votes.push({name:"RSI14",cat:"meanrev",dir:r==null?0:(r>58?1:r<42?-1:0)});
+  const mh=pre.macdF.hist[idx],mhPrev=pre.macdF.hist[idx-1];
+  votes.push({name:"MACD柱",cat:"trend",dir:(mh==null||mhPrev==null)?0:(mh>0&&mh>mhPrev?1:mh<0&&mh<mhPrev?-1:0)});
+  const bbU=pre.bbF.upper[idx],bbL=pre.bbF.lower[idx],bbM=pre.bbF.mid[idx];
+  votes.push({name:"布林带位置",cat:"meanrev",dir:(bbU==null)?0:(price>bbM&&price<bbU?1:price<bbM&&price>bbL?-1:0)});
+  // KDJ: 直接从预算好的K/D/J因果数组取idx与idx-1,复刻kdjVote的判定逻辑,不重新切片重算
+  {
+    const k=pre.kdjK[idx],d=pre.kdjD[idx],j=pre.kdjJ[idx],pk=pre.kdjK[idx-1],pd=pre.kdjD[idx-1];
+    let dir=0;
+    if(k!=null&&d!=null){
+      if(pk!=null&&pd!=null&&pk<pd&&k>d&&k<40)dir=0.75;
+      else if(pk!=null&&pd!=null&&pk>pd&&k<d&&k>60)dir=-0.75;
+      else if(k>d)dir=Math.max(0.1,Math.min(0.5,(k-d)/20));
+      else dir=Math.min(-0.1,Math.max(-0.5,(k-d)/20));
+      if(j!=null&&j>100)dir=Math.min(dir,-0.15);
+      if(j!=null&&j<0)dir=Math.max(dir,0.15);
+    }
+    votes.push({name:"KDJ",cat:"meanrev",dir});
+  }
+  const volMom=volumeMomentum(candles.slice(Math.max(0,idx-40),idx+1),14);
+  votes.push({name:"量能方向",cat:"neutral",dir:Math.abs(volMom)>0.15?Math.sign(volMom):0});
+  const pattern=detectCandlePattern(candles.slice(Math.max(0,idx-3),idx+1));
+  votes.push({name:"K线形态",cat:"neutral",dir:pattern.dir});
+  const stTrend=pre.stF.trend[idx],stLine=pre.stF.line[idx];
+  votes.push({name:"Supertrend",cat:"trend",dir:stLine!=null?stTrend:0});
+  const biasVal=pre.biasF[idx];
+  const atrVal=pre.atrF[idx]||(price*0.01);
+  const atrPct=(atrVal/price)*100;
+  const biasThresh=Math.max(3,atrPct*2);
+  let biasDir=0;
+  if(biasVal!=null){if(biasVal>biasThresh)biasDir=-1;else if(biasVal<-biasThresh)biasDir=1;}
+  votes.push({name:"BIAS乖离率",cat:"meanrev",dir:biasDir});
+  const vwapArrWin=computeVWAP(winCandles);
+  const vwapVal=vwapArrWin[vwapArrWin.length-1];
+  const vwapDist=vwapVal?((price-vwapVal)/vwapVal*100):null;
+  votes.push({name:"VWAP窗口",cat:"trend",dir:vwapDist==null?0:(vwapDist>0.15?1:vwapDist<-0.15?-1:0)});
+  const volProfile=buildVolumeProfile(winCandles);
+  const avwap=computeAnchoredVWAP(winCandles,highs,lows);
+  const avwapLast=avwap.series.length?avwap.series[avwap.series.length-1]:null;
+  if(avwapLast){
+    const z=avwapLast.sd>0?(price-avwapLast.vwap)/avwapLast.sd:0;
+    votes.push({name:"锚定VWAP",cat:"trend",dir:z>0.5?1:z<-0.5?-1:0});
+  }
+  const lastHigh=highs.length?highs[highs.length-1]:null,prevHigh=highs.length>1?highs[highs.length-2]:null;
+  const lastLow=lows.length?lows[lows.length-1]:null,prevLow=lows.length>1?lows[lows.length-2]:null;
+  let structDir=0;
+  if(lastHigh&&prevHigh&&lastLow&&prevLow){
+    const hh=lastHigh.price>prevHigh.price,hl=lastLow.price>prevLow.price;
+    structDir=(hh&&hl)?1:((!hh)&&(!hl))?-1:0;
+  }
+  votes.push({name:"缠论笔结构",cat:"trend",dir:structDir});
+  const structure=buildStructureLevels(winCandles,price,highs,lows,volProfile,avwap);
+  const nearestFib=fibLevels(structure.fibHi,structure.fibLo).reduce((p,c)=>Math.abs(c.price-price)<Math.abs(p.price-price)?c:p,{r:0,price:price});
+  const fibDir=price>=structure.fibHi*0.995?1:price<=structure.fibLo*1.005?-1:0;
+  votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir});
+
+  votes.forEach(v=>{v.w=backtestWeightFor(regime,v.cat);});
+  const score=votes.reduce((s,v)=>s+v.dir*v.w,0);
+  const maxScore=votes.reduce((s,v)=>s+v.w,0);
+  const dirSign=score>maxScore*0.15?1:score<-maxScore*0.15?-1:0;
+  const voteBull=votes.filter(v=>v.dir>0.05).length,voteBear=votes.filter(v=>v.dir<-0.05).length;
+  const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,votes.length,regime);
+  const closesTail=pre.closesFull.slice(Math.max(0,idx-105),idx+1);
+  const sigmaVal=barLogReturnSigma(closesTail);
+  const intervalMinutes=BT_INTERVAL_MINUTES[intervalLabel]||60;
+  let plan=null;
+  if(dirSign!==0){
+    plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,Math.round(((score+maxScore)/(2*maxScore))*100),vwapVal,sigmaVal,reliability);
+  }
+  return{dirSign,plan,reliability};
+}
+
+/* 逐笔向前模拟: 这笔限价单历史上有没有真的成交(挂单成交前若先反向击穿失效撤单价则视为撤单,
+   不计入胜负统计,这与实盘操作手册的规则完全一致——用户被要求"应撤单离场"的那一条,在这里
+   同样被严格执行,而不是既写了规则又在回测里假装它不存在),成交后是先摸到TP1还是先摸到SL。
+   同一根K线内TP1和SL都被摸到(OHLC数据无法判断分钟级别的先后顺序)时,保守地判定为止损优先——
+   宁可低估胜率,不能高估。*/
+function simulateTradeOutcome(candles,idx,plan,intervalMinutes){
+  const dirSign=plan.dir,entry=plan.entry,invalidate=plan.entryInfo.invalidatePrice,sl=plan.sl,tp1=plan.tps[0].price;
+  const maxWaitBars=Math.min(300,Math.max(6,Math.round(((plan.entryInfo.eta||240)/intervalMinutes)*3)));
+  let filledAtBar=null;
+  for(let i=idx+1;i<candles.length&&i<=idx+maxWaitBars;i++){
+    const c=candles[i];
+    if(dirSign>0){
+      if(c.low<=invalidate)return{status:"cancelled"};
+      if(c.high>=entry){filledAtBar=i;break;}
+    }else{
+      if(c.high>=invalidate)return{status:"cancelled"};
+      if(c.low<=entry){filledAtBar=i;break;}
+    }
+  }
+  if(filledAtBar==null)return{status:"unfilled"};
+  const horizonBars=Math.max(10,Math.round(4320/intervalMinutes)); // TP3的3日窗口作为最终裁决期限
+  const capEnd=Math.min(candles.length-1,filledAtBar+horizonBars);
+  for(let j=filledAtBar;j<=capEnd;j++){
+    const c=candles[j];
+    const hitSL=dirSign>0?c.low<=sl:c.high>=sl;
+    const hitTP=dirSign>0?c.high>=tp1:c.low<=tp1;
+    if(hitSL)return{status:"resolved",win:false,barsHeld:j-filledAtBar};
+    if(hitTP)return{status:"resolved",win:true,barsHeld:j-filledAtBar};
+  }
+  return{status:"timeout"};
+}
+
+/* 主入口: 对给定K线数组跑一遍完整的走步式回测,分块异步执行(每处理50根让出一次主线程),
+   避免长样本量卡死浏览器UI。onProgress(doneCount,totalCount)用于更新进度条。*/
+async function runBacktest(candles,intervalLabel,sampleSize,onProgress){
+  const n=candles.length;
+  const closesFull=candles.map(c=>c.close);
+  const pre={
+    closesFull,
+    ema20F:ema(closesFull,20),ema50F:ema(closesFull,50),
+    ema144F:ema(closesFull,144),ema169F:ema(closesFull,169),
+    rsiF:rsi(closesFull,14),
+    macdF:macd(closesFull),
+    bbF:bollinger(closesFull,20,2),
+    atrF:atr(candles,14),
+    stF:supertrend(candles,10,3),
+    ciF:choppinessIndex(candles,14),
+    biasF:biasIndicator(closesFull,20),
+  };
+  const kdjRes=kdj(candles.map(c=>c.high),candles.map(c=>c.low),closesFull);
+  pre.kdjK=kdjRes.K;pre.kdjD=kdjRes.D;pre.kdjJ=kdjRes.J;
+  const intervalMinutes=BT_INTERVAL_MINUTES[intervalLabel]||60;
+  const minHistory=200; // Vegas隧道(169)+200根结构窗口需要的最小历史长度
+  const startIdx=Math.max(minHistory,n-sampleSize);
+  const endIdx=n-2; // 至少留1根K线用于判断是否成交
+  const trades=[];
+  let totalSignals=0;
+  for(let idx=startIdx;idx<=endIdx;idx++){
+    const snap=backtestSnapshotAt(candles,idx,intervalLabel,pre);
+    if(snap.dirSign!==0&&snap.plan){
+      totalSignals++;
+      const outcome=simulateTradeOutcome(candles,idx,snap.plan,intervalMinutes);
+      trades.push({idx,time:candles[idx].time,dir:snap.dirSign,reliability:snap.reliability.tier,
+        predictedRaceWinProb:snap.plan.tps[0].raceWinProb,rr:snap.plan.tps[0].rr,outcome});
+    }
+    if((idx-startIdx)%40===0){
+      if(onProgress)onProgress(idx-startIdx,endIdx-startIdx);
+      await new Promise(r=>setTimeout(r,0)); // 让出主线程,避免长样本卡住UI
+    }
+  }
+  if(onProgress)onProgress(endIdx-startIdx,endIdx-startIdx);
+  const cancelled=trades.filter(t=>t.outcome.status==="cancelled").length;
+  const unfilled=trades.filter(t=>t.outcome.status==="unfilled").length;
+  const timeout=trades.filter(t=>t.outcome.status==="timeout").length;
+  const resolved=trades.filter(t=>t.outcome.status==="resolved");
+  const wins=resolved.filter(t=>t.outcome.win);
+  const losses=resolved.filter(t=>!t.outcome.win);
+  const winRate=resolved.length?wins.length/resolved.length:null;
+  const avgWinR=wins.length?wins.reduce((s,t)=>s+parseFloat(t.rr||1),0)/wins.length:0;
+  const expectancy=winRate!=null?(winRate*avgWinR-(1-winRate)*1):null;
+  const grossWin=wins.reduce((s,t)=>s+parseFloat(t.rr||1),0);
+  const grossLoss=losses.length; // 每笔亏损按1R计
+  const profitFactor=grossLoss>0?grossWin/grossLoss:(grossWin>0?Infinity:null);
+  const avgPredicted=resolved.length?resolved.reduce((s,t)=>s+(t.predictedRaceWinProb||0),0)/resolved.length:null;
+  const calibrationGap=(winRate!=null&&avgPredicted!=null)?(avgPredicted-winRate*100):null;
+  return{trades,stats:{totalSignals,filled:trades.length-unfilled-cancelled,cancelled,unfilled,timeout,
+    resolved:resolved.length,wins:wins.length,losses:losses.length,winRate,avgWinR,expectancy,profitFactor,
+    avgPredicted,calibrationGap,sampleBars:endIdx-startIdx+1,intervalLabel}};
 }
 
 /* ── SIGNAL GROUPING: maps each of the ~23 flat indicators into 4 human categories
@@ -3330,7 +3703,7 @@ function renderStructureSection(sig){
   }).join("");
   return`
     <div class="section-title">📐 支撑 / 压力 结构位</div>
-    <div class="section-note">来源: 摆动高低点(缠论分型) + 斐波那契回撤/扩展 + 趋势线(连接摆动点位) + Volume Profile POC/HVN。■方块数代表多种方法同时确认(共振越多,可信度越高)。</div>
+    <div class="section-note">来源: 摆动高低点(缠论分型) + 斐波那契回撤/扩展 + 趋势线(回归拟合,R²达标才采纳) + Volume Profile POC/HVN + 锚定VWAP±1σ/2σ。■方块数代表多种方法同时确认(共振越多,可信度越高)。</div>
     <div class="two-col">
       <div>
         <div class="sig-h"><span>上方压力 RESISTANCE</span></div>
@@ -3604,6 +3977,9 @@ function ensureChart(){
   emaSeriesVegas169=chart.addLineSeries({color:"#6f5a8f",lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:"Vegas169"});
   vwapSeries=chart.addLineSeries({color:"#cdb173",lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:"VWAP"});
   supertrendSeries=chart.addLineSeries({color:"#c17a4a",lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:"Supertrend"});
+  avwapSeries=chart.addLineSeries({color:"#e0b84a",lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:"Anchored VWAP"});
+  avwapUpper1=chart.addLineSeries({color:"rgba(224,184,74,0.55)",lineWidth:1,lineStyle:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  avwapLower1=chart.addLineSeries({color:"rgba(224,184,74,0.55)",lineWidth:1,lineStyle:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
 }
 function updateEmaOverlays(candles){
   const closes=candles.map(c=>c.close);
@@ -3617,6 +3993,14 @@ function updateEmaOverlays(candles){
   vwapSeries.setData(toPts(vwapArr));
   const st=supertrend(candles,10,3);
   supertrendSeries.setData(toPts(st.line));
+  const{highs:hPv,lows:lPv}=findPivots(candles);
+  const avwap=computeAnchoredVWAP(candles,hPv,lPv);
+  const avwapPts=candles.map((c,i)=>avwap.series[i]?{time:c.time,value:avwap.series[i].vwap}:null).filter(Boolean);
+  const avwapU1Pts=candles.map((c,i)=>avwap.series[i]?{time:c.time,value:avwap.series[i].upper1}:null).filter(Boolean);
+  const avwapL1Pts=candles.map((c,i)=>avwap.series[i]?{time:c.time,value:avwap.series[i].lower1}:null).filter(Boolean);
+  avwapSeries.setData(avwapPts);
+  avwapUpper1.setData(avwapU1Pts);
+  avwapLower1.setData(avwapL1Pts);
 }
 function openModal(){
   document.getElementById("modalOverlay").classList.add("open");
@@ -3726,6 +4110,12 @@ async function loadCryptoDetail(symbol){
   // Beta/相关性用的BTC收盘价缓存: 不阻塞主K线加载,拉取完成后若还停留在同一个币种就用最新数据
   // 重新算一次信号(和下面资金流/多空比等异步数据到达后的刷新模式完全一致)。
   ensureBtcCloses(chartInterval).then(()=>{
+    if(selectedSymbol===symbol&&lastCandles.length){
+      const sig=computeSignal(lastCandles,chartInterval,symbol);
+      renderChartBiasBadge(sig);renderModalScroll(sig);
+    }
+  });
+  ensureHigherTf(symbol,chartInterval).then(()=>{
     if(selectedSymbol===symbol&&lastCandles.length){
       const sig=computeSignal(lastCandles,chartInterval,symbol);
       renderChartBiasBadge(sig);renderModalScroll(sig);
@@ -4097,6 +4487,119 @@ function renderIntelCoverageSection(sig){
    also only allowed to play on the first paint per symbol-open — see modalRenderCount,
    reset in openCryptoModal(). */
 let modalRenderCount=0, modalRenderTimer=null, modalRenderPending=null;
+/* ── 回测面板状态 ── 用 Map 缓存(symbol|interval|sampleSize)→结果,避免websocket驱动的
+   高频重渲染(每次renderModalScrollNow都会重新生成整段modalScroll的innerHTML)把正在跑的
+   或跑完的回测状态冲掉。按键取用,渲染函数只读不算,真正的计算只在按钮点击时触发一次。*/
+let backtestCache=new Map();
+let btSampleSize=600;
+function btKey(symbol,interval,n){return `${symbol}|${interval}|${n}`;}
+async function performBacktestRun(symbol,interval,sampleSize){
+  const key=btKey(symbol,interval,sampleSize);
+  backtestCache.set(key,{status:"running",progress:0});
+  refreshBacktestUIOnly();
+  let candles;
+  if(interval===chartInterval&&selectedSymbol===symbol&&lastCandles.length){
+    candles=lastCandles;
+  }else{
+    try{
+      let kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=1500`);
+      candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+    }catch(e){
+      backtestCache.set(key,{status:"error",message:"K线数据拉取失败"});
+      refreshBacktestUIOnly();return;
+    }
+  }
+  if(candles.length<210){
+    backtestCache.set(key,{status:"error",message:`K线数量不足(${candles.length}根,至少需要210根)`});
+    refreshBacktestUIOnly();return;
+  }
+  try{
+    const result=await runBacktest(candles,interval,Math.min(sampleSize,candles.length-210),(done,total)=>{
+      backtestCache.set(key,{status:"running",progress:total?Math.round(done/total*100):0});
+      refreshBacktestUIOnly();
+    });
+    backtestCache.set(key,{status:"done",result});
+  }catch(e){
+    console.error("backtest failed",e);
+    backtestCache.set(key,{status:"error",message:"回测计算出错"});
+  }
+  refreshBacktestUIOnly();
+}
+/* 只重绘回测面板本身(不重新整段渲染modalScroll),避免打断用户正在看的其它区域滚动位置。*/
+function refreshBacktestUIOnly(){
+  const el=document.getElementById("btPanelBody");
+  if(!el||!window.__lastSig)return;
+  el.innerHTML=renderBacktestBody(window.__lastSig);
+}
+function fmtBtPct(x){return x==null?"–":(x*100).toFixed(1)+"%";}
+function renderBacktestStatBlock(label,st){
+  if(!st||st.status==="idle"||!st.status){
+    return `<button class="bt-run-btn" data-bt-symbol="${esc(label.symbol)}" data-bt-interval="${esc(label.interval)}">▶ 运行 ${esc(label.interval)} 回测</button>`;
+  }
+  if(st.status==="running"){
+    return `<div class="sig-note">回测中… ${st.progress||0}%</div>
+      <div class="bt-progress-wrap"><div class="bt-progress-bar" style="width:${st.progress||0}%"></div></div>`;
+  }
+  if(st.status==="error"){
+    return `<div class="sig-note" style="color:var(--down);">${esc(st.message)}</div>
+      <button class="bt-run-btn" data-bt-symbol="${esc(label.symbol)}" data-bt-interval="${esc(label.interval)}">↻ 重试</button>`;
+  }
+  const s=st.result.stats;
+  const gapAbs=s.calibrationGap!=null?Math.abs(s.calibrationGap):null;
+  const calibCls=gapAbs==null?"":(gapAbs<=10?"good":gapAbs<=25?"":"bad");
+  return `
+    <div class="stat-mini-row">
+      <div class="stat-mini"><span class="k">实际胜率(先摸TP1 vs 先摸SL)</span><span class="v ${s.winRate==null?'':(s.winRate>=0.5?'up':'down')}">${fmtBtPct(s.winRate)}</span><span class="note">已分胜负 n=${s.resolved}</span></div>
+      <div class="stat-mini"><span class="k">期望值(R,每笔平均)</span><span class="v ${s.expectancy==null?'':(s.expectancy>=0?'up':'down')}">${s.expectancy!=null?(s.expectancy>=0?'+':'')+s.expectancy.toFixed(2)+'R':'–'}</span><span class="note">盈亏比 Profit Factor ${s.profitFactor==null?'–':(s.profitFactor===Infinity?'∞':s.profitFactor.toFixed(2))}</span></div>
+      <div class="stat-mini"><span class="k">限价单成交率</span><span class="v">${s.totalSignals?Math.round(s.filled/s.totalSignals*100):0}%</span><span class="note">信号${s.totalSignals} · 成交${s.filled} · 撤单${s.cancelled} · 到期未分胜负${s.timeout}</span></div>
+    </div>
+    <div class="bt-calib ${calibCls}">
+      模型自报"先达胜率"均值 ${s.avgPredicted!=null?s.avgPredicted.toFixed(0)+'%':'–'} vs 回测实际胜率 ${fmtBtPct(s.winRate)} → 校准差 ${s.calibrationGap!=null?(s.calibrationGap>=0?'+':'')+s.calibrationGap.toFixed(1)+'个百分点':'–'}。
+      ${gapAbs==null?'':(gapAbs<=10?'两者接近,说明模型给出的概率数字总体可信,不是拍脑袋。':gapAbs<=25?'存在一定偏差,建议把模型概率当作方向参考,不要照字面数值下注仓位。':'偏差较大,当前周期/样本下模型的概率输出不够可信,建议只用于方向判断,不要依赖具体数字。')}
+    </div>
+    <div class="sig-note" style="margin-top:6px;">样本: 最近${s.sampleBars}根${esc(s.intervalLabel)}K线 · 同一笔限价单成交前若反向击穿失效撤单价按撤单处理(不计入胜负)。
+      <button class="bt-run-btn" data-bt-symbol="${esc(label.symbol)}" data-bt-interval="${esc(label.interval)}" style="margin-left:6px;">↻ 重新运行</button>
+    </div>`;
+}
+function renderBacktestBody(sig){
+  if(!sig||!selectedSymbol)return"";
+  const symbol=selectedSymbol,interval=chartInterval;
+  const key=btKey(symbol,interval,btSampleSize);
+  const st=backtestCache.get(key);
+  const cmpInterval=interval==="4h"?"1h":"4h";
+  const cmpKey=btKey(symbol,cmpInterval,btSampleSize);
+  const cmpSt=backtestCache.get(cmpKey);
+  return `
+    <div class="bt-controls">
+      <span class="ctl-label">回测样本</span>
+      <select id="btSampleSelect">
+        <option value="300" ${btSampleSize===300?"selected":""}>近300根</option>
+        <option value="600" ${btSampleSize===600?"selected":""}>近600根</option>
+        <option value="1000" ${btSampleSize===1000?"selected":""}>近1000根</option>
+      </select>
+      <button class="bt-run-btn" data-bt-symbol="${esc(symbol)}" data-bt-interval="${esc(interval)}">▶ 运行 ${esc(interval)} 周期回测</button>
+      <button class="bt-run-btn" data-bt-symbol="${esc(symbol)}" data-bt-interval="${esc(cmpInterval)}">▶ 同时跑 ${esc(cmpInterval)} 作对比</button>
+    </div>
+    <div class="bt-compare-row">
+      <div class="bt-compare-col">
+        <div class="hd">${esc(interval)} 周期</div>
+        ${renderBacktestStatBlock({symbol,interval},st)}
+      </div>
+      <div class="bt-compare-col">
+        <div class="hd">${esc(cmpInterval)} 周期(对比)</div>
+        ${renderBacktestStatBlock({symbol,interval:cmpInterval},cmpSt)}
+      </div>
+    </div>`;
+}
+function renderBacktestSection(sig){
+  if(!sig)return"";
+  return `
+    <div class="section-title">🧪 走步式回测 · WALK-FORWARD BACKTEST</div>
+    <div class="section-note">逐根历史K线往前走,每一步只用这根K线之前的数据算信号(不用未来数据),记录这笔限价单历史上有没有真的成交、成交后先摸到止盈还是先摸到止损。
+      入场/止盈/止损的计算函数与实盘完全同一套代码,不是另外写的简化版。受限于Binance K线接口不提供历史资金费率/OI/CVD/清算/期权数据,回测只覆盖EMA/Vegas隧道/RSI/MACD/布林带/KDJ/量能/K线形态/Supertrend/BIAS/VWAP/锚定VWAP/缠论笔结构/斐波那契/趋势线(回归拟合)这部分——即"图形分析"相关的全部指标,也正是可以诚实回测的部分。</div>
+    <div id="btPanelBody">${renderBacktestBody(sig)}</div>`;
+}
+
 function renderModalScroll(sig){
   modalRenderPending=sig;
   if(modalRenderTimer)return;
@@ -4124,13 +4627,14 @@ function renderModalScrollNow(sig){
     ${renderSignalDetail(sig)}
     ${renderSectorHeatmap(sig)}
     ${renderStructureSection(sig)}
+    ${renderBacktestSection(sig)}
     ${renderOICVDSection(sig)}
     ${renderIntelCoverageSection(sig)}
     <div id="liqSectionBox">${renderLiquidationSection(selectedSymbol)}${renderWhaleAnalysis(selectedSymbol)}</div>
     <div id="optSectionBox">${renderOptionsSection(selectedSymbol)}</div>
     ${renderMysticSection(sig)}
     <div class="cg-badge" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);">${cgCrossHTML()}</div>
-    <div class="disclaimer">⚠️ 以上所有信号、TP/SL、概率与预计时间均为启发式估计,并非统计回测结果,不构成任何投资建议。任何交易决策请自行结合仓位管理与风险控制。数字资产市场波动极大,请谨慎操作,量力而为。</div>`;
+    <div class="disclaimer">⚠️ 以上信号、TP/SL、概率与预计时间默认仍为启发式估计,不构成投资建议;若想知道这套方法历史上是否真的有效,请到上方"🧪 走步式回测"区运行本币种/本周期的回测,看真实的历史胜率与期望值,而不要只凭页面上的信心分数下判断。任何交易决策请自行结合仓位管理与风险控制。数字资产市场波动极大,请谨慎操作,量力而为。</div>`;
   if(!isFirst){const dn=el.querySelector(".desk-note");if(dn)dn.classList.add("no-anim");}
   const body=document.getElementById("modalBody");
   if(body)body.scrollTop=savedScroll;
