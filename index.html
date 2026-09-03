@@ -391,6 +391,71 @@
     .opp-body{grid-template-columns:1fr;}
     .opp-col+.opp-col{border-left:none;border-top:1px solid var(--line);}
   }
+  /* ── TRACK RECORD (推荐追踪) — visually a sibling of .opp-panel, reuses its shell ── */
+  .trk-panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;margin:0 20px 14px;overflow:hidden;}
+  @media(max-width:640px){.trk-panel{margin:0 0 14px;}}
+  .trk-head{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .trk-title{font-size:12px;letter-spacing:1.5px;color:var(--dim2);text-transform:uppercase;font-weight:700;}
+  .trk-sub{font-size:11px;color:var(--dim2);}
+  .trk-status{margin-left:auto;font-size:11px;color:var(--dim2);}
+  .trk-body{padding:14px;}
+  .trk-subhead{font-size:11.5px;letter-spacing:1px;color:var(--dim2);text-transform:uppercase;font-weight:700;margin:18px 0 10px;}
+  .trk-calib-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}
+  .trk-calib-table th{text-align:left;color:var(--dim2);font-weight:600;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line);}
+  .trk-calib-table td{padding:7px 8px;border-bottom:1px solid var(--line2);}
+  .trk-calib-table tr:last-child td{border-bottom:none;}
+  /* 持仓热力图: 卡片式而非文字行,一眼看清方向/浮盈亏,颜色深浅=盈亏幅度 */
+  .trk-heatmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:8px;}
+  .trk-tile{border:1px solid var(--line2);border-radius:7px;padding:10px 11px;cursor:pointer;transition:border-color .15s,transform .1s;}
+  .trk-tile:hover{border-color:var(--amber);transform:translateY(-1px);}
+  .trk-tile-top{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+  .trk-tile-sym{font-weight:700;font-size:14px;}
+  .trk-tile-dir{font-size:12px;margin-left:2px;}
+  .trk-tile-dir.up{color:var(--up);}
+  .trk-tile-dir.down{color:var(--down);}
+  .trk-drift-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .trk-drift-dot.same{background:var(--up);}
+  .trk-drift-dot.neutral{background:var(--amber);}
+  .trk-drift-dot.reversed{background:var(--down);}
+  .trk-tile-pnl{font-size:19px;font-weight:700;margin-top:6px;color:var(--dim2);}
+  .trk-tile-pnl.up{color:var(--up);}
+  .trk-tile-pnl.down{color:var(--down);}
+  .trk-tile-meta{font-size:11px;color:var(--dim2);margin-top:4px;}
+  /* 每日日志: 默认折叠成一行摘要,只有"今天"默认展开,点开才渲染详情 */
+  .trk-day{margin-top:10px;border:1px solid var(--line2);border-radius:6px;background:var(--panel2);overflow:hidden;}
+  .trk-day-head{display:flex;align-items:center;gap:10px;padding:10px 12px;font-size:12.5px;color:var(--dim2);flex-wrap:wrap;cursor:pointer;}
+  .trk-day-head:hover{background:rgba(255,255,255,.02);}
+  .trk-day-toggle{color:var(--dim2);font-size:11px;width:12px;flex-shrink:0;}
+  .trk-day-head b{color:var(--fg);font-size:13.5px;}
+  .trk-day-pnl{margin-left:auto;font-weight:700;font-size:12.5px;}
+  .trk-day-pnl.up{color:var(--up);}
+  .trk-day-pnl.down{color:var(--down);}
+  .trk-entry-block{border-top:1px solid var(--line2);padding:2px 0;}
+  .trk-entry-row{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:13px;cursor:pointer;flex-wrap:wrap;}
+  .trk-entry-row:hover{background:rgba(255,255,255,.02);}
+  .trk-entry-sym{font-weight:700;min-width:56px;font-size:13.5px;}
+  .trk-entry-dir{font-size:11px;padding:2px 7px;border-radius:8px;font-weight:700;}
+  .trk-entry-dir.up{color:var(--up);background:var(--up-bg);}
+  .trk-entry-dir.down{color:var(--down);background:var(--down-bg);}
+  .trk-entry-pnl{font-size:12.5px;font-weight:700;}
+  .trk-entry-pnl.up{color:var(--up);}
+  .trk-entry-pnl.down{color:var(--down);}
+  .trk-detail-toggle{background:none;border:1px solid var(--line2);color:var(--dim2);font-size:11px;padding:3px 10px;border-radius:8px;cursor:pointer;margin-left:auto;}
+  .trk-detail-toggle:hover{border-color:var(--amber);color:var(--fg);}
+  .trk-entry-detail{padding:8px 12px 12px 12px;font-size:12.5px;background:var(--panel);margin:0 12px 8px;border-radius:5px;}
+  .trk-detail-row{display:flex;justify-content:space-between;gap:14px;padding:3px 0;color:var(--dim2);}
+  .trk-detail-row span:first-child{color:var(--dim2);flex-shrink:0;}
+  .trk-detail-row span:last-child{color:var(--fg);text-align:right;}
+  .trk-detail-pos{margin-top:8px;padding-top:8px;border-top:1px solid var(--line2);color:var(--dim2);line-height:1.55;}
+  .trk-badge{font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;letter-spacing:.2px;}
+  .trk-badge.win{color:var(--up);background:var(--up-bg);}
+  .trk-badge.loss{color:var(--down);background:var(--down-bg);}
+  .trk-badge.timeout{color:var(--amber);background:rgba(240,180,60,.1);}
+  .trk-badge.invalidated,.trk-badge.expired{color:var(--dim2);background:#171d29;}
+  .trk-badge.filled{color:var(--amber);background:rgba(240,180,60,.1);}
+  .trk-badge.awaiting{color:var(--dim2);background:#171d29;}
+  .trk-entry-note{font-size:12px;color:var(--dim);line-height:1.5;padding:0 12px 8px 12px;}
+  .trk-empty{font-size:12.5px;color:var(--dim2);padding:8px 4px;}
   .sig-note{font-size:12px;color:var(--dim2);line-height:1.55;margin-top:3px;padding-left:2px;}
   .mystic-block{font-size:12px;border-top:1px dashed rgba(154,114,240,.3);padding:10px 13px;background:rgba(154,114,240,.04);}
   .mystic-title{font-size:12px;color:var(--purple);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
@@ -940,6 +1005,15 @@
     </div>
   </div>
 
+  <div class="trk-panel" id="trkPanel">
+    <div class="trk-head">
+      <span class="trk-title">推荐追踪 · TRACK RECORD</span>
+      <span class="trk-sub">out-of-sample · 只记录不影响任何实盘决策的纯观察日志</span>
+      <span class="trk-status" id="trkStatus">–</span>
+    </div>
+    <div class="trk-body" id="trkBody">加载中…</div>
+  </div>
+
   <div class="controls">
     <span class="ctl-label">搜索</span>
     <input id="search" placeholder="BTC / ETH / PEPE …" style="width:150px;">
@@ -1332,11 +1406,36 @@ function init(){
   // 回测面板按钮是随modalScroll整段innerHTML一起动态生成/销毁的,不能在这里直接绑定,
   // 改用事件委托挂在document上,按钮每次被重新渲染出来也照样能响应点击。
   document.addEventListener("click",(e)=>{
+    const trkToggle=e.target.closest(".trk-detail-toggle");
+    if(trkToggle){
+      const id=trkToggle.dataset.id;
+      if(trkExpandedIds.has(id))trkExpandedIds.delete(id);else trkExpandedIds.add(id);
+      const block=trkToggle.closest(".trk-entry-block");
+      if(block){
+        const open=trkExpandedIds.has(id);
+        block.classList.toggle("open",open);
+        const detail=block.querySelector(".trk-entry-detail");
+        if(detail)detail.style.display=open?"block":"none";
+        trkToggle.textContent=open?"▾ 收起":"▸ 详情";
+      }
+      return;
+    }
+    const trkDayHead=e.target.closest(".trk-day-head");
+    if(trkDayHead&&trkDayHead.dataset.day){
+      const day=trkDayHead.dataset.day,todayKey=trkDayKey(Date.now());
+      trkDayOverride.set(day,!trkDayExpanded(day,todayKey));
+      renderTrackPanel();
+      return;
+    }
+    const trkTile=e.target.closest(".trk-tile");
+    if(trkTile&&trkTile.dataset.symbol){openCryptoModal(trkTile.dataset.symbol);return;}
     const btn=e.target.closest(".bt-run-btn");
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
       if(symbol&&interval)performBacktestRun(symbol,interval,btSampleSize);
     }
+    const trkRow=e.target.closest(".trk-entry-row");
+    if(trkRow&&trkRow.dataset.symbol)openCryptoModal(trkRow.dataset.symbol);
     const copyBtn=e.target.closest(".ticket-copy-btn");
     if(copyBtn){
       const txt=copyBtn.getAttribute("data-ticket")||"";
@@ -1357,6 +1456,8 @@ function init(){
   loadGlobalCrypto(); setInterval(loadGlobalCrypto,GLOBAL_POLL_MS);
   setInterval(pruneLiquidations,600000);
   loadETF(); setInterval(loadETF,120000);
+  renderTrackPanel(); // 先用localStorage里已有的记录渲染一次,不用等第一次扫描/结算跑完
+  setInterval(settleTrackLog,TRACK_SETTLE_INTERVAL_MS);
 }
 function tickClock(){
   const d=new Date();
@@ -1460,6 +1561,21 @@ function refreshTopN(force){
 const OPP_SCAN_INTERVAL_MS = 90000;
 const OPP_CONCURRENCY = 4;
 const OPP_TOP_N = 5;
+
+/* ── 推荐追踪(FORWARD TRACKING)常量 ──
+   与走步式回测互补而非替代: 回测用现在的代码测过去(in-sample,且Binance不提供历史OI/CVD/
+   资金费率/清算/期权,所以回测天生测不到这部分权重),追踪用现在的代码测未来(out-of-sample,
+   覆盖模型给出的完整把握度,包括OI/CVD/清算/期权这些只有实盘才有的信号)。 */
+const TRACK_CONVICTION_MIN = 65;           // 只追踪"中等把握"以上的信号,避免日志被噪音信号淹没
+const TRACK_LOG_KEY = "orbit_tracklog";
+const TRACK_LOG_MAX = 1000;                // 存储上限,超出按创建时间滚动淘汰最旧的
+const TRACK_FILL_WINDOW_MS = 24*3600*1000; // 挂单超过24小时仍未成交且未撤单触发 → 记为"过期未成交"
+const TRACK_MAX_HOLD_MS = 3*24*3600*1000;  // 成交后最长持有3日(对齐TP3窗口),仍未分胜负 → 记为timeout
+const TRACK_REPEAT_COOLDOWN_MS = 6*3600*1000; // 同一币种+方向结算后6小时内不重复记新的一笔,避免刷屏
+const TRACK_SETTLE_INTERVAL_MS = 20000;    // 用已有的实时WS价格做结算判定,不额外发请求,可以跑得很勤
+const TRACK_POSITION_MARGIN_USDT = 10000;  // 仅用于把"胜负"翻译成有感的盈亏数字,假设每笔用1万U保证金
+const TRACK_POSITION_LEVERAGE = 5;         // 假设5倍杠杆(名义仓位5万U),不代表真实建议仓位/杠杆
+const trkExpandedIds = new Set();          // 会话内记录哪些追踪条目的"详情"被展开过,面板每次重绘时保持展开状态
 let opportunityResults = new Map(); // symbol -> {sig, ts}
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
 
@@ -1536,10 +1652,13 @@ function scheduleOpportunityRescan(){
   opportunityRescanDebounce=setTimeout(runOpportunityScan,2000);
 }
 
+function topVoteFor(sig){
+  return [...sig.votes].filter(v=>Math.sign(v.dir)===sig.dirSign&&Math.abs(v.dir)>0.05)
+    .sort((a,b)=>Math.abs(b.dir*b.w)-Math.abs(a.dir*a.w))[0];
+}
 function oppCardHTML(symbol,r){
   const sig=r.sig,m=market.get(symbol);
-  const topVote=[...sig.votes].filter(v=>Math.sign(v.dir)===sig.dirSign&&Math.abs(v.dir)>0.05)
-    .sort((a,b)=>Math.abs(b.dir*b.w)-Math.abs(a.dir*a.w))[0];
+  const topVote=topVoteFor(sig);
   const cls=sig.dirSign>0?"up":"down";
   return `<div class="opp-card" data-symbol="${symbol}">
     <div class="opp-card-top">
@@ -1562,6 +1681,7 @@ function renderOpportunityRadar(){
   if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 每${Math.round(OPP_SCAN_INTERVAL_MS/1000)}秒滚动刷新`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
+  recordTrackSignals(rows); // 记录追踪日志用完整候选集(未截断的rows),不只是下面展示的TOP N卡片
   const longs=rows.filter(x=>x.r.sig.dirSign>0).sort((a,b)=>b.r.sig.outlook.conviction-a.r.sig.outlook.conviction).slice(0,OPP_TOP_N);
   const shorts=rows.filter(x=>x.r.sig.dirSign<0).sort((a,b)=>b.r.sig.outlook.conviction-a.r.sig.outlook.conviction).slice(0,OPP_TOP_N);
   const longEl=document.getElementById("oppLongList"),shortEl=document.getElementById("oppShortList");
@@ -1570,6 +1690,357 @@ function renderOpportunityRadar(){
   document.querySelectorAll(".opp-card").forEach(el=>{
     el.addEventListener("click",()=>openCryptoModal(el.dataset.symbol));
   });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 推荐追踪引擎(FORWARD TRACKING ENGINE) ──
+   回测(见下方 WALK-FORWARD BACKTEST)有个物理边界: Binance不提供历史资金费率/OI/CVD/清算/
+   期权数据,所以回测只能验证"图形类"指标,模型给出的把握度里揉进的OI变化/CVD/清算/期权这些
+   实盘才有的权重,回测天生测不到、也不该假装测得到。
+   这里补上第二条腿: 机会雷达(runOpportunityScan)每次扫描给出高把握度信号时,系统自己把这笔
+   "虚拟推荐"存档(不需要用户点【标记已入场】,那是给用户自己仓位记账用的,这里是对模型自己的
+   诚实校验),然后按已有的实时WS价格(与主图表同一条数据源,不额外发请求)定期检查:
+   ① 挂单有没有真的成交(价格有没有摸到入场价) ② 成交前有没有先反向击穿失效撤单价(按撤单/
+   invalidated处理,不计入胜负——与走步式回测"保守判定"的规则完全一致) ③ 成交后先摸到SL还是
+   TP1/TP2/TP3 ④ 超过最长持有期仍未分胜负记timeout。全部结算逻辑与回测引擎(simulateTradeOutcome)
+   同源同规则,只是数据源从历史K线换成了实时价格,这样两条腿测出来的数字才能放在一起比。 */
+function trkPosKey(sym,dir){return sym+"|"+dir;}
+function getTrackLog(){try{return JSON.parse(localStorage.getItem(TRACK_LOG_KEY)||"[]");}catch(e){return[];}}
+function saveTrackLog(arr){
+  try{
+    if(arr.length>TRACK_LOG_MAX){
+      arr=arr.slice().sort((a,b)=>a.createdAt-b.createdAt).slice(arr.length-TRACK_LOG_MAX);
+    }
+    localStorage.setItem(TRACK_LOG_KEY,JSON.stringify(arr));
+  }catch(e){}
+}
+/* 记录: 每次扫描,把新出现的高把握度信号写入日志。去重用"币种+方向"做冷却——
+   同一币种同一方向只要还"开着"(awaiting/filled未分胜负)就不会重复记第二笔;
+   结算之后(不论输赢/撤单/超时)也要再等冷却期,才会把同方向再次出现的信号当作新的一笔,
+   避免同一个信号在雷达上连续出现好几个扫描周期就被记成好几笔重复记录。*/
+function recordTrackSignals(rows){
+  const qualifying=rows.filter(x=>x.r.sig.outlook.conviction>=TRACK_CONVICTION_MIN&&x.r.sig.plan&&x.r.sig.plan.main&&!x.r.sig.plan.main.noSetup);
+  if(!qualifying.length)return;
+  const log=getTrackLog();
+  const now=Date.now();
+  let changed=false;
+  qualifying.forEach(x=>{
+    const symbol=x.symbol,sig=x.r.sig,p=sig.plan.main,dir=p.dir;
+    if(!p.tps||!p.tps.length||p.sl==null||p.entry==null)return;
+    const hasOpen=log.some(r=>r.symbol===symbol&&r.dir===dir&&(r.status==="awaiting"||r.status==="filled"));
+    if(hasOpen)return;
+    const lastResolved=log.filter(r=>r.symbol===symbol&&r.dir===dir&&r.status!=="awaiting"&&r.status!=="filled")
+      .sort((a,b)=>(b.resolvedAt||b.createdAt)-(a.resolvedAt||a.createdAt))[0];
+    if(lastResolved&&now-(lastResolved.resolvedAt||lastResolved.createdAt)<TRACK_REPEAT_COOLDOWN_MS)return;
+    const tv=topVoteFor(sig);
+    log.push({
+      id:symbol+"_"+dir+"_"+now+"_"+Math.random().toString(36).slice(2,7),
+      symbol,dir,
+      entry:p.entry,sl:p.sl,invalidatePrice:p.entryInfo.invalidatePrice,
+      tps:p.tps.map(t=>({label:t.label,price:t.price,rr:parseFloat(t.rr)||null})),
+      conviction:sig.outlook.conviction,regime:sig.regime,regimeLabel:sig.regimeLabel,
+      sizeTierLabel:sig.outlook.sizeTier.label,timeframeLabel:sig.outlook.timeframe.label,
+      reasonName:tv?tv.name:"",reasonDetail:tv?tv.detail:"",
+      createdAt:now,status:"awaiting",
+      filledAt:null,filledPrice:null,mfe:null,
+      resolvedAt:null,resolvedPrice:null,resolvedLabel:null
+    });
+    changed=true;
+  });
+  if(changed)saveTrackLog(log);
+}
+/* 结算: 每20秒跑一次,只读已有的实时WS价格(market Map,对全部合约广播,不限于当前tracked集合),
+   不发任何额外请求。规则与回测的 simulateTradeOutcome 保持同源:
+   ① 未成交阶段,先检查是否先反向击穿失效撤单价(优先于"是否已成交"判断,同一原则:宁可
+   低估胜率也不假装一次漂亮的成交) ② 成交后先检查SL(同理,不给自己让步) ③ SL未中才看
+   TP,按离入场最远的档位优先判断(价格一次性跳过TP1直接打到TP2/TP3时,按实际打到的最远档记)。 */
+function settleTrackLog(){
+  const log=getTrackLog();
+  if(!log.length)return;
+  const now=Date.now();
+  let changed=false;
+  log.forEach(r=>{
+    if(r.status!=="awaiting"&&r.status!=="filled")return;
+    const m=market.get(r.symbol);
+    if(!m||m.price==null)return;
+    const price=m.price;
+    if(r.status==="awaiting"){
+      const invalidated=r.dir>0?price<=r.invalidatePrice:price>=r.invalidatePrice;
+      if(invalidated){r.status="invalidated";r.resolvedAt=now;r.resolvedPrice=price;changed=true;return;}
+      const filled=r.dir>0?price<=r.entry:price>=r.entry;
+      if(filled){r.status="filled";r.filledAt=now;r.filledPrice=price;r.mfe=price;changed=true;return;}
+      if(now-r.createdAt>TRACK_FILL_WINDOW_MS){r.status="expired";r.resolvedAt=now;r.resolvedPrice=price;changed=true;}
+      return;
+    }
+    // status === "filled": 更新MFE(持仓期间朝有利方向走到过的最远价,用于事后复盘"是方向错了还是止损摆太紧")
+    if(r.mfe==null)r.mfe=r.filledPrice;
+    r.mfe=r.dir>0?Math.max(r.mfe,price):Math.min(r.mfe,price);
+    const hitSL=r.dir>0?price<=r.sl:price>=r.sl;
+    if(hitSL){r.status="loss";r.resolvedAt=now;r.resolvedPrice=price;changed=true;return;}
+    const tpsHitDesc=r.tps.filter(t=>r.dir>0?price>=t.price:price<=t.price).sort((a,b)=>Math.abs(b.price-r.entry)-Math.abs(a.price-r.entry));
+    if(tpsHitDesc.length){r.status="win";r.resolvedAt=now;r.resolvedPrice=price;r.resolvedLabel=tpsHitDesc[0].label;changed=true;return;}
+    if(now-r.filledAt>TRACK_MAX_HOLD_MS){r.status="timeout";r.resolvedAt=now;r.resolvedPrice=price;changed=true;}
+  });
+  if(changed)saveTrackLog(log);
+  renderTrackPanel();
+}
+/* 每笔已分胜负交易的真实R倍数: win按实际摸到的那一档TP各自的R:R算,loss按-1R算(定义即止损距离),
+   timeout按超时那一刻的浮动盈亏折算成R——不是瞎猜,是"这笔如果现在强制平仓,亏赢多少个止损单位"。*/
+function trkRMultiple(r){
+  if(r.status==="win"){
+    const t=r.tps.find(t=>t.label===r.resolvedLabel);
+    return t&&t.rr!=null?t.rr:null;
+  }
+  if(r.status==="loss")return -1;
+  if(r.status==="timeout"){
+    const risk=Math.abs(r.entry-r.sl);
+    return risk>0?((r.resolvedPrice-r.entry)*(r.dir>0?1:-1))/risk:0;
+  }
+  return null;
+}
+function computeTrackStats(log){
+  const resolvedAll=log.filter(r=>r.status==="win"||r.status==="loss"||r.status==="timeout");
+  const wins=resolvedAll.filter(r=>r.status==="win"),losses=resolvedAll.filter(r=>r.status==="loss"),timeouts=resolvedAll.filter(r=>r.status==="timeout");
+  const decisive=wins.length+losses.length;
+  const winRate=decisive?wins.length/decisive:null;
+  const rVals=resolvedAll.map(trkRMultiple).filter(v=>v!=null);
+  const expectancy=rVals.length?rVals.reduce((a,b)=>a+b,0)/rVals.length:null;
+  const grossWin=wins.reduce((s,r)=>{const v=trkRMultiple(r);return s+(v>0?v:0);},0);
+  const grossLoss=losses.length; // 每笔亏损按定义即-1R
+  const profitFactor=grossLoss>0?grossWin/grossLoss:(grossWin>0?Infinity:null);
+  const avgPredicted=decisive?(wins.concat(losses)).reduce((s,r)=>s+r.conviction,0)/decisive:null;
+  const calibrationGap=(avgPredicted!=null&&winRate!=null)?(avgPredicted-winRate*100):null;
+  return{
+    totalSignals:log.length,
+    awaiting:log.filter(r=>r.status==="awaiting").length,
+    filledOpen:log.filter(r=>r.status==="filled").length,
+    invalidated:log.filter(r=>r.status==="invalidated").length,
+    expired:log.filter(r=>r.status==="expired").length,
+    resolved:decisive,wins:wins.length,losses:losses.length,timeout:timeouts.length,
+    winRate,expectancy,profitFactor,avgPredicted,calibrationGap
+  };
+}
+function computeCalibrationBuckets(log){
+  const resolvedAll=log.filter(r=>r.status==="win"||r.status==="loss");
+  const buckets=[{lo:65,hi:75,label:"65–74% 把握"},{lo:75,hi:85,label:"75–84% 把握"},{lo:85,hi:101,label:"85%+ 把握"}];
+  return buckets.map(b=>{
+    const rs=resolvedAll.filter(r=>r.conviction>=b.lo&&r.conviction<b.hi);
+    const wins=rs.filter(r=>r.status==="win").length;
+    return{label:b.label,n:rs.length,winRate:rs.length?wins/rs.length:null,avgConviction:rs.length?rs.reduce((s,r)=>s+r.conviction,0)/rs.length:null};
+  }).filter(b=>b.n>0);
+}
+/* 事后复盘: 只用已经存下来的数字(MFE相对止损距离的比例)做判断,不编造理由。
+   MFE很小 → 入场后几乎没走对方向,更像方向本身判断错了;MFE较大才反转 → 更像止损摆太紧/
+   行情反复,方向大体没错。这是模型"知道自己为什么输"的最小诚实版本,不依赖任何外部调用。*/
+function trkLossHeuristic(r){
+  if(r.status!=="loss")return null;
+  const risk=Math.abs(r.entry-r.sl);
+  if(!risk)return null;
+  const mfeR=r.mfe!=null?((r.mfe-r.entry)*(r.dir>0?1:-1))/risk:0;
+  if(mfeR<=0.15)return"入场后几乎没有朝有利方向运行就被打止损,更像是这笔的方向判断本身站不住脚,而不只是止损位摆放的问题。";
+  if(mfeR>=0.6)return`入场后一度运行到距止盈约${Math.round(mfeR*100)}%止损距离的位置才反转打止损,方向大方向不算离谱,更像止损偏紧或行情反复,后续同类信号可以考虑放宽止损或减小单笔仓位。`;
+  return"入场后朝有利方向小幅运行但未能站稳即反转,中等把握度信号里这类结果并不罕见,可关注同把握度分档的整体校准情况(见下方分档表)。";
+}
+/* 把"胜负"翻译成有感的盈亏数字: 假设每笔用固定保证金+固定杠杆开仓(不代表真实建议仓位,
+   只是为了让追踪记录里的每一笔都能回答"如果我真的按这个信号下单,现在/最终是赚是亏,赚亏多少"
+   这个问题——没有这一步,单纯的"胜/负"标签是空的,验证不了什么)。持仓中(filled)用实时价格
+   算浮动盈亏;已分胜负(win/loss/timeout)用当时结算价格算最终盈亏,不会再随价格变动。*/
+function trkPositionPnL(r){
+  if(r.filledPrice==null)return null;
+  if(r.status!=="filled"&&r.status!=="win"&&r.status!=="loss"&&r.status!=="timeout")return null;
+  const entryPx=r.filledPrice;
+  let exitPx,isLive;
+  if(r.status==="filled"){
+    const m=market.get(r.symbol);
+    if(!m||m.price==null)return null;
+    exitPx=m.price;isLive=true;
+  }else{
+    exitPx=r.resolvedPrice;isLive=false;
+  }
+  const notional=TRACK_POSITION_MARGIN_USDT*TRACK_POSITION_LEVERAGE;
+  const qty=notional/entryPx;
+  const pnlUsdt=(exitPx-entryPx)*r.dir*qty;
+  const pnlPct=pnlUsdt/TRACK_POSITION_MARGIN_USDT*100; // 相对保证金的ROE%,不是相对现价涨跌幅
+  return{entryPx,exitPx,qty,pnlUsdt,pnlPct,isLive};
+}
+function fmtTrkTime(ts){
+  if(ts==null)return"–";
+  const p=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Singapore",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date(ts));
+  const o={};p.forEach(x=>o[x.type]=x.value);
+  return`${o.hour}:${o.minute}`;
+}
+function fmtTrkDateTime(ts){
+  if(ts==null)return"–";
+  const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date(ts));
+  const o={};p.forEach(x=>o[x.type]=x.value);
+  return`${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}`;
+}
+/* 详情展开区: 把这笔推荐当时原封不动的TP/SL计划摊开来给用户核对——追踪记录要有说服力,
+   前提是"当初到底提议了什么"必须可回溯查证,不能只留一个胜负标签让人无从核实。*/
+function renderTrkDetail(r,pnl){
+  const tpsHTML=r.tps.map(t=>`<div class="trk-detail-row"><span>${esc(t.label)} 止盈</span><span>${fmtPrice(t.price)}${t.rr!=null?` · R:R ${t.rr.toFixed(2)}`:""}</span></div>`).join("");
+  const posNote=pnl
+    ?`假设仓位: 保证金 ${TRACK_POSITION_MARGIN_USDT.toLocaleString()}U · ${TRACK_POSITION_LEVERAGE}x杠杆(名义 ${(TRACK_POSITION_MARGIN_USDT*TRACK_POSITION_LEVERAGE).toLocaleString()}U) · 数量≈${pnl.qty.toFixed(pnl.qty<1?4:2)} ${r.symbol.replace("USDT","")} · 未计入手续费与资金费率,仅供直观参考,不是真实建议仓位。`
+    :"尚未成交,暂无持仓盈亏可算。";
+  const drift=trkSignalDriftInfo(r);
+  return`
+    <div class="trk-detail-row"><span>推荐时间</span><span>${fmtTrkDateTime(r.createdAt)}</span></div>
+    <div class="trk-detail-row"><span>限价入场</span><span>${fmtPrice(r.entry)}</span></div>
+    ${r.filledAt?`<div class="trk-detail-row"><span>实际成交</span><span>${fmtTrkDateTime(r.filledAt)} · ${fmtPrice(r.filledPrice)}</span></div>`:""}
+    <div class="trk-detail-row"><span>止损 SL</span><span>${fmtPrice(r.sl)}</span></div>
+    ${tpsHTML}
+    <div class="trk-detail-row"><span>失效撤单价</span><span>${fmtPrice(r.invalidatePrice)}</span></div>
+    ${r.resolvedAt?`<div class="trk-detail-row"><span>结算时间/价格</span><span>${fmtTrkDateTime(r.resolvedAt)} · ${fmtPrice(r.resolvedPrice)}</span></div>`:""}
+    <div class="trk-detail-row"><span>当时把握度</span><span>${r.conviction}% · ${esc(r.sizeTierLabel)} · ${esc(r.timeframeLabel)}</span></div>
+    ${r.reasonName?`<div class="trk-detail-row"><span>主要理由</span><span>${esc(r.reasonName)}: ${esc(r.reasonDetail)}</span></div>`:""}
+    ${drift?`<div class="trk-detail-row"><span>当前实时信号</span><span>${esc(drift.text)}</span></div>`:""}
+    <div class="trk-detail-pos">${posNote}</div>`;
+}
+function trkBadge(r){
+  const map={awaiting:["等待成交","awaiting"],filled:["持仓中","filled"],win:["✓ "+(r.resolvedLabel||"止盈"),"win"],
+    loss:["✕ 止损","loss"],timeout:["到期未分胜负","timeout"],invalidated:["已撤单","invalidated"],expired:["过期未成交","expired"]};
+  const[label,cls]=map[r.status]||[r.status,""];
+  return`<span class="trk-badge ${cls}">${esc(label)}</span>`;
+}
+function fmtTrkPct(x){return x==null?"–":(x*100).toFixed(1)+"%";}
+function trkDayKey(ts){
+  const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(ts));
+  const o={};p.forEach(x=>o[x.type]=x.value);return`${o.year}-${o.month}-${o.day}`;
+}
+/* 现价对照当初推荐方向的实时信号漂移 — 直接回答"我点开币种详情看到的是中性/反方向,
+   跟追踪记录里写的LONG/SHORT不是矛盾了吗"这个问题: 不矛盾,是设计如此。这条追踪记录一旦
+   生成,就必须按当初的TP/SL原样跑到分出胜负为止,不能因为模型现在改主意了就跟着改判——
+   否则这就不是out-of-sample验证,而是"事后诸葛亮",校准出来的胜率毫无意义。opportunityResults
+   里已经有每次扫描算出来的最新sig,直接拿来对比,不必重新计算。*/
+function trkSignalDriftInfo(r){
+  const res=opportunityResults.get(r.symbol);
+  if(!res||!res.sig)return null;
+  const nowDir=res.sig.dirSign;
+  if(nowDir===r.dir)return{level:"same",text:`当前实时信号仍为${r.dir>0?"LONG":"SHORT"},与推荐时一致。`};
+  if(nowDir===0)return{level:"neutral",text:"当前实时信号已转为中性(过渡区/未达共识阈值),但这笔追踪记录仍按推荐当时的原始TP/SL原样跑到分出胜负为止,不会中途跟着改判——这正是out-of-sample追踪的意义所在,不是页面显示矛盾。"};
+  return{level:"reversed",text:`当前实时信号已反转为${nowDir>0?"LONG":"SHORT"},但这笔追踪记录仍按推荐当时的原始TP/SL原样跑到分出胜负为止,不会中途跟着改判——这正是out-of-sample追踪的意义所在,不是页面显示矛盾。`};
+}
+/* ── 持仓热力图(LIVE HEATMAP) ── 只放当前"开着"的记录(等待成交/持仓中),
+   一眼看清现在手上有哪些、浮盈亏多少,不用在密密麻麻的文字行里逐条找。
+   已分胜负/已撤单/已过期的一律归档进下面的每日日志,不再占这里的位置。*/
+function renderLiveHeatmap(log){
+  const open=log.filter(r=>r.status==="awaiting"||r.status==="filled");
+  if(!open.length)return'<div class="trk-empty">当前没有追踪中的挂单或持仓。</div>';
+  open.sort((a,b)=>{
+    const pa=trkPositionPnL(a),pb=trkPositionPnL(b);
+    return(pb&&pb.pnlPct||0)-(pa&&pa.pnlPct||0);
+  });
+  const tiles=open.map(r=>{
+    const pnl=trkPositionPnL(r);
+    const drift=trkSignalDriftInfo(r);
+    const bg=r.status==="filled"?trkHeatColor(pnl?pnl.pnlPct:null):"rgba(240,180,60,.07)";
+    const pnlCls=r.status==="filled"&&pnl?(pnl.pnlPct>=0?"up":"down"):"";
+    const pnlTxt=r.status==="filled"&&pnl?`${pnl.pnlPct>=0?"+":""}${pnl.pnlPct.toFixed(1)}%`:"等待成交";
+    return`<div class="trk-tile" data-symbol="${esc(r.symbol)}" style="background:${bg}" title="点击查看${esc(r.symbol)}详情">
+      <div class="trk-tile-top">
+        <span class="trk-tile-sym">${esc(r.symbol.replace("USDT",""))} <span class="trk-tile-dir ${r.dir>0?"up":"down"}">${r.dir>0?"▲":"▼"}</span></span>
+        ${drift?`<span class="trk-drift-dot ${drift.level}" title="${esc(drift.text)}"></span>`:""}
+      </div>
+      <div class="trk-tile-pnl ${pnlCls}">${pnlTxt}</div>
+      <div class="trk-tile-meta">${r.conviction}% 把握 · ${r.status==="filled"?fmtTrkTime(r.filledAt)+"成交":"挂单等待中"}</div>
+    </div>`;
+  }).join("");
+  return`<div class="trk-heatmap">${tiles}</div>`;
+}
+function trkHeatColor(pnlPct){
+  if(pnlPct==null)return"rgba(255,255,255,.03)";
+  const t=Math.max(-1,Math.min(1,pnlPct/30)); // ±30% ROE封顶,超过按最深颜色显示,避免极端值把配色拉爆
+  return t>=0?`rgba(46,204,142,${(0.08+Math.abs(t)*0.30).toFixed(2)})`:`rgba(240,79,87,${(0.08+Math.abs(t)*0.30).toFixed(2)})`;
+}
+/* ── 每日日志(DAILY JOURNAL) ── 只归档"已经有结论"的记录(win/loss/timeout/invalidated/expired);
+   仍在追踪中的不在这里重复出现(见上方热力图)。默认只有"今天"这一天展开,更早的日子折叠成
+   一行摘要,点开才渲染详情——避免日志攒多了之后,一打开面板就是一整屏密密麻麻的历史记录。*/
+const trkDayOverride=new Map(); // 用户手动展开/折叠某天后的显式覆盖,优先于"只有今天默认展开"的规则
+function trkDayExpanded(day,todayKey){
+  if(trkDayOverride.has(day))return trkDayOverride.get(day);
+  return day===todayKey;
+}
+const TRK_JOURNAL_MAX_DAYS=30;
+function renderTrackJournal(log){
+  const archived=log.filter(r=>r.status!=="awaiting"&&r.status!=="filled");
+  if(!archived.length)return'<div class="trk-empty">尚无已结算的追踪记录。</div>';
+  const byDay=new Map();
+  archived.forEach(r=>{
+    const k=trkDayKey(r.resolvedAt||r.createdAt);
+    if(!byDay.has(k))byDay.set(k,[]);
+    byDay.get(k).push(r);
+  });
+  const todayKey=trkDayKey(Date.now());
+  const allDays=[...byDay.keys()].sort((a,b)=>b.localeCompare(a));
+  const days=allDays.slice(0,TRK_JOURNAL_MAX_DAYS);
+  const html=days.map(day=>{
+    const entries=byDay.get(day).sort((a,b)=>(b.resolvedAt||b.createdAt)-(a.resolvedAt||a.createdAt));
+    const win=entries.filter(r=>r.status==="win").length,loss=entries.filter(r=>r.status==="loss").length;
+    const timeout=entries.filter(r=>r.status==="timeout").length;
+    const other=entries.length-win-loss-timeout; // invalidated/expired
+    const decisive=win+loss;
+    const dayPnl=entries.reduce((s,r)=>{const p=trkPositionPnL(r);return s+(p?p.pnlUsdt:0);},0);
+    const expanded=trkDayExpanded(day,todayKey);
+    const rateTxt=decisive?`胜率 ${Math.round(win/decisive*100)}%(${win}胜${loss}负)`:"暂无已分胜负记录";
+    const rows=expanded?entries.map(r=>{
+      const note=trkLossHeuristic(r);
+      const pnl=trkPositionPnL(r);
+      const pnlHTML=pnl?`<span class="trk-entry-pnl ${pnl.pnlUsdt>=0?"up":"down"}">平仓盈亏 ${pnl.pnlUsdt>=0?"+":""}${pnl.pnlUsdt.toFixed(0)}U(${pnl.pnlPct>=0?"+":""}${pnl.pnlPct.toFixed(1)}%)</span>`:"";
+      const idExpanded=trkExpandedIds.has(r.id);
+      return`<div class="trk-entry-block" data-id="${esc(r.id)}">
+        <div class="trk-entry-row" data-symbol="${esc(r.symbol)}">
+          <span class="trk-entry-sym">${esc(r.symbol.replace("USDT",""))}</span>
+          <span class="trk-entry-dir ${r.dir>0?"up":"down"}">${r.dir>0?"LONG":"SHORT"}</span>
+          <span>${r.conviction}% 把握</span>
+          ${trkBadge(r)}
+          ${pnlHTML}
+          <button class="trk-detail-toggle" data-id="${esc(r.id)}">${idExpanded?"▾ 收起":"▸ 详情"}</button>
+        </div>
+        ${note?`<div class="trk-entry-note">💡 ${esc(note)}</div>`:""}
+        <div class="trk-entry-detail" style="display:${idExpanded?"block":"none"}">${renderTrkDetail(r,pnl)}</div>
+      </div>`;
+    }).join(""):"";
+    return`<div class="trk-day">
+      <div class="trk-day-head" data-day="${esc(day)}">
+        <span class="trk-day-toggle">${expanded?"▾":"▸"}</span>
+        <b>${day===todayKey?"今天 "+day:day}</b>
+        <span>${entries.length}笔 · ${rateTxt}${timeout?` · 超时${timeout}`:""}${other?` · 撤单/过期${other}`:""}</span>
+        <span class="trk-day-pnl ${dayPnl>=0?"up":"down"}">${dayPnl>=0?"+":""}${dayPnl.toFixed(0)}U</span>
+      </div>
+      ${rows}
+    </div>`;
+  }).join("");
+  const moreNote=allDays.length>TRK_JOURNAL_MAX_DAYS?`<div class="trk-empty">仅显示最近${TRK_JOURNAL_MAX_DAYS}天,更早的记录仍保留在本地存储中。</div>`:"";
+  return html+moreNote;
+}
+function renderTrackPanel(){
+  const el=document.getElementById("trkBody");
+  if(!el)return;
+  const log=getTrackLog();
+  const s=computeTrackStats(log);
+  const calib=computeCalibrationBuckets(log);
+  const statusEl=document.getElementById("trkStatus");
+  if(statusEl)statusEl.textContent=`共 ${s.totalSignals} 笔 · 待成交 ${s.awaiting} · 持仓中 ${s.filledOpen} · 每${Math.round(TRACK_SETTLE_INTERVAL_MS/1000)}秒结算一次`;
+  const gapAbs=s.calibrationGap!=null?Math.abs(s.calibrationGap):null;
+  const calibCls=gapAbs==null?"":(gapAbs<=10?"good":gapAbs<=25?"":"bad");
+  el.innerHTML=`
+    <div class="stat-mini-row">
+      <div class="stat-mini"><span class="k">预测胜率(实时价格结算)</span><span class="v ${s.winRate==null?"":(s.winRate>=0.5?"up":"down")}">${fmtTrkPct(s.winRate)}</span><span class="note">已分胜负 n=${s.resolved}(${s.wins}胜${s.losses}负,另有${s.timeout}笔到期未分胜负)</span></div>
+      <div class="stat-mini"><span class="k">期望值(R,每笔平均)</span><span class="v ${s.expectancy==null?"":(s.expectancy>=0?"up":"down")}">${s.expectancy!=null?(s.expectancy>=0?"+":"")+s.expectancy.toFixed(2)+"R":"–"}</span><span class="note">盈亏比 Profit Factor ${s.profitFactor==null?"–":(s.profitFactor===Infinity?"∞":s.profitFactor.toFixed(2))}</span></div>
+      <div class="stat-mini"><span class="k">限价单成交/撤单/过期</span><span class="v">${s.filledOpen+s.resolved+s.timeout}/${s.invalidated}/${s.expired}</span><span class="note">总推荐 ${s.totalSignals} 笔(≥${TRACK_CONVICTION_MIN}%把握才记)</span></div>
+    </div>
+    <div class="bt-calib ${calibCls}">
+      模型自报把握度均值 ${s.avgPredicted!=null?s.avgPredicted.toFixed(0)+"%":"–"} vs 实盘实际胜率 ${fmtTrkPct(s.winRate)} → 校准差 ${s.calibrationGap!=null?(s.calibrationGap>=0?"+":"")+s.calibrationGap.toFixed(1)+"个百分点":"–"}(正值=模型高估自己)。
+      ${gapAbs==null?"样本还太少,继续累积中。":(gapAbs<=10?"两者接近,说明模型给出的把握度数字总体可信。":gapAbs<=25?"存在一定偏差,建议把把握度当方向参考,不要照字面数值配仓位。":"偏差较大,当前把握度输出还不够可信,只用于方向判断,别依赖具体数字。")}
+    </div>
+    ${calib.length?`<table class="trk-calib-table"><thead><tr><th>把握度分档</th><th>样本数</th><th>该档实际胜率</th></tr></thead><tbody>
+      ${calib.map(b=>`<tr><td>${esc(b.label)}</td><td>${b.n}</td><td class="${b.winRate==null?"":(b.winRate>=0.5?"up":"down")}">${fmtTrkPct(b.winRate)}</td></tr>`).join("")}
+    </tbody></table>`:""}
+    <div class="trk-subhead">🔥 持仓热力图 · 当前追踪中(按浮动盈亏排序)</div>
+    ${renderLiveHeatmap(log)}
+    <div class="trk-subhead">📓 每日复盘日志 · 点击展开某一天</div>
+    ${renderTrackJournal(log)}
+    <div class="sig-note" style="margin-top:10px;">与走步式回测互补而非替代: 回测在历史K线上验证纯图形类指标(EMA/MACD/缠论/斐波那契等),这里用实时价格校验模型完整的把握度(含OI/CVD/清算/期权权重),两条腿都跑,才是对模型诚实的验证。方向圆点●绿=现价信号与推荐一致/黄=已转中性/红=已反转,但追踪记录本身永远按推荐当时的原始TP/SL跑完,不会中途改判。数据只存在本机浏览器localStorage,清空浏览器数据会丢失记录。</div>`;
 }
 
 /* ── WEBSOCKET ── */
