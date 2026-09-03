@@ -7,13 +7,16 @@
 <title>ORBIT — Crypto Intelligence Terminal</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Fraunces:ital,opsz,wght@1,9..144,500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Fraunces:ital,opsz,wght@1,9..144,500&display=swap');
   :root{
     --bg:#0b0e15; --panel:#12161f; --panel2:#171c27; --panel3:#1c2129;
     --line:#262c3a; --line2:#343d4e;
     --text:#ece6d6; --dim:#ada496; --dim2:#756c5c;
     --up:#5a9b78; --down:#b8555f; --amber:#c6a565; --blue:#7fa0c2; --purple:#9c85b0;
-    --mono:'IBM Plex Mono','JetBrains Mono',ui-monospace,Consolas,monospace;
+    /* JetBrains Mono first: its 0 carries a clear dot and its 8 is a closed figure-eight,
+       so 0/8 (and 1/I/l) stay visually distinct at small sizes — the previous primary
+       (IBM Plex Mono) draws a plain oval 0 that reads too close to 8 in a dense table. */
+    --mono:'JetBrains Mono','IBM Plex Mono',ui-monospace,Consolas,monospace;
     --serif:'Fraunces','Iowan Old Style','Georgia',serif;
     --up-bg:rgba(90,155,120,.10); --down-bg:rgba(184,85,95,.10); --amber-bg:rgba(198,165,101,.10);
     --ease:cubic-bezier(.16,.84,.44,1); --ease-out:cubic-bezier(.22,1,.36,1);
@@ -24,7 +27,7 @@
   html,body{height:100%;overscroll-behavior:none;}
   html{-webkit-text-size-adjust:100%;}
   body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:14.5px;overflow-y:auto;overflow-x:hidden;line-height:1.45;
-    -webkit-font-smoothing:antialiased;}
+    -webkit-font-smoothing:antialiased;font-variant-numeric:slashed-zero tabular-nums;}
   /* 页面改为自然文档流滚动(不再锁定 100vh 并只让内部 table-wrap 滚动),保证任何屏幕高度下都能滚到下方合约列表。
      顶部信息区(MARKET PULSE / ETF / 市场构成)可折叠,由用户自行决定占用多少空间 — user-driven,而非写死固定占满屏幕。 */
   #app{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;position:relative;z-index:1;
@@ -257,7 +260,11 @@
      "flash" on open: that resize kept firing mid-load as async sections streamed in. */
   .modal-top{position:relative;height:0;overflow:hidden;border-bottom:none;transition:height .32s var(--ease-out);}
   .modal-top.expanded{height:340px;border-bottom:1px solid var(--line);}
-  .chart-toggle-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 16px;background:var(--panel2);border-bottom:1px solid var(--line);flex-shrink:0;}
+  .chart-toggle-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 16px;background:var(--panel2);border-bottom:1px solid var(--line);flex-shrink:0;flex-wrap:wrap;}
+  .ctb-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .tf-switch{display:flex;gap:3px;}
+  .tf-btn{font-size:10.5px;padding:3px 9px;border-radius:12px;background:var(--panel3);border:1px solid var(--line2);color:var(--dim);cursor:pointer;font-family:var(--mono);}
+  .tf-btn.active{color:var(--amber);border-color:var(--amber);background:var(--amber-bg);}
   .ctb-lbl{font-size:11.5px;color:var(--dim);letter-spacing:.4px;}
   .ctb-btn{font-size:11px;padding:4px 12px;border-radius:20px;flex-shrink:0;}
   .ctb-btn.active{color:var(--amber);border-color:var(--amber);background:var(--amber-bg);}
@@ -441,7 +448,14 @@
 
   /* 按真实价格比例定位的时间轴(见 timelineHTML): 现价/入场/SL/TP1-3 全部在同一条轴上,左右位置由价格
      真实大小决定,而不是按数组顺序均匀摆放 —— 顺序算错了会直接在轴上体现为错位,不会被隐藏。 */
-  .timeline-axis{position:relative;margin:18px 0 8px;height:112px;}
+  /* 修复: 之前 .timeline-axis 是固定 height:112px,而 .axis-item 全部 position:absolute
+     且内容高度随文案长短浮动(尤其 .meta 一行文字有长有短,可能换到2~3行)——固定高度的容器
+     装不下浮动高度的绝对定位子元素,超出部分不会被裁掉,而是直接压到下面的 plan-grid 卡片
+     上,肉眼看就是"时间轴和下面的卡片糊在一起、看不完整"。修复思路是两边同时兜底:
+     ① .meta 用 line-clamp 硬性限制最多2行、超出省略,保证每个节点的内容高度有明确上限;
+     ② 容器高度从 112px 提高到 132px,略高于"两行meta"情形下的实际需要高度,留出安全余量。
+     这样不管未来 meta 文案多长(比如新增的持仓预警文案),都不会再撑破/压穿下面的卡片。 */
+  .timeline-axis{position:relative;margin:18px 0 8px;height:132px;}
   .axis-rail{position:absolute;top:5px;left:8%;right:8%;height:2px;background:var(--line);}
   .axis-item{position:absolute;top:0;transform:translateX(-50%);width:118px;text-align:center;}
   .axis-item .dot2{width:11px;height:11px;margin:0 auto 6px;border-radius:50%;border:2px solid var(--bg);box-shadow:0 0 6px currentColor;}
@@ -449,7 +463,8 @@
   .axis-item .px{font-size:13px;font-weight:700;margin-top:2px;}
   .axis-item.sl .px{color:var(--down);}
   .axis-item.entry .px{color:var(--amber);}
-  .axis-item .meta{font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.35;}
+  .axis-item .meta{font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.35;
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
 
   /* ── STRUCTURE ── */
   .struct-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #161b24;font-size:13px;gap:8px;}
@@ -564,6 +579,19 @@
   .strat-val.bull{color:var(--up);font-weight:700;}
   .strat-val.bear{color:var(--down);font-weight:700;}
   .strat-val.amb{color:var(--amber);font-weight:700;}
+
+  /* ── EXECUTION GATE — 判决先于细节: 达标/不达标一眼可辨,达标时直接给可复制下单单据 ── */
+  .gate-box{border-radius:5px;padding:12px 14px;margin-bottom:14px;border:1.5px solid;}
+  .gate-pass{border-color:var(--up);background:rgba(90,155,120,.08);}
+  .gate-fail{border-color:var(--down);background:rgba(184,85,95,.06);}
+  .gate-head{font-size:13.5px;font-weight:700;letter-spacing:.3px;margin-bottom:8px;}
+  .gate-pass .gate-head{color:var(--up);}
+  .gate-fail .gate-head{color:var(--down);}
+  .gate-ticket{font-family:var(--mono);font-size:12.5px;color:var(--text);background:var(--panel3);border:1px solid var(--line2);border-radius:4px;padding:9px 11px;line-height:1.7;word-break:break-word;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .ticket-copy-btn{flex-shrink:0;background:var(--amber-bg);border:1px solid var(--amber);color:var(--amber);font-size:11.5px;padding:5px 10px;border-radius:3px;white-space:nowrap;}
+  .ticket-copy-btn:hover{background:var(--amber);color:#1a1508;}
+  .gate-reasons{font-size:12.5px;color:var(--dim);line-height:1.8;}
+  .gate-reasons div{color:var(--down);}
 
   /* ── SECTOR HEATMAP ── */
   .sector-grid{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
@@ -933,6 +961,7 @@
       <option value="1h">1h</option>
       <option value="4h">4h</option>
       <option value="1d">1d</option>
+      <option value="1w">1w</option>
     </select>
   </div>
 
@@ -976,7 +1005,16 @@
     </div>
     <div class="modal-body" id="modalBody">
       <div class="chart-toggle-bar" id="chartToggleBar">
-        <span class="ctb-lbl">📈 K线图 · EMA / Vegas隧道 / VWAP / 锚定VWAP+σ带 / Supertrend</span>
+        <div class="ctb-left">
+          <span class="ctb-lbl">📈 K线图 · EMA / Vegas隧道 / VWAP / 锚定VWAP+σ带 / Supertrend</span>
+          <div class="tf-switch" id="tfSwitch">
+            <button class="tf-btn" data-tf="15m">15m</button>
+            <button class="tf-btn" data-tf="1h">1h</button>
+            <button class="tf-btn" data-tf="4h">4h</button>
+            <button class="tf-btn" data-tf="1d">1D</button>
+            <button class="tf-btn" data-tf="1w">1W</button>
+          </div>
+        </div>
         <button class="ctb-btn" id="chartToggleBtn">展开 ▾</button>
       </div>
       <div class="modal-top" id="modalTop">
@@ -1065,6 +1103,22 @@ async function fetchJSON(url){
 }
 
 let topNCount=25, chartInterval="5m", showAllCrypto=false;
+/* Single point of truth for changing the analysis timeframe — used by both the top-bar
+   <select> (which drives the whole scanner/signal engine) and the quick-pick buttons inside
+   the coin-detail modal (so switching timeframe no longer requires closing the chart first).
+   Both entry points must stay in sync and both must clear the opportunity-radar cache, since
+   it was scored at the old interval. */
+function setChartInterval(v){
+  if(!v||chartInterval===v)return;
+  chartInterval=v;
+  const sel=document.getElementById("interval");if(sel)sel.value=v;
+  updateTfSwitchActive();
+  if(selectedSymbol)loadCryptoDetail(selectedSymbol);
+  opportunityResults.clear();scheduleOpportunityRescan();
+}
+function updateTfSwitchActive(){
+  document.querySelectorAll(".tf-btn").forEach(b=>b.classList.toggle("active",b.dataset.tf===chartInterval));
+}
 const market=new Map();
 let trackedSet=new Set(), selectedSymbol=null, oiPollQueue=[], oiPollTimer=null, rankTimer=null;
 
@@ -1076,10 +1130,10 @@ const ORBIT_CORE_MAJORS=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGE
 let orbitCoreSymbol="BTCUSDT";
 const OC_CIRC=2*Math.PI*80;
 let ws=null, wsReconnectAttempt=0, subscribedStreams=new Set(), lastWsTickAt=0, restFallbackTimer=null;
-let chart=null, candleSeries=null, volumeSeries=null, klineWs=null;
+let chart=null, candleSeries=null, volumeSeries=null, klineWs=null, loadDetailReqId=0;
 let emaSeries20=null, emaSeries50=null, emaSeriesVegas144=null, emaSeriesVegas169=null;
 let vwapSeries=null, supertrendSeries=null;
-let avwapSeries=null, avwapUpper1=null, avwapLower1=null;
+let avwapSeries=null, avwapUpper1=null, avwapLower1=null, chartPriceSeries=[];
 let oiHistory=[], cvdHistory=[], lastCandles=[], lastSignalComputeAt=0;
 let higherTfCandles=[], higherTfLabel=null, higherTfForSymbol=null;
 let fundingHistory=[], longShortHistory=[], currentLongShortRatio=null;
@@ -1101,7 +1155,11 @@ async function ensureBtcCloses(interval){
    方向相反时(比如1h看多但4h仍是空头结构),说明这更可能是大周期下的一次反抽/回调,而不是新趋势的
    开始,应该更谨慎。 */
 function higherTfOf(interval){
-  return{"1m":"15m","5m":"1h","15m":"1h","1h":"4h","4h":"1d","1d":"1d"}[interval]||interval;
+  // "1d" used to map to itself (comparing daily structure against daily structure is a
+  // no-op MTF check); now steps up to "1w" like every other tier. "1w" has nowhere higher
+  // to go, so it stays mapped to itself — the MTF confirmation naturally becomes a no-op
+  // only at the top of the ladder, not one rung early.
+  return{"1m":"15m","5m":"1h","15m":"1h","1h":"4h","4h":"1d","1d":"1w","1w":"1w"}[interval]||interval;
 }
 async function ensureHigherTf(symbol,interval){
   const htf=higherTfOf(interval);
@@ -1153,13 +1211,27 @@ function fmtNum(n,d=2){
   return n.toFixed(d);
 }
 function fmtUsd(n){return fmtNum(n,0);}
+/* Decimal places to show for a given price level. Binance perp prices span from ~$100k+
+   (BTC) down to sub-$0.0000001 (micro-cap alts), and a single fixed toFixed(n) either
+   truncates cheap coins to "0.00" or pads expensive ones with meaningless zeros. This
+   scales precision to the price's own magnitude — enough decimals to keep ~4-5
+   significant digits at every tier — and NEVER falls back to toPrecision()/scientific
+   notation, which is what silently broke sub-$0.001 coins before (e.g. 8.42e-7 instead
+   of a readable decimal). Also used to set the K线 chart's own priceFormat per symbol
+   (see applyChartPricePrecision) so the chart's axis/candles/crosshair match the table
+   instead of defaulting to lightweight-charts' generic 2-decimal price format. */
+function pricePrecision(price){
+  const a=Math.abs(price);
+  if(!isFinite(a)||a===0)return 4;
+  if(a>=1000)return 2;
+  if(a>=1)return 4;
+  if(a>=0.01)return 6;
+  if(a>=0.0001)return 8;
+  return Math.min(12,Math.ceil(-Math.log10(a))+4);
+}
 function fmtPrice(n){
   if(n===undefined||n===null||isNaN(n))return "–";
-  if(n===0)return "0.0000";
-  if(n>=1000)return n.toFixed(2);
-  if(n>=1)return n.toFixed(4);
-  if(n>=0.001)return n.toFixed(6);
-  return n.toPrecision(4);
+  return n.toFixed(pricePrecision(n));
 }
 function fmtPct(n){if(n===undefined||n===null||isNaN(n))return "–";return(n>=0?"+":"")+n.toFixed(2)+"%";}
 function fmtEta(mins){
@@ -1235,7 +1307,8 @@ function init(){
   updateStickyOffset();
   window.addEventListener("resize",()=>requestAnimationFrame(updateStickyOffset));
   document.getElementById("topN").addEventListener("change",e=>{topNCount=parseInt(e.target.value,10);refreshTopN(true);renderCryptoTable();});
-  document.getElementById("interval").addEventListener("change",e=>{chartInterval=e.target.value;if(selectedSymbol)loadCryptoDetail(selectedSymbol);opportunityResults.clear();scheduleOpportunityRescan();});
+  document.getElementById("interval").addEventListener("change",e=>setChartInterval(e.target.value));
+  document.querySelectorAll(".tf-btn").forEach(b=>b.addEventListener("click",()=>setChartInterval(b.dataset.tf)));
   document.getElementById("search").addEventListener("input",renderCryptoTable);
   document.getElementById("toggleAllCrypto").addEventListener("click",(e)=>{
     showAllCrypto=!showAllCrypto;
@@ -1263,6 +1336,13 @@ function init(){
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
       if(symbol&&interval)performBacktestRun(symbol,interval,btSampleSize);
+    }
+    const copyBtn=e.target.closest(".ticket-copy-btn");
+    if(copyBtn){
+      const txt=copyBtn.getAttribute("data-ticket")||"";
+      const done=()=>{const orig=copyBtn.textContent;copyBtn.textContent="✓ 已复制";copyBtn.disabled=true;setTimeout(()=>{copyBtn.textContent=orig;copyBtn.disabled=false;},1400);};
+      if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done).catch(()=>{});
+      else done();
     }
   });
   document.addEventListener("change",(e)=>{
@@ -1655,11 +1735,14 @@ function rowHTMLCrypto(m){
     else liqCell='<td class="dim" data-label="LIQ 1H">$0</td>';
   }
   const cvdFmt = m.tracked ? `<td class="${cvdCls}" data-label="CVD">${fmtNum(m.cvd)}</td>` : '<td class="dim" data-label="CVD">–</td>';
+  // c-px/c-pct/c-vol are stable hooks: patchCryptoRows() (the high-frequency ticker@arr
+  // handler) only touches these three cells directly instead of rebuilding the whole row —
+  // see patchCryptoRows for why.
   return `
     <td class="sym">${m.symbol.replace("USDT","")}${m.tracked?'<span class="tag">LIVE</span>':''}</td>
-    <td class="px" style="font-weight:600;" data-label="PRICE">${fmtPrice(m.price)}</td>
-    <td class="${pctCls}" data-label="24H %">${fmtPct(m.pct)}</td>
-    <td class="dim" data-label="VOL">${fmtNum(m.quoteVolume)}</td>
+    <td class="px c-px" style="font-weight:600;" data-label="PRICE">${fmtPrice(m.price)}</td>
+    <td class="${pctCls} c-pct" data-label="24H %">${fmtPct(m.pct)}</td>
+    <td class="dim c-vol" data-label="VOL">${fmtNum(m.quoteVolume)}</td>
     <td class="${fundCls}" data-label="FUNDING">${m.funding!=null?m.funding.toFixed(4)+"%":"–"}</td>
     <td class="dim" data-label="OI">${m.tracked&&m.oi?fmtNum(m.oi):"–"}</td>
     <td class="${m.oiChangePct==null?'dim':(m.oiChangePct>=0?'up':'down')}" data-label="OI Δ% 1H">${m.tracked&&m.oiChangePct!=null?(m.oiChangePct>=0?'+':'')+m.oiChangePct.toFixed(2)+'%':'–'}</td>
@@ -1689,12 +1772,23 @@ function renderCryptoTable(){
   maybeRenderHero();
 }
 function patchCryptoRow(symbol){const tr=document.querySelector('tr[data-symbol="'+symbol+'"]');if(!tr)return;tr.innerHTML=rowHTMLCrypto(market.get(symbol));}
+/* Hot path — runs on every !ticker@arr WS message, i.e. roughly once a second for every
+   visible row (up to 300+ with "显示全部合约" on). The old version did tr.innerHTML=rowHTMLCrypto(m)
+   here, which rebuilds all ~10 cells (string-concats a fresh liquidation-stats scan included)
+   and reparses them into the DOM every single tick, even though ticker@arr only ever changes
+   price/24h%/volume — OI, funding, CVD, liquidation and signal cells are refreshed on their own
+   independent (much slower) cycles via patchCryptoRow(). That full-row rebuild, repeated every
+   second across every row, is what was showing up as "lag/卡" — this only touches the 3 text
+   nodes that actually changed.*/
 function patchCryptoRows(){
   document.querySelectorAll('#tbodyCrypto tr.row').forEach(tr=>{
     const m=market.get(tr.dataset.symbol);if(!m)return;
-    tr.innerHTML=rowHTMLCrypto(m);
+    const pxEl=tr.querySelector(".c-px"),pctEl=tr.querySelector(".c-pct"),volEl=tr.querySelector(".c-vol");
+    if(pxEl)pxEl.textContent=fmtPrice(m.price);
+    if(pctEl){pctEl.textContent=fmtPct(m.pct);pctEl.className="c-pct "+(m.pct>=0?"up":"down");}
+    if(volEl)volEl.textContent=fmtNum(m.quoteVolume);
     const dir=flashQueue.get(tr.dataset.symbol);
-    if(dir){tr.children[1].classList.add(dir==="up"?"flash-up":"flash-down");setTimeout(()=>tr.children[1]&&tr.children[1].classList.remove("flash-up","flash-down"),500);}
+    if(dir&&pxEl){pxEl.classList.add(dir==="up"?"flash-up":"flash-down");setTimeout(()=>pxEl.classList.remove("flash-up","flash-down"),500);}
   });
   flashQueue.clear();
 }
@@ -2840,10 +2934,20 @@ function computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinute
     invalidatePrice,invalidateNote};
 }
 
-function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability){
+function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability,regime){
   // entry = 限价回调入场价(非当前市价) — 所有后续 TP/SL/RR 均以此为基准计算
   const entryInfo=computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinutes,sigmaVal,reliability);
   const entry=entryInfo.price;
+  // 趋势/震荡状态修正系数(regimeSlMult / regimeTpMult) — 之前 TP/SL 的最小距离是固定值,不管当前
+  // 是趋势市还是震荡市都用同一套,会导致两个真实问题:①趋势市里止损设得太紧,一次正常的深回调就把
+  // 你直接洗出局,明明趋势还在、只是这一次波动比平时大;②震荡市里止盈设得太远,价格根本没有单边
+  // 动能却硬要它跑到那个位置,大概率来回打脸后原地反转。这里用已经算好的 regime(缠论分型密度/
+  // Choppiness Index 判定的趋势/震荡状态)做一次系数修正:趋势市 → SL 放宽、TP 也放宽(让利润奔跑);
+  // 震荡市 → SL 略微收紧但留出插针缓冲、TP 明显收紧(现实点位,震荡市统计上很难走远);
+  // 过渡区(mixed) → 不做修正,维持原有基准。这样"不要太容易就 hit 到"和"不要一次正常回调就被扫损"
+  // 这两个诉求,都直接体现在距离本身上,而不是靠感觉调参。
+  const regimeSlMult=regime==="trend"?1.25:regime==="range"?1.05:1.0;
+  const regimeTpMult=regime==="trend"?1.15:regime==="range"?0.8:1.0;
   // Minimum distances per TP tier: TP1≥1×ATR, TP2≥2×ATR, TP3≥3.2×ATR — ensures realistic non-trivial targets,均以限价入场价为起点
   // 上限从原先的65×ATR大幅收紧到18×ATR: 过远的"结构位"即便存在,也早已脱离该资产已实现波动率能支撑的合理范围,
   // 会导致"看似有结构确认、实则统计上不可能在标注周期内达成"的误导性目标 — 交给下面的触碰概率去真实评估,而不是硬选。
@@ -2866,12 +2970,12 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     // 短,导致最终出现"TP3 比 TP1/TP2 还近、甚至方向上往回缩"这种不符合交易逻辑的倒挂(生产环境实测case:
     // TP1距离699点/TP2距离1438点,TP3的ATR兜底只有594点,比TP1还近)。加入 prevDist*1.15 这个下限后,
     // 三档永远保证 TP1 < TP2 < TP3(按到入场价的距离,严格递增),形成正确的止盈阶梯。
-    const minDist=Math.max(atrVal*minMults[i],prevDist*1.15);
+    const minDist=Math.max(atrVal*minMults[i]*regimeTpMult,prevDist*1.15);
     let tpPrice,weight,sources;
     if(lvl&&Math.abs(lvl.price-entry)>=minDist){tpPrice=lvl.price;weight=lvl.weight;sources=lvl.sources;}
     else{
       // Use ATR multiples, but ensure they're at least minDist away (含上面新增的"必须比上一档更远"约束)
-      const mult=[1.8,3.2,5.5][i];
+      const mult=[1.8,3.2,5.5][i]*regimeTpMult;
       const raw=dirSign>0?entry+atrVal*mult:entry-atrVal*mult;
       const withMin=dirSign>0?Math.max(raw,entry+minDist):Math.min(raw,entry-minDist);
       tpPrice=withMin;
@@ -2908,15 +3012,15 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     .filter(l=>dirSign>0?(l.price<entry&&(entry-l.price)>atrVal*0.5):(l.price>entry&&(l.price-entry)>atrVal*0.5));
   let slPrice,slSources;
   if(slCandidates[0]){
-    const buf=atrVal*0.4;
+    const buf=atrVal*0.4*regimeSlMult;
     slPrice=dirSign>0?slCandidates[0].price-buf:slCandidates[0].price+buf;
     slSources=slCandidates[0].sources;
   }else{
-    slPrice=dirSign>0?entry-atrVal*2.0:entry+atrVal*2.0;
+    slPrice=dirSign>0?entry-atrVal*2.0*regimeSlMult:entry+atrVal*2.0*regimeSlMult;
     slSources=["ATR×2 默认缓冲(附近无结构确认位)"];
   }
-  // enforce minimum SL distance: at least 0.8 ATR from entry
-  const minSlDist=atrVal*0.8;
+  // enforce minimum SL distance: at least 0.8 ATR from entry(趋势市放宽/震荡市略收紧,见上方regimeSlMult)
+  const minSlDist=atrVal*0.8*regimeSlMult;
   if(dirSign>0&&slPrice>entry-minSlDist)slPrice=entry-minSlDist;
   if(dirSign<0&&slPrice<entry+minSlDist)slPrice=entry+minSlDist;
   const risk=Math.abs(entry-slPrice),reward=Math.abs(tps[0].price-entry);
@@ -2933,10 +3037,121 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     t.raceWinProb=Math.round(raceProbability(logTpDist,logSlDist)*100);
     t.rr=risk>0?(Math.abs(t.price-entry)/risk).toFixed(2):"–"; // 该档自己的盈亏比,而非只借用TP1那一个数字
   });
-  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,tps,rr,sigma:sigmaVal,reliability};
+  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,tps,rr,sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult};
 }
 
 /* ── SIGNAL ENGINE ── */
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 独立信息簇聚合(CLUSTER CONSENSUS) ──
+   24个原始投票里,相当一部分本质是同一件事的不同数学皮肤(比如EMA趋势/MACD柱/Supertrend/
+   VWAP都是"价格相对均线位置"的变体),把它们各自当独立证据加总,会让共振度数字虚高——
+   同一个判断被重复计票。这里先把24票按"信息来源是否真独立"分进5个簇,簇内先做一次
+   "是否真的一致"的检验:一致才让整簇算1票(方向=多数方向,强度=一致成员平均幅度);
+   簇内分歧(比如EMA说多、MACD说空)则判该簇为"无观点",不参与打分,而不是简单平均掉。
+   votes原始明细完整保留在sig.votes里供UI展开查看,分数/共振度改为完全基于簇计算。
+   簇A 价格趋势位置 | 簇B 价格均值回归 | 簇C 结构与量价确认 | 簇D 衍生品资金流 | 簇E 拥挤度反向
+   ══════════════════════════════════════════════════════════════════════════════ */
+function clusterOfVoteName(name){
+  if(/EMA|Vegas|MACD|Supertrend|VWAP|多周期共振/.test(name))return"A";
+  if(/RSI|布林|KDJ|BIAS/.test(name))return"B";
+  if(/CVD背离|量能挤压/.test(name))return"D";
+  if(/缠论|斐波|动量因子|量能|K线形态/.test(name))return"C";
+  if(/资金流|持仓量变化率|吃单买卖比|资金费率连续性|顶\/底部结构预警|清算流向|Deribit|期权/.test(name))return"D";
+  if(/多空比\(散户|大户多空比/.test(name))return"E";
+  if(/波动率状态/.test(name))return null; // 风险因子,不参与方向聚合(dir恒为0)
+  return"D";
+}
+const CLUSTER_LABELS={A:"价格趋势位置",B:"价格均值回归",C:"结构与量价确认",D:"衍生品资金流",E:"拥挤度反向"};
+function computeClusterConsensus(votes,weightForFn){
+  const groups={};
+  votes.forEach(v=>{
+    const c=clusterOfVoteName(v.name);
+    if(!c)return;
+    (groups[c]=groups[c]||[]).push(v);
+  });
+  const clusters=[];
+  Object.keys(groups).forEach(c=>{
+    const all=groups[c],members=all.filter(v=>v.dir!==0);
+    let dir=0,strength=0,agreePct=null;
+    if(members.length){
+      const bull=members.filter(v=>v.dir>0).length,bear=members.filter(v=>v.dir<0).length;
+      const majority=Math.max(bull,bear);
+      agreePct=Math.round(majority/members.length*100);
+      if(majority/members.length>=0.6){
+        dir=bull>bear?1:-1;
+        const agreeing=members.filter(v=>Math.sign(v.dir)===dir);
+        strength=Math.min(1,agreeing.reduce((s,v)=>s+Math.abs(v.dir),0)/agreeing.length);
+      }
+    }
+    const cat=c==="A"?"trend":c==="B"?"meanrev":"neutral";
+    const w=weightForFn(cat);
+    clusters.push({id:c,label:CLUSTER_LABELS[c],dir,strength,weight:w,memberCount:all.length,activeCount:members.length,agreePct});
+  });
+  clusters.sort((a,b)=>a.id.localeCompare(b.id));
+  const score=clusters.reduce((s,c)=>s+c.dir*c.strength*c.weight,0);
+  const maxScore=clusters.reduce((s,c)=>s+c.weight,0)||1;
+  const confluence=Math.round(((score+maxScore)/(2*maxScore))*100);
+  const clusterBull=clusters.filter(c=>c.dir>0).length,clusterBear=clusters.filter(c=>c.dir<0).length;
+  return{clusters,score,maxScore,confluence,clusterBull,clusterBear,totalClusters:clusters.length};
+}
+
+/* ── REGIME 滞后带(HYSTERESIS) ── Choppiness Index 在38.2/61.8临界值附近逐根小幅波动是常态,
+   若单一阈值触线即翻,权重方案(顺势/反转指标各1.4↔0.6)会跟着来回切换,进而把总分符号也
+   带着翻过去——这正是"信号昨天多今天空"最常见的成因之一,而不是行情真的变了。
+   这里改成状态机: 退出当前状态需要更宽松的反向阈值,且候选新状态要连续满足3次才真正切换,
+   单次越界不算数。同一套函数被live信号与回测引擎共同调用,保证两边使用完全一致的regime口径。 */
+function stepRegimeHysteresis(state,ciVal){
+  const labelMap={trend:"趋势市",range:"震荡市",mixed:"过渡区"};
+  if(ciVal==null)return{regime:state.regime,regimeLabel:labelMap[state.regime]};
+  let{regime,pendingRegime,pendingCount}=state;
+  let candidate=regime;
+  if(regime==="range"){if(ciVal<=55)candidate="mixed";}
+  else if(regime==="trend"){if(ciVal>=45)candidate="mixed";}
+  else{if(ciVal>=65)candidate="range";else if(ciVal<=28)candidate="trend";}
+  if(candidate===regime){pendingRegime=null;pendingCount=0;}
+  else if(candidate===pendingRegime){pendingCount++;}
+  else{pendingRegime=candidate;pendingCount=1;}
+  if(pendingRegime&&pendingCount>=3){regime=pendingRegime;pendingRegime=null;pendingCount=0;}
+  state.regime=regime;state.pendingRegime=pendingRegime;state.pendingCount=pendingCount;
+  return{regime,regimeLabel:labelMap[regime]};
+}
+const liveRegimeStateStore=new Map();
+function resolveLiveRegime(symbol,intervalLabel,ciVal){
+  const key=symbol+"|"+intervalLabel;
+  const state=liveRegimeStateStore.get(key)||{regime:"mixed",pendingRegime:null,pendingCount:0};
+  const res=stepRegimeHysteresis(state,ciVal);
+  liveRegimeStateStore.set(key,state);
+  return res;
+}
+
+/* ── 周期锚定层(CYCLE ANCHOR) ── 战术层(上面5个簇)几分钟到几小时就可能变一次方向,
+   适合找进场点,但不该单独决定"今天到底该做多还是做空"这种更大的问题。这里用日线200EMA
+   斜率+现价相对位置,给出一个几周才会变一次的慢层判断,战术层信号如果和它反着来,
+   会在执行闸门里被明确标记为"逆周期",而不是照样给一个高置信度的反向单子。 */
+let cycleAnchorCandles=[],cycleAnchorForSymbol=null;
+async function ensureCycleAnchor(symbol){
+  if(cycleAnchorForSymbol===symbol&&cycleAnchorCandles.length)return;
+  try{
+    const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=260`);
+    cycleAnchorCandles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+    cycleAnchorForSymbol=symbol;
+  }catch(e){cycleAnchorCandles=[];cycleAnchorForSymbol=null;}
+}
+function computeCycleAnchor(candles){
+  if(!candles||candles.length<210)return{state:"neutral_both",label:"周期数据加载中(暂不限制方向)",detail:"日线历史不足,默认双向放行",slopePct:null};
+  const closes=candles.map(c=>c.close);
+  const e200=ema(closes,200);
+  const li=closes.length-1,lookback=10;
+  const cur=e200[li],prev=e200[li-lookback];
+  if(cur==null||prev==null)return{state:"neutral_both",label:"200日均线数据不足(暂不限制方向)",detail:"–",slopePct:null};
+  const slopePct=(cur-prev)/prev*100;
+  const price=closes[li],aboveMA=price>cur;
+  let state="neutral_both",label="周期方向不明确(双向放行,降级处理)";
+  if(slopePct>0.5&&aboveMA){state="long_only";label="多头周期(仅做多)";}
+  else if(slopePct<-0.5&&!aboveMA){state="short_only";label="空头周期(仅做空)";}
+  return{state,label,slopePct,detail:`日线200EMA斜率(近${lookback}日) ${slopePct>=0?"+":""}${slopePct.toFixed(2)}% · 现价${aboveMA?"高于":"低于"}200EMA → ${label}`};
+}
+
 function computeSignal(candles,intervalLabel,symbol,ctx){
   if(!candles||candles.length<30)return null;
   // ctx lets a background batch scan (Opportunity Radar) feed in per-symbol OI/CVD/ratio
@@ -2959,12 +3174,8 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   // 混沌指标 Choppiness Index(14) → 市场状态判定(趋势市/震荡市/过渡区),驱动下方动态投票权重。
   const ciArr=choppinessIndex(candles,14);
   const ciVal=ciArr[li];
-  let regime="mixed",regimeLabel="过渡区";
-  if(ciVal!=null){
-    if(ciVal>=61.8){regime="range";regimeLabel="震荡市";}
-    else if(ciVal<=38.2){regime="trend";regimeLabel="趋势市";}
-    else{regime="mixed";regimeLabel="过渡区";}
-  }
+  const regimeRes=resolveLiveRegime(symbol,intervalLabel,ciVal);
+  let regime=regimeRes.regime,regimeLabel=regimeRes.regimeLabel;
   // 动态投票权重: 趋势市时顺势类指标(EMA/Vegas/MACD/Supertrend/结构/VWAP)加权1.4·反转类(RSI/布林/BIAS)降至0.6;
   // 震荡市反之。资金流/清算/多空比/期权/量能/形态/斐波那契等中性类指标始终保持权重1。
   function weightFor(cat){
@@ -3129,9 +3340,8 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   }
 
   votes.forEach(v=>{v.w=weightFor(v.cat);});
-  const score=votes.reduce((s,v)=>s+v.dir*v.w,0);
-  const maxScore=votes.reduce((s,v)=>s+v.w,0);
-  const confluence=Math.round(((score+maxScore)/(2*maxScore))*100);
+  const clusterRes=computeClusterConsensus(votes,weightFor);
+  const score=clusterRes.score,maxScore=clusterRes.maxScore,confluence=clusterRes.confluence;
   let biasLabel="中性 NEUTRAL",biasCls="neutral";
   if(score>=maxScore*0.30){biasLabel="偏多 BULLISH";biasCls="bull";}
   if(score>=maxScore*0.52){biasLabel="强烈偏多 STRONG BULL";biasCls="bull";}
@@ -3144,20 +3354,22 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
 
   // 指标同向占比 — 与加权得分比是两把不同的尺子:得分比可能被少数高权重指标拉高,
   // 而这里看的是"N项指标里到底有多少项真的指向同一个方向",两者都过线才算真正可信的趋势。
-  const voteBull=votes.filter(v=>v.dir>0.05).length, voteBear=votes.filter(v=>v.dir<-0.05).length;
-  const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,votes.length,regime);
+  const voteBull=clusterRes.clusterBull, voteBear=clusterRes.clusterBear, voteTotal=clusterRes.totalClusters;
+  const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,voteTotal,regime);
   // 方向性展望: 达到方向确认门槛(dirSign≠0)时给出概率化方向 + 仓位/杠杆/周期建议;
   // 未达门槛(dirSign===0,即顶部徽章显示"中性 NEUTRAL"、可信度显示"无方向"的情况)时,
   // 不再让下面的交易计划/摘要卡片自说自话地用一个连noise都能算出符号的边际倾向去
   // 冒充确定方向——这正是之前"上面中性、下面SHORT"矛盾的根源。
-  const outlook=computeDirectionalOutlook(score,maxScore,voteBull,voteBear,votes.length,regime,er,dirSign,volRisk);
+  const outlook=computeDirectionalOutlook(score,maxScore,voteBull,voteBear,voteTotal,regime,er,dirSign,volRisk);
 
-  const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240}[intervalLabel]||5;
+  // 之前这张表漏了 "1d"(以及现在新增的 "1w"),选中日线/周线时会静默 fallback 到 ||5,
+  // 也就是拿"5分钟"去算ETA/ATR时间窗——这是一个真实存在的既有bug,不是本次新增周期才引入的。
+  const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440,"1w":10080}[intervalLabel]||5;
   // dirSign===0 → 未形成方向共识,不构建挂在"某一侧结构位"上的限价单/TP/SL(那样做等于替一个
   // 没有方向依据的判断硬点一个假装有依据的价位)。改为返回 noSetup 占位对象,渲染层据此
   // 显示"无方向·不构成交易机会"而不是一整套看似煞有介事的交易计划。
   const plan={mode:"trend",main:dirSign!==0
-    ?buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability)
+    ?buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability,regime)
     :{dir:0,noSetup:true,reliability,entry:null,entryInfo:null,sl:null,slSources:[],tps:[],rr:"–",sigma:sigmaVal}};
 
   const moon=moonPhaseLabel(new Date());
@@ -3165,8 +3377,14 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   const wuxing=getWuxingAnalysis(symbol);
   const mercury=getMercuryStatus();
 
-  return{price,votes,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook};
+  // 周期锚定层判定 + 与本次战术方向做一致性检查——只在两者都已给出确定方向(非neutral_both/无方向)
+  // 且明确相反时才标记为cycleConflict,这是执行闸门(见renderStrategySummary)的一票否决条件之一。
+  const cycleAnchor=(cycleAnchorForSymbol===symbol)?computeCycleAnchor(cycleAnchorCandles):
+    {state:"neutral_both",label:"周期数据加载中(暂不限制方向)",detail:"日线数据尚未就绪,默认双向放行",slopePct:null};
+  const cycleConflict=dirSign!==0&&((cycleAnchor.state==="long_only"&&dirSign<0)||(cycleAnchor.state==="short_only"&&dirSign>0));
+
+  return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict};
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -3189,7 +3407,7 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
    最直接的方式:不是嘴上说"是",而是回测和实盘物理上调用的是同一个函数。
    ══════════════════════════════════════════════════════════════════════════════ */
 
-const BT_INTERVAL_MINUTES={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440};
+const BT_INTERVAL_MINUTES={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440,"1w":10080};
 
 function backtestWeightFor(regime,cat){
   if(regime==="trend")return cat==="trend"?1.4:cat==="meanrev"?0.6:1.0;
@@ -3203,15 +3421,16 @@ function backtestWeightFor(regime,cat){
    重算一遍造成 O(n²) 的计算量。findPivots/VolumeProfile/结构位/锚定VWAP 这几项需要一个
    "以idx为终点"的滑动窗口(而不是整段历史),用固定长度(200根)截取,同样只是 O(200)
    的固定开销,不随 idx 增长而变慢。*/
-function backtestSnapshotAt(candles,idx,intervalLabel,pre){
+function backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState){
   const WIN=200;
   const winStart=Math.max(0,idx-WIN+1);
   const winCandles=candles.slice(winStart,idx+1); // 200根定长窗口,末尾=idx,不含未来数据
   const price=candles[idx].close;
   const{highs,lows}=findPivots(winCandles);
   const ciVal=pre.ciF[idx];
-  let regime="mixed";
-  if(ciVal!=null){if(ciVal>=61.8)regime="range";else if(ciVal<=38.2)regime="trend";}
+  // 与live信号共用同一套滞后带状态机(stepRegimeHysteresis),而不是另一套简化的单阈值判定——
+  // 否则回测出来的regime口径和实盘不是同一件事,校准差数字就失去了意义。
+  const regime=stepRegimeHysteresis(regimeState,ciVal).regime;
   const votes=[];
   const eFast=pre.ema20F[idx],e50=pre.ema50F[idx];
   votes.push({name:"EMA20/50趋势",cat:"trend",dir:(eFast!=null&&e50!=null)?(price>eFast&&eFast>e50?1:price<eFast&&eFast<e50?-1:0):0});
@@ -3283,17 +3502,17 @@ function backtestSnapshotAt(candles,idx,intervalLabel,pre){
   votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir});
 
   votes.forEach(v=>{v.w=backtestWeightFor(regime,v.cat);});
-  const score=votes.reduce((s,v)=>s+v.dir*v.w,0);
-  const maxScore=votes.reduce((s,v)=>s+v.w,0);
+  const clusterRes=computeClusterConsensus(votes,cat=>backtestWeightFor(regime,cat));
+  const score=clusterRes.score,maxScore=clusterRes.maxScore;
   const dirSign=score>maxScore*0.15?1:score<-maxScore*0.15?-1:0;
-  const voteBull=votes.filter(v=>v.dir>0.05).length,voteBear=votes.filter(v=>v.dir<-0.05).length;
-  const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,votes.length,regime);
+  const voteBull=clusterRes.clusterBull,voteBear=clusterRes.clusterBear,voteTotal=clusterRes.totalClusters;
+  const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,voteTotal,regime);
   const closesTail=pre.closesFull.slice(Math.max(0,idx-105),idx+1);
   const sigmaVal=barLogReturnSigma(closesTail);
   const intervalMinutes=BT_INTERVAL_MINUTES[intervalLabel]||60;
   let plan=null;
   if(dirSign!==0){
-    plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,Math.round(((score+maxScore)/(2*maxScore))*100),vwapVal,sigmaVal,reliability);
+    plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,clusterRes.confluence,vwapVal,sigmaVal,reliability);
   }
   return{dirSign,plan,reliability};
 }
@@ -3355,8 +3574,9 @@ async function runBacktest(candles,intervalLabel,sampleSize,onProgress){
   const endIdx=n-2; // 至少留1根K线用于判断是否成交
   const trades=[];
   let totalSignals=0;
+  const regimeState={regime:"mixed",pendingRegime:null,pendingCount:0}; // 本次回测独立状态,随idx递增走一遍历史
   for(let idx=startIdx;idx<=endIdx;idx++){
-    const snap=backtestSnapshotAt(candles,idx,intervalLabel,pre);
+    const snap=backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState);
     if(snap.dirSign!==0&&snap.plan){
       totalSignals++;
       const outcome=simulateTradeOutcome(candles,idx,snap.plan,intervalMinutes);
@@ -3599,10 +3819,20 @@ function slCardHTML(plan){
     ${plan.sigma==null?'<div class="src" style="color:var(--amber);">⚠ 该周期K线样本不足,以下概率退回旧版ATR估算,可信度较低,建议切换更长的K线周期后重新查看</div>':''}
   </div>`;
 }
-function entryCardHTML(plan){
+function entryCardHTML(plan,hasPosition){
   const ei=plan.entryInfo;
   const pctTxt=(ei.pctFromPrice>=0?"+":"")+ei.pctFromPrice.toFixed(2)+"%";
   const waitWord=plan.dir>0?"等回调 PULLBACK":"等反抽 REBOUND";
+  // "失效撤单价"只在限价单【尚未成交】前有意义(挂单还没吃到,当然可以撤)。之前的版本不管
+  // 你成交没成交都写同一句话,于是出现"我都在0.0823成交了,怎么还写着撤单"这种自相矛盾的阅读体验。
+  // 这里明确分两种状态呈现,并给一个手动【标记已入场】的入口——成交是你自己的账户上发生的事,
+  // 这个工具没有你的交易所持仓数据,没法自动判断,只能由你确认。
+  const fillBtn=hasPosition
+    ?`<div class="src" style="color:var(--up);margin-top:6px;">✅ 已标记入场 — 下方按"持仓论文追踪"逻辑跟踪,不再提示撤单</div>`
+    :`<div class="src" style="margin-top:6px;"><button onclick="markPositionFilled()" style="font-size:11px;padding:5px 10px;border:1px solid var(--amber);border-radius:4px;background:rgba(198,165,101,.08);color:var(--amber);cursor:pointer;">✅ 我已在此价位成交,标记已入场</button></div>`;
+  const invalidateLine=hasPosition
+    ?`<div class="src" style="color:var(--down);margin-top:3px;">⚠ 入场后预警位 ${fmtPrice(ei.invalidatePrice)} — 已成交,此价不再是"撤单价",而是持仓早期预警位(见下方持仓论文追踪卡片)</div>`
+    :`<div class="src" style="color:var(--down);margin-top:3px;">⛔ 失效撤单价 ${fmtPrice(ei.invalidatePrice)}(仅在成交前有效) — ${esc(ei.invalidateNote)}</div>`;
   return `<div class="tp-card entry">
     <div class="row1"><span class="lab">LIMIT 入场</span><span style="color:var(--amber);">${fmtPrice(plan.entry)}</span></div>
     <div class="row2"><span class="prob-tag">成交概率 ~${ei.prob}%</span><span class="eta-live">${esc(fmtEtaFull(ei.eta))}</span></div>
@@ -3612,10 +3842,114 @@ function entryCardHTML(plan){
     </div>
     <div class="prob-bar"><div class="prob-fill" style="width:${ei.prob}%;background:var(--amber);"></div></div>
     <div class="src">📍 现价 ${fmtPrice(ei.marketPrice)} → 限价挂单 ${fmtPrice(plan.entry)}(非市价单)· ${esc(ei.sources.join(" + "))}</div>
-    <div class="src" style="color:var(--down);margin-top:3px;">⛔ 失效撤单价 ${fmtPrice(ei.invalidatePrice)} — ${esc(ei.invalidateNote)}</div>
+    ${invalidateLine}
+    ${fillBtn}
   </div>`;
 }
-function timelineHTML(plan){
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 持仓论文追踪(POSITION THESIS TRACKER) ──
+   用户提出的真实困惑: "我已经在 0.082233 成交了,为什么下面还写着 0.081978 撤单?"——
+   根源是这个工具此前只有"限价单尚未成交前该不该撤单"这一层逻辑,完全没有"你已经进场之后,
+   这笔仓位还健不健康"这一层。于是不管有没有成交,页面永远显示同一套"未成交"话术,
+   成交后继续看到"撤单"字眼,读起来自相矛盾——这不是你理解错了,是工具本身缺了这一层。
+   这里补上第二层: 用户在真正成交后手动点【标记已入场】,状态存入 localStorage(按 币种+K线周期
+   为key,同一币种不同周期的仓位互不覆盖),之后每次重新打开/刷新,不再重复展示"撤单"话术,
+   而是拿"入场时的论文快照"(方向 / regime趋势状态 / 可信度等级)与"现在重新算出来的信号"做比对,
+   给出 🟢仍然成立 / 🟡论文动摇 / 🔴论文已被推翻 三档结论——这才是能撑起"1-2小时/3-4小时"
+   持仓周期的"投资北斗星",而不是每次打开都只给你一个跟你手上仓位毫无关系的新判断。 */
+function posKey(sym,interval){return sym+"|"+interval;}
+function getPositions(){try{return JSON.parse(localStorage.getItem("orbit_positions")||"{}");}catch(e){return{};}}
+function savePositions(obj){try{localStorage.setItem("orbit_positions",JSON.stringify(obj));}catch(e){}}
+function getActivePosition(sym,interval){return getPositions()[posKey(sym,interval)]||null;}
+function rerenderAfterPositionChange(){
+  if(lastCandles&&lastCandles.length&&selectedSymbol){
+    const s2=computeSignal(lastCandles,chartInterval,selectedSymbol);
+    renderChartBiasBadge(s2);renderModalScroll(s2);
+  }
+}
+function markPositionFilled(){
+  if(!lastCandles||!lastCandles.length||!selectedSymbol)return;
+  const sig=computeSignal(lastCandles,chartInterval,selectedSymbol);
+  const p=sig.plan.main; if(!p||p.noSetup)return;
+  const positions=getPositions();
+  positions[posKey(selectedSymbol,chartInterval)]={
+    dir:p.dir,entry:p.entry,sl:p.sl,invalidatePrice:p.entryInfo.invalidatePrice,
+    tps:p.tps.map(t=>({label:t.label,price:t.price})),
+    regimeAtEntry:sig.regime,regimeLabelAtEntry:sig.regimeLabel,
+    reliabilityTierAtEntry:sig.reliability.tier,convictionAtEntry:sig.outlook.conviction,
+    entryMarketPrice:p.entryInfo.marketPrice,filledAt:Date.now()
+  };
+  savePositions(positions);
+  rerenderAfterPositionChange();
+}
+function clearPosition(){
+  if(!selectedSymbol)return;
+  const positions=getPositions();
+  delete positions[posKey(selectedSymbol,chartInterval)];
+  savePositions(positions);
+  rerenderAfterPositionChange();
+}
+const RELIABILITY_RANK={reliable:3,moderate:2,weak:1,none:0};
+function evaluateThesisHealth(pos,sig){
+  const reasons=[];let level="green";
+  // ① 方向是否反转 —— 用现在重新算出来的 dirSign 对照当初开仓方向,这是最硬的一条判断,
+  // 直接对应你说的"昨天推荐long,今天变成推荐short"这种情况:以前你只能自己发现这个矛盾,
+  // 现在工具会替你把这个矛盾摊开来讲清楚。
+  if(sig.dirSign!==0&&sig.dirSign!==pos.dir){
+    level="red";
+    reasons.push("反向信号已触发:模型现在给出的方向与你开仓时相反,原论文很可能已被推翻");
+  }else if(sig.dirSign===0){
+    level="yellow";
+    reasons.push("模型现在已回到中性(未形成方向共识),原先支撑这笔仓位的方向性依据正在减弱");
+  }
+  // ② regime 是否从趋势转为震荡 —— 顺势单最怕的就是趋势已经走完了、你却还没意识到
+  if(sig.regime==="range"&&pos.regimeAtEntry==="trend"){
+    if(level==="green")level="yellow";
+    reasons.push(`开仓时是趋势市,现在已转为震荡市(${sig.regimeLabel})——趋势延续的逻辑基础已经变化`);
+  }
+  // ③ 可信度等级是否下降(内部指标是否比开仓时更分歧)
+  const rankNow=RELIABILITY_RANK[sig.reliability.tier]??0,rankThen=RELIABILITY_RANK[pos.reliabilityTierAtEntry]??0;
+  if(rankNow<rankThen){
+    if(level==="green")level="yellow";
+    reasons.push("信号可信度较开仓时下降,内部指标分歧比当初更大");
+  }
+  // ④ 价格是否已经跌破/涨破"入场后预警位"—— 这就是原来的"失效撤单价",成交后语义从
+  // "撤单"转为"早期预警":单子已经成交,撤不掉了,但这个位置本身仍然有意义,只是意义变了。
+  const price=sig.price;
+  const warnBroken=pos.dir>0?price<=pos.invalidatePrice:price>=pos.invalidatePrice;
+  if(warnBroken&&level!=="red"){
+    level="red";
+    reasons.push("价格已跌/涨破入场后预警位——这不像是健康回调,建议主动减仓或将止损收紧到此位,而不是死等到SL");
+  }
+  if(reasons.length===0)reasons.push("方向、市场状态、可信度均与开仓时一致,论文仍然成立,按计划持有即可");
+  return{level,reasons};
+}
+function fmtElapsed(ms){
+  const mins=Math.floor(ms/60000);
+  if(mins<60)return mins+"分钟前";
+  const hrs=Math.floor(mins/60);
+  if(hrs<24)return hrs+"小时"+(mins%60)+"分钟前";
+  return Math.floor(hrs/24)+"天"+(hrs%24)+"小时前";
+}
+function positionHealthCardHTML(pos,sig){
+  const health=evaluateThesisHealth(pos,sig);
+  const badge={green:{emoji:"🟢",label:"论文仍然成立",col:"var(--up)"},
+    yellow:{emoji:"🟡",label:"论文动摇",col:"var(--amber)"},
+    red:{emoji:"🔴",label:"论文已被推翻",col:"var(--down)"}}[health.level];
+  const pnlPct=(((sig.price-pos.entry)/pos.entry)*100*pos.dir).toFixed(2);
+  const pnlCol=Number(pnlPct)>=0?"var(--up)":"var(--down)";
+  return `<div style="border:1px solid ${badge.col};border-radius:6px;padding:12px 14px;margin:2px 0 14px;background:var(--panel2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:14px;font-weight:700;color:${badge.col};">${badge.emoji} 持仓中 · ${esc(badge.label)}</div>
+      <div style="font-size:11.5px;color:var(--dim);">已持仓 ${fmtElapsed(Date.now()-pos.filledAt)} · 开仓 ${fmtPrice(pos.entry)} → 现价 ${fmtPrice(sig.price)} · <b style="color:${pnlCol};">${Number(pnlPct)>=0?"+":""}${pnlPct}%</b></div>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-top:8px;line-height:1.65;">${health.reasons.map(r=>"· "+esc(r)).join("<br>")}</div>
+    <div style="margin-top:10px;">
+      <button onclick="clearPosition()" style="font-size:11px;padding:5px 10px;border:1px solid var(--line2);border-radius:4px;background:var(--panel3);color:var(--dim);cursor:pointer;">✕ 清除持仓记录(已离场 / 已触发止盈止损)</button>
+    </div>
+  </div>`;
+}
+function timelineHTML(plan,hasPosition){
   const ei=plan.entryInfo;
   // 修复①: 之前这里完全没有把 SL 放进时间轴 —— 下方卡片里明明算好了止损价,时间轴上却像"这笔单没有SL"一样。
   // 修复②: 之前每个节点只是按数组顺序均匀排开,和它们的真实价格毫无关系,所以就算 TP 顺序算错了(见下方
@@ -3624,7 +3958,9 @@ function timelineHTML(plan){
   const nodes=[
     {lbl:"现价",price:ei.marketPrice,px:fmtPrice(ei.marketPrice),meta:"当前市价 · 不直接入场",color:"var(--dim2)",kind:"mkt"},
     {lbl:"限价入场",price:plan.entry,px:fmtPrice(plan.entry),meta:(plan.dir>0?"做多 LONG · ":"做空 SHORT · ")+`<span class="eta-live">${esc(fmtEtaFull(ei.eta))}</span>`,color:"var(--amber)",kind:"entry"},
-    {lbl:"⛔失效撤单",price:ei.invalidatePrice,px:fmtPrice(ei.invalidatePrice),meta:"成交前触及则撤单,非健康回调",color:"var(--down)",kind:"sl"},
+    hasPosition
+      ?{lbl:"⚠️入场预警",price:ei.invalidatePrice,px:fmtPrice(ei.invalidatePrice),meta:"已成交 · 触及视为早期预警,非撤单",color:"var(--down)",kind:"sl"}
+      :{lbl:"⛔失效撤单",price:ei.invalidatePrice,px:fmtPrice(ei.invalidatePrice),meta:"成交前触及则撤单,非健康回调",color:"var(--down)",kind:"sl"},
     {lbl:"SL 止损",price:plan.sl,px:fmtPrice(plan.sl),meta:`盈亏比 R:R ${plan.rr}(对TP1) · ${esc((plan.slSources||[]).slice(0,1).join(""))}`,color:"var(--down)",kind:"sl"},
   ].concat(plan.tps.map(t=>({lbl:t.label,price:t.price,px:fmtPrice(t.price),meta:`${esc(t.horizon.split("·")[0].trim())} · R:R ${t.rr} · 先达胜率 ${t.raceWinProb}%`,color:"var(--up)",kind:"tp"})));
 
@@ -3655,10 +3991,15 @@ function renderTradePlanSection(sig){
   const outlook=sig.outlook;
   const st=outlook.sizeTier;
   const p=sig.plan.main;
+  const pos=(typeof selectedSymbol!=="undefined"&&selectedSymbol)?getActivePosition(selectedSymbol,chartInterval):null;
+  const healthCard=pos?positionHealthCardHTML(pos,sig):"";
   // dirSign===0(未过方向确认门槛,顶部徽章为"中性 NEUTRAL")→ 不渲染挂在某一侧结构位上的
   // 假交易计划,直接显示与顶部一致的"无方向"结论,避免"上面中性、下面却给SHORT计划"的矛盾。
+  // 但如果你手上有已标记的持仓,这个"中性"判断本身就是持仓论文健康度的重要信号之一
+  // (见 healthCard/evaluateThesisHealth 的"模型现在已回到中性"一条),所以中性分支也要显示 healthCard。
   if(p.noSetup){
     return `
+      ${healthCard}
       <div class="section-title">📊 TP / SL 交易计划 <span class="dim neutral" style="font-size:9px;">方向: 中性 NEUTRAL · 不构成交易机会</span></div>
       <div class="neutral-banner" style="border-color:rgba(198,165,101,.35);background:rgba(198,165,101,.06);">
         <b class="neutral">⚖ 中性 NEUTRAL(把握度 ${outlook.conviction}/100) → 未形成方向共识,不构成交易机会。</b> ${esc(rel.detail)}
@@ -3670,12 +4011,16 @@ function renderTradePlanSection(sig){
   const convBanner=`<div class="neutral-banner" style="border-color:${st.cls==='bull'?'rgba(90,155,120,.35)':st.cls==='bear'?'rgba(184,85,95,.35)':'rgba(198,165,101,.35)'};background:${st.cls==='bull'?'rgba(90,155,120,.06)':st.cls==='bear'?'rgba(184,85,95,.06)':'rgba(198,165,101,.06)'};">
     <b class="${st.cls}">⚖ ${esc(st.label)}(把握度 ${outlook.conviction}/100) → 方向 ${p.dir>0?"偏多 LONG":"偏空 SHORT"} · 概率 ~${outlook.leanProbPct}% · 建议仓位 ${st.posMin}%–${st.posMax}% 净值 · 杠杆 ${st.levMin}–${st.levMax}x · ${esc(outlook.timeframe.label)}。</b> ${esc(st.note)} ${esc(rel.detail)}
   </div>`;
+  const regimeNote={trend:"当前为趋势市 → TP/SL 距离已按趋势市系数放宽(止损容忍更深回调、止盈让利润奔跑)",
+    range:"当前为震荡市 → TP 距离已收紧(现实点位,震荡市统计上很难走远),SL 略收紧但保留插针缓冲",
+    mixed:"当前为过渡区 → TP/SL 维持基准距离,未做趋势/震荡系数修正"}[p.regime]||"";
   return `
+      ${healthCard}
       <div class="section-title">📊 TP / SL 交易计划 <span class="dim" style="font-size:9px;">方向: ${p.dir>0?"做多 LONG 🟢":"做空 SHORT 🔴"} · ${esc(st.label)}</span></div>
       ${convBanner}
-      <div class="section-note">全部按限价单(LIMIT)设计,不追市价:入场价为价格朝${p.dir>0?"下方支撑/回踩":"上方压力/反抽"}结构位回调后的挂单价,而非当前市价,需等待 rebound 打到该价位才成交(预计30分钟~8小时)。目标位来自缠论分型摆动高低点、斐波那契回撤/扩展、趋势线(连接摆动点位)、Volume Profile POC/HVN、VWAP 多重共振确认;周边确实缺乏任何结构确认位时才会退回ATR估算,并会在下方"📍来源"中明确标注。TP1固定4h窗口 / TP2固定24h窗口 / TP3固定3日窗口 — 每档"窗口内触碰概率"由该资产近100根K线真实已实现波动率(对数收益标准差)代入反射原理公式计算,不是拿距离硬除以ATR编出来的分钟数,因此不会出现"35分钟内涨10%"这类不符合该资产真实波动速度的说法。"先达胜率"则是止盈与止损两边对数距离之比(赌徒破产公式/鞅的最优停时定理精确解),与时间无关,是判断这笔限价单是否值得挂的核心数字。止损设于限价入场价外侧最近结构失效点+ATR缓冲;挂单成交前若价格反向击穿"失效撤单价"(入场价再往不利方向1×ATR),说明这不是健康回调而是趋势单边延续,应撤单离场,不追价、不下移/上移限价。三档目标按到入场价的距离严格递增(TP1&lt;TP2&lt;TP3),对应的盈亏比 R:R 和持有时间也依次变大 —— 设计上是给<b>分批止盈</b>用的梯度(例如TP1先落袋一部分、剩余仓位博TP2/TP3,而非到TP1就必须清仓),具体分几档、每档留多少仓位由你自己按风险偏好决定,不代表必须在TP1全平。以上概率、仓位与杠杆建议均为基于历史已实现波动率与信号共振度的启发式估计,不构成回测验证过的胜率,也不构成投资建议,请自行结合自身风险承受能力核实与调整。</div>
-      ${timelineHTML(p)}
-      <div class="plan-grid" style="margin-top:12px;">${entryCardHTML(p)}${slCardHTML(p)}${p.tps.map(t=>tpCardHTML(t)).join("")}</div>`;
+      <div class="section-note">全部按限价单(LIMIT)设计,不追市价:入场价为价格朝${p.dir>0?"下方支撑/回踩":"上方压力/反抽"}结构位回调后的挂单价,而非当前市价,需等待 rebound 打到该价位才成交(预计30分钟~8小时)。目标位来自缠论分型摆动高低点、斐波那契回撤/扩展、趋势线(连接摆动点位)、Volume Profile POC/HVN、VWAP 多重共振确认;周边确实缺乏任何结构确认位时才会退回ATR估算,并会在下方"📍来源"中明确标注。TP1固定4h窗口 / TP2固定24h窗口 / TP3固定3日窗口 — 每档"窗口内触碰概率"由该资产近100根K线真实已实现波动率(对数收益标准差)代入反射原理公式计算,不是拿距离硬除以ATR编出来的分钟数,因此不会出现"35分钟内涨10%"这类不符合该资产真实波动速度的说法。"先达胜率"则是止盈与止损两边对数距离之比(赌徒破产公式/鞅的最优停时定理精确解),与时间无关,是判断这笔限价单是否值得挂的核心数字。止损设于限价入场价外侧最近结构失效点+ATR缓冲(${esc(regimeNote)});挂单成交前若价格反向击穿"失效撤单价"(入场价再往不利方向1×ATR),说明这不是健康回调而是趋势单边延续,应撤单离场,不追价、不下移/上移限价——此逻辑仅在成交前有效,成交后请点【标记已入场】切换为持仓论文追踪。三档目标按到入场价的距离严格递增(TP1&lt;TP2&lt;TP3),对应的盈亏比 R:R 和持有时间也依次变大 —— 设计上是给<b>分批止盈</b>用的梯度(例如TP1先落袋一部分、剩余仓位博TP2/TP3,而非到TP1就必须清仓),具体分几档、每档留多少仓位由你自己按风险偏好决定,不代表必须在TP1全平。以上概率、仓位与杠杆建议均为基于历史已实现波动率与信号共振度的启发式估计,不构成回测验证过的胜率,也不构成投资建议,请自行结合自身风险承受能力核实与调整。</div>
+      ${timelineHTML(p,!!pos)}
+      <div class="plan-grid" style="margin-top:12px;">${entryCardHTML(p,!!pos)}${slCardHTML(p)}${p.tps.map(t=>tpCardHTML(t)).join("")}</div>`;
 }
 
 /* ── RENDER: STRUCTURE ── */
@@ -3961,7 +4306,7 @@ function sgtTimeFormatter(time){
 function ensureChart(){
   if(chart)return;
   chart=LightweightCharts.createChart(document.getElementById("chart"),{
-    layout:{background:{color:"#12161f"},textColor:"#ada496",fontFamily:"IBM Plex Mono,monospace",fontSize:12},
+    layout:{background:{color:"#12161f"},textColor:"#ada496",fontFamily:"JetBrains Mono,monospace",fontSize:12},
     grid:{vertLines:{color:"#171c27"},horzLines:{color:"#171c27"}},
     rightPriceScale:{borderColor:"#262c3a"},
     timeScale:{borderColor:"#262c3a",timeVisible:true,secondsVisible:false,tickMarkFormatter:sgtTickFormatter},
@@ -3980,6 +4325,21 @@ function ensureChart(){
   avwapSeries=chart.addLineSeries({color:"#e0b84a",lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:"Anchored VWAP"});
   avwapUpper1=chart.addLineSeries({color:"rgba(224,184,74,0.55)",lineWidth:1,lineStyle:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
   avwapLower1=chart.addLineSeries({color:"rgba(224,184,74,0.55)",lineWidth:1,lineStyle:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  // Kept in one place so applyChartPricePrecision() can push a per-symbol priceFormat onto
+  // every price-based series in one shot (all overlays share the right price scale, but
+  // lightweight-charts derives the scale's displayed precision from each series' own
+  // priceFormat, so every one of them needs to be told, not just the candles).
+  chartPriceSeries=[candleSeries,emaSeries20,emaSeries50,emaSeriesVegas144,emaSeriesVegas169,vwapSeries,supertrendSeries,avwapSeries,avwapUpper1,avwapLower1];
+}
+/* Binance's own tick sizes are per-symbol and not worth fetching separately — pricePrecision()
+   derives a sane precision straight from the price magnitude (same source of truth the table
+   and badges use via fmtPrice), so the chart's axis/crosshair/candle values always match what's
+   printed everywhere else instead of silently rounding cheap alts to the default 2 decimals. */
+function applyChartPricePrecision(refPrice){
+  if(!chartPriceSeries.length||refPrice==null||!isFinite(refPrice)||refPrice===0)return;
+  const precision=pricePrecision(refPrice);
+  const priceFormat={type:"price",precision,minMove:1/Math.pow(10,precision)};
+  chartPriceSeries.forEach(s=>s.applyOptions({priceFormat}));
 }
 function updateEmaOverlays(candles){
   const closes=candles.map(c=>c.close);
@@ -4009,9 +4369,11 @@ function openModal(){
   // Always reopen collapsed: summary / TP-SL / timeline first, chart is an explicit choice.
   if(top)top.classList.remove("expanded");
   if(btn){btn.textContent="展开 ▾";btn.classList.remove("active");}
+  updateTfSwitchActive();
 }
 function closeModal(){
   document.getElementById("modalOverlay").classList.remove("open");
+  loadDetailReqId++; // invalidate any in-flight loadCryptoDetail so a late response can't reopen/repaint a closed chart
   if(klineWs){klineWs.close();klineWs=null;}
   if(modalRenderTimer){clearTimeout(modalRenderTimer);modalRenderTimer=null;}
   if(detailHeaderTimer){clearInterval(detailHeaderTimer);detailHeaderTimer=null;}
@@ -4105,7 +4467,13 @@ async function loadExtras(symbol){
   }).catch(()=>{takerRatioHistory=[];currentTakerRatio=null;});
 }
 async function loadCryptoDetail(symbol){
+  // Race guard: if the user switches coins (or re-picks a timeframe) again before this
+  // finishes, the in-flight fetches below must not clobber the chart with stale-symbol
+  // data once they resolve — resolution order isn't guaranteed to match call order.
+  // Every await below re-checks this token before touching candleSeries/lastCandles/klineWs.
+  const reqId=++loadDetailReqId;
   const m=market.get(symbol);
+  if(m&&m.price!=null)applyChartPricePrecision(m.price);
   renderDetailHeader(symbol);
   // Beta/相关性用的BTC收盘价缓存: 不阻塞主K线加载,拉取完成后若还停留在同一个币种就用最新数据
   // 重新算一次信号(和下面资金流/多空比等异步数据到达后的刷新模式完全一致)。
@@ -4121,18 +4489,30 @@ async function loadCryptoDetail(symbol){
       renderChartBiasBadge(sig);renderModalScroll(sig);
     }
   });
+  // 周期锚定(日线200EMA)——独立于当前所选周期单独拉取,不随interval切换而改变含义
+  ensureCycleAnchor(symbol).then(()=>{
+    if(selectedSymbol===symbol&&lastCandles.length){
+      const sig=computeSignal(lastCandles,chartInterval,symbol);
+      renderChartBiasBadge(sig);renderModalScroll(sig);
+    }
+  });
   try{
     // Binance caps a single klines call at 1500 bars. Vegas隧道(EMA144/169) and reliable
     // pattern/structure reads need real lookback, so page backward for a 2nd batch → up to
     // ~3000 bars of history instead of the old fixed 300 (which was only ~1 day on a 5m chart).
     let kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${chartInterval}&limit=1500`);
+    if(reqId!==loadDetailReqId)return; // superseded by a newer coin/timeframe switch — drop this response
     if(kl.length>=1500){
       try{
         const endTime=kl[0][0]-1;
         const kl2=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${chartInterval}&limit=1500&endTime=${endTime}`);
+        if(reqId!==loadDetailReqId)return;
         if(kl2&&kl2.length)kl=kl2.concat(kl);
       }catch(e){/* older page is best-effort; keep the first 1500 */}
     }
+    if(reqId!==loadDetailReqId)return;
+    const closes=kl.map(k=>+k[4]);
+    if(closes.length)applyChartPricePrecision(closes[closes.length-1]);
     candleSeries.setData(kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4]})));
     volumeSeries.setData(kl.map(k=>({time:Math.floor(k[0]/1000),value:+k[5],color:(+k[4]>=+k[1])?"#1c2e26":"#2c1c20"})));
     lastCandles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
@@ -4141,17 +4521,21 @@ async function loadCryptoDetail(symbol){
     const sig=computeSignal(lastCandles,chartInterval,symbol);
     lastSignalComputeAt=Date.now();
     renderChartBiasBadge(sig);renderModalScroll(sig);
-  }catch(e){console.error("kline load failed",e);renderChartBiasBadge(null);renderModalScroll(null);}
+  }catch(e){console.error("kline load failed",e);if(reqId===loadDetailReqId){renderChartBiasBadge(null);renderModalScroll(null);}}
+  if(reqId!==loadDetailReqId)return;
   try{
     const oiH=await fetchJSON(REST+`/futures/data/openInterestHist?symbol=${symbol}&period=5m&limit=100`);
+    if(reqId!==loadDetailReqId)return;
     oiHistory=oiH.map(o=>({time:Math.floor(o.timestamp/1000),value:+o.sumOpenInterest}));
-  }catch(e){oiHistory=[];}
+  }catch(e){if(reqId===loadDetailReqId)oiHistory=[];}
+  if(reqId!==loadDetailReqId)return;
   drawOiCanvas();
   cvdHistory=[{time:Math.floor(Date.now()/1000),value:m.cvd||0}];
   drawCvdCanvas();
   if(klineWs){klineWs.close();klineWs=null;}
   klineWs=new WebSocket(`wss://fstream.binance.com/ws/${symbol.toLowerCase()}@kline_${chartInterval}`);
   klineWs.onmessage=(ev)=>{
+    if(reqId!==loadDetailReqId)return; // this socket belongs to a coin/timeframe we've since left — ignore stray ticks
     const k=JSON.parse(ev.data).k;
     candleSeries.update({time:Math.floor(k.t/1000),open:+k.o,high:+k.h,low:+k.l,close:+k.c});
     volumeSeries.update({time:Math.floor(k.t/1000),value:+k.v,color:(+k.c>=+k.o)?"#1c2e26":"#2c1c20"});
@@ -4230,7 +4614,7 @@ function buildDeskNote(sig){
   const m=market.get(symbol);
   const sentences=[];
   // 1) Headline bias + regime + confluence
-  sentences.push(`<b class="${sig.biasCls}">${esc(sig.biasLabel)}</b>,${esc(sig.intervalLabel)}级别信号共振度 <b>${sig.confluence}%</b>(${sig.votes.length}项指标,${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore}票),当前处于<b>${esc(sig.regimeLabel)}</b>(Choppiness ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"})。`);
+  sentences.push(`<b class="${sig.biasCls}">${esc(sig.biasLabel)}</b>,${esc(sig.intervalLabel)}级别信号共振度 <b>${sig.confluence}%</b>(${sig.votes.length}项原始指标聚合为${sig.clusters?sig.clusters.length:5}个独立信息簇,${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore.toFixed(1)}簇分),当前处于<b>${esc(sig.regimeLabel)}</b>(Choppiness ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"})。`);
   // 2) Top 2-3 driving indicators (highest weighted-conviction, non-zero)
   const drivers=[...sig.votes].filter(v=>v.dir!==0).sort((a,b)=>Math.abs(b.dir*b.w)-Math.abs(a.dir*a.w)).slice(0,3);
   if(drivers.length){
@@ -4263,11 +4647,10 @@ function buildDeskNote(sig){
       sentences.push(`现货ETF二级市场今日均价 <b class="${avg>=0?'up':'down'}">${fmtPct(avg)}</b>,传统金融时段情绪${avg>0.5?"偏多,与永续合约形成共振参考":avg<-0.5?"偏空,与永续合约形成共振参考":"中性"}(注: 仅二级市场价格,一级市场净申赎流向未接入,不构成资金流结论)。`);
     }
   }
-  // 7) Risk caveat closer — desk-style hedge disclosure
-  const riskBits=[];
-  if(sig.mercury.inRetro)riskBits.push("水星逆行(玄学辅助维度)");
-  if(Math.abs(sig.solarTerms.daysAway)<=2)riskBits.push(`节气变盘窗口 ${sig.solarTerms.term.name}`);
-  sentences.push(`风险敞口: 该判断基于当前截面数据的启发式打分,非历史回测胜率;${riskBits.length?riskBits.join("、")+"叠加,":""}建议结合仓位管理,不追单、设好止损。`);
+  // 7) Risk caveat closer — desk-style hedge disclosure。玄学辅助维度(水逆/节气等)不再混入
+  // 这条决策相关的风险叙述——它有自己独立的展示区(见下方"玄学辅助参考"),避免与量化风险
+  // 提示放在同一句话里,稀释后者的可信度。
+  sentences.push(`风险敞口: 该判断基于当前截面数据的启发式打分,非历史回测胜率;建议结合仓位管理,不追单、设好止损,具体历史胜率请见下方走步式回测。`);
 
   return `
     <div class="section-title">🖋 交易台纪要 · Desk Note</div>
@@ -4305,20 +4688,61 @@ function renderStrategySummary(sig){
   const volMom=sig.votes.find(v=>v.name.includes("量能"));
   const cashFlow=sig.votes.find(v=>v.name.includes("资金流"));
   const structureVote=sig.votes.find(v=>v.name.includes("缠论"));
-  // Key risk factors
+  // Key risk factors — 只保留可量化的风险因子,玄学维度(水逆/节气)不再混入决策相关的风险提示,
+  // 单独在下方"玄学辅助参考"区展示,避免和这里的量化风险提示互相稀释可信度。
   const risks=[];
   if(m&&m.funding>0.02)risks.push(`资金费率偏高 ${m.funding.toFixed(4)}% → 多头拥挤`);
   if(m&&m.funding<-0.01)risks.push(`费率为负 ${m.funding.toFixed(4)}% → 空头拥挤`);
-  if(sig.mercury.inRetro)risks.push("水星逆行中 → 高杠杆谨慎");
   const liq=getLiqStats(selectedSymbol,3600000);
   if(liq.count>5&&(liq.sellUsd+liq.buyUsd)>100000)risks.push(`近1h 大额爆仓 $${fmtUsd(liq.sellUsd+liq.buyUsd)} → 情绪极值`);
-  if(Math.abs(sig.solarTerms.daysAway)<=2)risks.push(`节气变盘窗口: ${sig.solarTerms.term.name} ±2日`);
   const rel=sig.reliability;
   const st=outlook.sizeTier;
+
+  // ── 执行闸门(EXECUTION GATE) ── 五条硬性条件全过才判"达标·可执行",任一条不过直接显示
+  // "不够格·跳过"+具体哪条没过,而不是不管条件如何都吐出一套像模像样的交易计划。
+  // 达标时额外生成一行可直接照抄去交易所下单的执行单,不需要再从下面十几行分析里自己拼。
+  const gateChecks=[];
+  const confluenceOK=sig.confluence>=60;
+  gateChecks.push({label:"信号共振度≥60%",pass:confluenceOK,detail:`当前 ${sig.confluence}%`});
+  const rrOK=!plan.noSetup&&(+rr1)>=1.5;
+  gateChecks.push({label:"首选TP1盈亏比≥1.5",pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1}`});
+  const regimeOK=sig.regime!=="mixed";
+  gateChecks.push({label:"市场状态已明确(非过渡区)",pass:regimeOK,detail:esc(sig.regimeLabel)});
+  const cycleOK=!sig.cycleConflict;
+  gateChecks.push({label:"不与周期锚定冲突",pass:cycleOK,detail:esc(sig.cycleAnchor.label)});
+  const reliabilityOK=rel.tier==="reliable";
+  gateChecks.push({label:"机会可信度=高",pass:reliabilityOK,detail:esc(rel.label)});
+  const hasDirection=outlook.confirmed;
+  const gatePass=hasDirection&&confluenceOK&&rrOK&&regimeOK&&cycleOK&&reliabilityOK;
+  const btKeyNow=(typeof btKey==="function")?btKey(selectedSymbol,sig.intervalLabel,(typeof btSampleSize!=="undefined"?btSampleSize:600)):null;
+  const btNow=btKeyNow&&(typeof backtestCache!=="undefined")?backtestCache.get(btKeyNow):null;
+  const btChecked=btNow&&btNow.status==="done";
+  const btGapOK=btChecked&&btNow.result.stats.calibrationGap!=null&&Math.abs(btNow.result.stats.calibrationGap)<=25;
+
+  let gateHTML;
+  if(gatePass){
+    const posMid=((st.posMin+st.posMax)/2).toFixed(1),levMid=Math.round((st.levMin+st.levMax)/2);
+    const sideLabel=outlook.leanDir>0?"LONG 多":"SHORT 空";
+    const ticket=`${selectedSymbol} · ${sideLabel} · 挂单 ${fmtPrice(plan.entry)} · 仓位 ${posMid}% 净值 · ${levMid}x · SL ${fmtPrice(plan.sl)} · TP1 ${fmtPrice(plan.tps[0].price)}(R:R ${rr1}) · 失效撤单 ${fmtPrice(plan.entryInfo.invalidatePrice)}`;
+    gateHTML=`
+      <div class="gate-box gate-pass">
+        <div class="gate-head">✅ 达标 · 可执行${btChecked?(btGapOK?" · 回测校准通过":" · 回测校准偏差较大,降级参考"):" · 尚未运行本周期回测,建议先验证"}</div>
+        <div class="gate-ticket">${esc(ticket)}<button class="ticket-copy-btn" data-ticket="${esc(ticket)}">📋 复制下单单据</button></div>
+      </div>`;
+  }else{
+    const failed=gateChecks.filter(g=>!g.pass);
+    gateHTML=`
+      <div class="gate-box gate-fail">
+        <div class="gate-head">⛔ 不够格 · 跳过</div>
+        <div class="gate-reasons">${(hasDirection?failed:[{label:"尚未形成方向共识",pass:false,detail:"顶部徽章为中性"}]).map(g=>`<div>· ${esc(g.label)} — ${esc(g.detail)}</div>`).join("")}</div>
+      </div>`;
+  }
+
   return`
     <div class="section-title">🎯 综合交易策略建议</div>
     <div class="strat-box">
       <div class="strat-title">⚡ ORBIT STRATEGY DIGEST · ${esc(sig.intervalLabel)} 级别</div>
+      ${gateHTML}
       <div class="strat-row">
         <span class="strat-label">方向 · 概率</span>
         <span class="strat-val ${dirCls}"><b>${direction}</b> · 概率 ~${outlook.leanProbPct}%(多${outlook.longProbPct}% / 空${outlook.shortProbPct}%)</span>
@@ -4337,7 +4761,7 @@ function renderStrategySummary(sig){
       </div>
       <div class="strat-row">
         <span class="strat-label">信号共振度</span>
-        <span class="strat-val ${sig.confluence>=60?"bull":sig.confluence>=45?"amb":"bear"}">${sig.confluence}% · ${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore} 票 · 指标同向 ${outlook.agreementPct}%</span>
+        <span class="strat-val ${sig.confluence>=60?"bull":sig.confluence>=45?"amb":"bear"}">${sig.confluence}% · ${sig.score>0?"+":""}${sig.score.toFixed(2)}/${sig.maxScore.toFixed(2)} 簇分(5簇聚合) · 独立簇同向 ${outlook.agreementPct}%</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">⚖️ 机会可信度依据</span>
@@ -4372,8 +4796,8 @@ function renderStrategySummary(sig){
         <span class="strat-val bear">${risks.map(r=>`⚠ ${esc(r)}`).join("<br>")}</span>
       </div>`:''}
       <div class="strat-row">
-        <span class="strat-label">玄学辅助</span>
-        <span class="strat-val" style="color:var(--purple)">${sig.moon.name} · ${sig.mercury.inRetro?"水逆⚠":"水顺✓"} · ${esc(sig.wuxing.element)}属 ${esc(sig.wuxing.relation)}</span>
+        <span class="strat-label">周期锚定</span>
+        <span class="strat-val ${sig.cycleConflict?'bear':''}">${esc(sig.cycleAnchor.detail)}${sig.cycleConflict?' · ⚠ 与本次战术方向相反':''}</span>
       </div>
     </div>`;
 }
