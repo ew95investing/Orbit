@@ -385,6 +385,10 @@
   .opp-card-conv{font-size:12px;font-weight:700;}
   .opp-card-meta{font-size:10.5px;color:var(--dim2);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .opp-card-reason{font-size:11px;color:var(--dim);margin-top:5px;line-height:1.4;}
+  .opp-gate-badge{display:inline-block;font-size:9.5px;padding:2px 6px;border-radius:6px;margin-top:5px;font-weight:600;}
+  .opp-gate-badge.pass{color:var(--up);background:var(--up-bg);}
+  .opp-gate-badge.pending{color:var(--amber);background:rgba(240,180,60,.12);}
+  .opp-gate-badge.fail{color:var(--dim2);background:rgba(255,255,255,.05);}
   .opp-empty{font-size:11.5px;color:var(--dim2);padding:10px 4px;}
   @media(max-width:640px){
     .opp-panel{margin:0 0 14px;}
@@ -421,6 +425,13 @@
   .trk-tile-pnl.up{color:var(--up);}
   .trk-tile-pnl.down{color:var(--down);}
   .trk-tile-meta{font-size:11px;color:var(--dim2);margin-top:4px;}
+  .trk-tile-more{font-size:10px;color:var(--dim2);margin-top:6px;text-align:right;}
+  .trk-tile.open{border-color:var(--amber);}
+  .trk-tile-detail{grid-column:1/-1;border:1px solid var(--line2);border-radius:7px;padding:10px 12px;background:var(--panel2);font-size:12.5px;}
+  .trk-tile-gotomodal{display:block;margin-top:8px;background:none;border:1px solid var(--line2);color:var(--dim2);font-size:11px;padding:4px 10px;border-radius:8px;cursor:pointer;}
+  .trk-tile-gotomodal:hover{border-color:var(--amber);color:var(--fg);}
+  .trk-reset-btn{margin-left:8px;background:none;border:1px solid var(--line2);color:var(--dim2);font-size:11px;padding:4px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;}
+  .trk-reset-btn:hover{border-color:var(--down);color:var(--down);}
   /* 每日日志: 默认折叠成一行摘要,只有"今天"默认展开,点开才渲染详情 */
   .trk-day{margin-top:10px;border:1px solid var(--line2);border-radius:6px;background:var(--panel2);overflow:hidden;}
   .trk-day-head{display:flex;align-items:center;gap:10px;padding:10px 12px;font-size:12.5px;color:var(--dim2);flex-wrap:wrap;cursor:pointer;}
@@ -1010,6 +1021,7 @@
       <span class="trk-title">推荐追踪 · TRACK RECORD</span>
       <span class="trk-sub">out-of-sample · 只记录不影响任何实盘决策的纯观察日志</span>
       <span class="trk-status" id="trkStatus">–</span>
+      <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
     </div>
     <div class="trk-body" id="trkBody">加载中…</div>
   </div>
@@ -1427,8 +1439,24 @@ function init(){
       renderTrackPanel();
       return;
     }
+    const trkGoto=e.target.closest(".trk-tile-gotomodal");
+    if(trkGoto&&trkGoto.dataset.symbol){openCryptoModal(trkGoto.dataset.symbol);return;}
     const trkTile=e.target.closest(".trk-tile");
-    if(trkTile&&trkTile.dataset.symbol){openCryptoModal(trkTile.dataset.symbol);return;}
+    if(trkTile&&trkTile.dataset.id){
+      const id=trkTile.dataset.id;
+      if(trkExpandedIds.has(id))trkExpandedIds.delete(id);else trkExpandedIds.add(id);
+      renderTrackPanel();
+      return;
+    }
+    const trkReset=e.target.closest("#trkResetBtn");
+    if(trkReset){
+      if(confirm("清空全部追踪记录并重新开始校准?此操作不可撤销,只影响本机浏览器存储的追踪日志,不影响任何实盘仓位。")){
+        try{localStorage.removeItem(TRACK_LOG_KEY);}catch(err){}
+        gatePendingConfirm.clear();trkExpandedIds.clear();trkDayOverride.clear();
+        renderTrackPanel();
+      }
+      return;
+    }
     const btn=e.target.closest(".bt-run-btn");
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
@@ -1566,16 +1594,30 @@ const OPP_TOP_N = 5;
    与走步式回测互补而非替代: 回测用现在的代码测过去(in-sample,且Binance不提供历史OI/CVD/
    资金费率/清算/期权,所以回测天生测不到这部分权重),追踪用现在的代码测未来(out-of-sample,
    覆盖模型给出的完整把握度,包括OI/CVD/清算/期权这些只有实盘才有的信号)。 */
-const TRACK_CONVICTION_MIN = 65;           // 只追踪"中等把握"以上的信号,避免日志被噪音信号淹没
+/* 2026-09-04 修复记录: 之前这里唯一的门槛是 conviction>=65%,跟UI"综合交易策略建议"卡片自己
+   用的五条执行闸门(信号共振度/RR/市场状态/周期锚定/可信度)完全是两套标准——导致大量连闸门
+   都过不了的弱信号照样被计入追踪日志当"推荐"算胜率,这正是模型自报把握度73% vs 实盘实际胜率
+   14.3%这个巨大校准落差的真正原因。现在追踪引擎改为与UI同源同标准: 必须先通过 computeExecutionGate
+   (见 gate.pass),conviction>=65%只作为次要保底,不再是唯一门槛。同时新增两条稳定性修复:
+   ① 同一币种任何方向只要还"开着"就不再叠加/反向开新的一笔(旧逻辑只挡同方向重复,没挡反方向,
+   这是"ADA/ENA同一天先LONG又SHORT反复咬"的直接原因); ② 执行闸门必须连续 GATE_CONFIRM_SCANS
+   次扫描都通过才记录(约3分钟内信号方向保持稳定),避免单次噪音tick触发一笔"推荐"。 */
+const TRACK_CONVICTION_MIN = 65;           // 次要保底门槛,主要门槛已改为下方 gate.pass(见recordTrackSignals)
 const TRACK_LOG_KEY = "orbit_tracklog";
 const TRACK_LOG_MAX = 1000;                // 存储上限,超出按创建时间滚动淘汰最旧的
 const TRACK_FILL_WINDOW_MS = 24*3600*1000; // 挂单超过24小时仍未成交且未撤单触发 → 记为"过期未成交"
 const TRACK_MAX_HOLD_MS = 3*24*3600*1000;  // 成交后最长持有3日(对齐TP3窗口),仍未分胜负 → 记为timeout
-const TRACK_REPEAT_COOLDOWN_MS = 6*3600*1000; // 同一币种+方向结算后6小时内不重复记新的一笔,避免刷屏
+const TRACK_REPEAT_COOLDOWN_MS = 6*3600*1000;  // 同一币种+同方向结算后6小时内不重复记新的一笔,避免刷屏
+const TRACK_FLIP_COOLDOWN_MS = 12*3600*1000;   // 同一币种但方向反转(比如刚止损又立刻反向开单)结算后
+                                                // 12小时内不记新的一笔——这是修复"半小时前LONG半小时后SHORT"
+                                                // 反复咬的关键节流阀,比同方向冷却期更长
+const GATE_CONFIRM_SCANS = 2;              // 执行闸门必须连续通过这么多次扫描(每次≈90秒)才算稳定信号,
+                                            // 单次扫描通过不算数,防止5分钟K线噪音导致的方向瞬间闪烁被记成推荐
 const TRACK_SETTLE_INTERVAL_MS = 20000;    // 用已有的实时WS价格做结算判定,不额外发请求,可以跑得很勤
 const TRACK_POSITION_MARGIN_USDT = 10000;  // 仅用于把"胜负"翻译成有感的盈亏数字,假设每笔用1万U保证金
 const TRACK_POSITION_LEVERAGE = 5;         // 假设5倍杠杆(名义仓位5万U),不代表真实建议仓位/杠杆
-const trkExpandedIds = new Set();          // 会话内记录哪些追踪条目的"详情"被展开过,面板每次重绘时保持展开状态
+const trkExpandedIds = new Set();          // 会话内记录哪些追踪条目(含热力图里仍持仓的)的"详情"被展开过,面板每次重绘时保持展开状态
+const gatePendingConfirm = new Map();      // symbol|dir -> {count,lastAt},执行闸门连续通过扫描次数的计数器
 let opportunityResults = new Map(); // symbol -> {sig, ts}
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
 
@@ -1599,6 +1641,29 @@ async function poolRun(items, worker, concurrency){
   await Promise.all(runners);
 }
 
+/* 机会雷达批量扫描专用的"更大周期"缓存——不能直接复用图表模态框那套 higherTfCandles/
+   higherTfForSymbol 全局变量(那是给用户当前打开的单个币种图表用的,后台批量扫描25个币种
+   如果去写同一组全局变量,会跟用户正在看的图表互相打架、产生闪烁/脏数据)。这里用独立的
+   按 symbol+周期 缓存,3分钟内命中缓存不重新请求,足够跟上90秒一轮的扫描节奏又不至于把
+   请求量翻倍打爆。 */
+const higherTfScanCache=new Map(); // key: symbol|interval -> {candles,label,fetchedAt}
+const HIGHER_TF_SCAN_TTL_MS=180000;
+async function fetchHigherTfForScan(symbol,interval){
+  const key=symbol+"|"+interval;
+  const cached=higherTfScanCache.get(key);
+  if(cached&&Date.now()-cached.fetchedAt<HIGHER_TF_SCAN_TTL_MS)return cached;
+  const htf=higherTfOf(interval);
+  try{
+    const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${htf}&limit=200`);
+    const entry={candles:kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]})),label:htf,fetchedAt:Date.now()};
+    higherTfScanCache.set(key,entry);
+    return entry;
+  }catch(e){
+    const entry={candles:[],label:htf,fetchedAt:Date.now()};
+    higherTfScanCache.set(key,entry); // 失败也短暂缓存,避免同一个失效symbol每轮都重试拖慢整体扫描
+    return entry;
+  }
+}
 async function fetchSignalContext(symbol){
   const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${chartInterval}&limit=300`);
   const candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
@@ -1616,7 +1681,11 @@ async function fetchSignalContext(symbol){
     if(tls&&tls.length){topLsTrendSrc=tls.map(x=>({time:Math.floor(x.timestamp/1000),value:+x.longShortRatio}));topLsRatio=topLsTrendSrc[topLsTrendSrc.length-1].value;}
     if(tr&&tr.length)takerRatio=+tr[tr.length-1].buySellRatio;
   }catch(e){ /* ratio endpoints are best-effort — computeSignal's vote functions all null-guard */ }
-  return{candles,ctx:{oiHist,cvdHist,lsRatio,topLsRatio,topLsTrendSrc,takerRatio,fundingHist:[]}};
+  // 机会雷达批量扫描也要给每个symbol配一份真实的更大周期数据,而不是让MTF那一票在批量扫描路径下
+  // 永远显示"加载中…"(dir=0,形同虚设)——这是让执行闸门里新增的"更大周期方向一致"这一条
+  // 对雷达扫出来的每个币种都真正生效的前提,不只是对用户手动点开的那一个币种生效。
+  const htf=await fetchHigherTfForScan(symbol,chartInterval);
+  return{candles,ctx:{oiHist,cvdHist,lsRatio,topLsRatio,topLsTrendSrc,takerRatio,fundingHist:[],higherTfCandles:htf.candles,higherTfLabel:htf.label}};
 }
 
 async function scanOneOpportunity(symbol){
@@ -1660,11 +1729,21 @@ function oppCardHTML(symbol,r){
   const sig=r.sig,m=market.get(symbol);
   const topVote=topVoteFor(sig);
   const cls=sig.dirSign>0?"up":"down";
+  // 雷达上"方向已确认"的候选(dirSign≠0)远比真正被计入追踪日志/校准统计的信号数量多——
+  // 之前用户看到的其实是这整批候选,却以为都是"推荐",这里显式标出每一张卡片到底是
+  // 已经通过六条执行闸门、连续确认后正式计入追踪(✅),闸门已过但还在等第二次扫描确认(⏳),
+  // 还是压根没过闸门只是雷达上的一个方向倾向、不构成正式推荐(⛔)。
+  const gate=sig.gate;
+  const pend=gate&&gate.pass?gatePendingConfirm.get(symbol+"|"+sig.dirSign):null;
+  const gateBadge=gate&&gate.pass
+    ?(pend&&pend.count>=GATE_CONFIRM_SCANS?'<span class="opp-gate-badge pass">✅ 已达标 · 计入追踪校准</span>':`<span class="opp-gate-badge pending">⏳ 执行闸门确认中 ${pend?pend.count:0}/${GATE_CONFIRM_SCANS}</span>`)
+    :'<span class="opp-gate-badge fail">⛔ 未过执行闸门 · 仅供参考,不计入追踪</span>';
   return `<div class="opp-card" data-symbol="${symbol}">
     <div class="opp-card-top">
       <span class="opp-card-sym">${symbol.replace("USDT","")}</span>
       <span class="opp-card-conv ${cls}">${sig.outlook.conviction}% 把握</span>
     </div>
+    ${gateBadge}
     <div class="opp-card-meta">
       <span>${fmtPrice(m?m.price:sig.price)}</span>
       <span>${esc(sig.regimeLabel)}</span>
@@ -1714,24 +1793,62 @@ function saveTrackLog(arr){
     localStorage.setItem(TRACK_LOG_KEY,JSON.stringify(arr));
   }catch(e){}
 }
-/* 记录: 每次扫描,把新出现的高把握度信号写入日志。去重用"币种+方向"做冷却——
-   同一币种同一方向只要还"开着"(awaiting/filled未分胜负)就不会重复记第二笔;
-   结算之后(不论输赢/撤单/超时)也要再等冷却期,才会把同方向再次出现的信号当作新的一笔,
-   避免同一个信号在雷达上连续出现好几个扫描周期就被记成好几笔重复记录。*/
+/* 记录: 每次扫描,把连续通过执行闸门(见computeExecutionGate)的信号写入日志。
+   去重用"币种"做冷却(不再是"币种+方向")——同一币种不论方向,只要还"开着"
+   (awaiting/filled未分胜负)就不会记第二笔,不论新信号是同方向还是反方向;
+   结算之后(不论输赢/撤单/超时)也要再等冷却期(同向/反向冷却期不同,见下方),
+   才会把新出现的信号当作新的一笔,避免同一个币种被反复来回记录。*/
 function recordTrackSignals(rows){
-  const qualifying=rows.filter(x=>x.r.sig.outlook.conviction>=TRACK_CONVICTION_MIN&&x.r.sig.plan&&x.r.sig.plan.main&&!x.r.sig.plan.main.noSetup);
+  const now=Date.now();
+  // 第一步: 用与UI"综合交易策略建议"完全同一套六条执行闸门(sig.gate)更新每个 symbol+方向
+  // 的"连续通过扫描次数"计数器——这是取代旧的单一 conviction>=65% 门槛的核心修复。
+  // 之前没在本轮扫描结果里出现的 symbol+方向(比如已跌出主流池、或方向已变)清空计数,
+  // 不能用过期状态继续累积。
+  const seenKeys=new Set();
+  rows.forEach(x=>{
+    const sig=x.r.sig;
+    if(!sig||!sig.gate||sig.dirSign===0)return;
+    const key=x.symbol+"|"+sig.dirSign;
+    seenKeys.add(key);
+    if(sig.gate.pass){
+      const prev=gatePendingConfirm.get(key);
+      gatePendingConfirm.set(key,{count:(prev?prev.count:0)+1,lastAt:now});
+    }else{
+      gatePendingConfirm.delete(key);
+    }
+  });
+  [...gatePendingConfirm.keys()].forEach(k=>{if(!seenKeys.has(k))gatePendingConfirm.delete(k);});
+
+  // 第二步: 只有"执行闸门通过 + 连续 GATE_CONFIRM_SCANS 次扫描都稳定 + conviction保底65%"
+  // 三个条件同时满足,才算一笔真正够格被记录的推荐——conviction退居次要保底,不再是唯一标准。
+  const qualifying=rows.filter(x=>{
+    const sig=x.r.sig,p=sig.plan&&sig.plan.main;
+    if(!p||p.noSetup||sig.dirSign===0)return false;
+    if(sig.outlook.conviction<TRACK_CONVICTION_MIN)return false;
+    if(!sig.gate||!sig.gate.pass)return false;
+    const pend=gatePendingConfirm.get(x.symbol+"|"+sig.dirSign);
+    return pend&&pend.count>=GATE_CONFIRM_SCANS;
+  });
   if(!qualifying.length)return;
   const log=getTrackLog();
-  const now=Date.now();
   let changed=false;
   qualifying.forEach(x=>{
     const symbol=x.symbol,sig=x.r.sig,p=sig.plan.main,dir=p.dir;
     if(!p.tps||!p.tps.length||p.sl==null||p.entry==null)return;
-    const hasOpen=log.some(r=>r.symbol===symbol&&r.dir===dir&&(r.status==="awaiting"||r.status==="filled"));
+    // 同一币种,不论方向,只要还"开着"(挂单等待/持仓中)就不再叠加或反向开新的一笔——
+    // 这是修复"ADA/ENA同一天先LONG又SHORT反复咬"的关键: 旧逻辑(见下面注释掉的写法)只挡
+    // 同方向重复,完全没挡反方向,导致同一个币种可以同时存在两笔方向相反的"推荐"。
+    // const hasOpen=log.some(r=>r.symbol===symbol&&r.dir===dir&&(...)); ← 旧写法,已废弃
+    const hasOpen=log.some(r=>r.symbol===symbol&&(r.status==="awaiting"||r.status==="filled"));
     if(hasOpen)return;
-    const lastResolved=log.filter(r=>r.symbol===symbol&&r.dir===dir&&r.status!=="awaiting"&&r.status!=="filled")
+    const lastResolved=log.filter(r=>r.symbol===symbol&&r.status!=="awaiting"&&r.status!=="filled")
       .sort((a,b)=>(b.resolvedAt||b.createdAt)-(a.resolvedAt||a.createdAt))[0];
-    if(lastResolved&&now-(lastResolved.resolvedAt||lastResolved.createdAt)<TRACK_REPEAT_COOLDOWN_MS)return;
+    if(lastResolved){
+      // 方向反转(比如上一笔SHORT刚止损,这一笔又是LONG)用更长的 TRACK_FLIP_COOLDOWN_MS,
+      // 同方向重开用原有的 TRACK_REPEAT_COOLDOWN_MS——反转再入场本来就该比同向加仓更谨慎。
+      const cooldown=(lastResolved.dir===dir)?TRACK_REPEAT_COOLDOWN_MS:TRACK_FLIP_COOLDOWN_MS;
+      if(now-(lastResolved.resolvedAt||lastResolved.createdAt)<cooldown)return;
+    }
     const tv=topVoteFor(sig);
     log.push({
       id:symbol+"_"+dir+"_"+now+"_"+Math.random().toString(36).slice(2,7),
@@ -1930,20 +2047,31 @@ function renderLiveHeatmap(log){
     const pa=trkPositionPnL(a),pb=trkPositionPnL(b);
     return(pb&&pb.pnlPct||0)-(pa&&pa.pnlPct||0);
   });
+  // 之前点击热力图小方块只会跳去打开该币种的通用行情弹窗,完全看不到这笔"推荐"本身的
+  // 入场/止损/止盈/实际成交价/浮动盈亏这些成交细节——这是用户反馈"根本看不到成交细节"的
+  // 直接原因。现在点击方块改为原地展开明细(复用与每日日志同一份renderTrkDetail),
+  // 需要跳去看行情图时,明细里另外给一个单独的按钮。
   const tiles=open.map(r=>{
     const pnl=trkPositionPnL(r);
     const drift=trkSignalDriftInfo(r);
     const bg=r.status==="filled"?trkHeatColor(pnl?pnl.pnlPct:null):"rgba(240,180,60,.07)";
     const pnlCls=r.status==="filled"&&pnl?(pnl.pnlPct>=0?"up":"down"):"";
     const pnlTxt=r.status==="filled"&&pnl?`${pnl.pnlPct>=0?"+":""}${pnl.pnlPct.toFixed(1)}%`:"等待成交";
-    return`<div class="trk-tile" data-symbol="${esc(r.symbol)}" style="background:${bg}" title="点击查看${esc(r.symbol)}详情">
+    const expanded=trkExpandedIds.has(r.id);
+    const tile=`<div class="trk-tile${expanded?" open":""}" data-id="${esc(r.id)}" data-symbol="${esc(r.symbol)}" style="background:${bg}" title="点击查看这笔推荐的入场/止损/止盈/成交明细">
       <div class="trk-tile-top">
         <span class="trk-tile-sym">${esc(r.symbol.replace("USDT",""))} <span class="trk-tile-dir ${r.dir>0?"up":"down"}">${r.dir>0?"▲":"▼"}</span></span>
         ${drift?`<span class="trk-drift-dot ${drift.level}" title="${esc(drift.text)}"></span>`:""}
       </div>
       <div class="trk-tile-pnl ${pnlCls}">${pnlTxt}</div>
       <div class="trk-tile-meta">${r.conviction}% 把握 · ${r.status==="filled"?fmtTrkTime(r.filledAt)+"成交":"挂单等待中"}</div>
+      <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 成交明细"}</div>
     </div>`;
+    const detail=expanded?`<div class="trk-tile-detail" data-id="${esc(r.id)}">
+      ${renderTrkDetail(r,pnl)}
+      <button class="trk-tile-gotomodal" data-symbol="${esc(r.symbol)}">📈 打开${esc(r.symbol.replace("USDT",""))}行情图 →</button>
+    </div>`:"";
+    return tile+detail;
   }).join("");
   return`<div class="trk-heatmap">${tiles}</div>`;
 }
@@ -3623,6 +3751,39 @@ function computeCycleAnchor(candles){
   return{state,label,slopePct,detail:`日线200EMA斜率(近${lookback}日) ${slopePct>=0?"+":""}${slopePct.toFixed(2)}% · 现价${aboveMA?"高于":"低于"}200EMA → ${label}`};
 }
 
+/* ── 执行闸门(EXECUTION GATE) ── 从 renderStrategySummary 里抽出来做成独立函数,
+   原因: 之前这五条硬性条件只存在于UI渲染代码里,只有用户手动点开某个币种的详情弹窗时才会算一次;
+   机会雷达批量扫描(recordTrackSignals记录追踪日志用的信号)完全绕开了这套闸门,只看
+   conviction>=65%这一把宽松得多的尺子——这正是"模型自报把握度73% vs 实盘实际胜率14.3%"
+   这个巨大落差的根源: 大量连闸门都过不了的弱信号被当成正式推荐记进了统计。现在把闸门做成
+   一个纯函数,UI显示和追踪记录用同一套计算结果(sig.gate),两处不会再打两把不同的尺子。
+   新增第六条"更大周期(MTF)方向一致"——直接回应"是不是太短线了"的质疑: 5分钟K线上算出来的
+   方向,如果连自己往上一级的周期(比如5m→1h)都不同向,大概率只是小周期里的噪音抖动,
+   不该被当作可执行的推荐。 */
+function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign){
+  const hasDirection=outlook.confirmed;
+  const entryPx=plan.entry;
+  const risk=plan.noSetup?null:Math.abs(entryPx-plan.sl);
+  const reward1=(!plan.noSetup&&plan.tps&&plan.tps[0])?Math.abs(plan.tps[0].price-entryPx):0;
+  const rr1=(!plan.noSetup&&risk>0)?(reward1/risk):null;
+  const confluenceOK=confluence>=60;
+  const rrOK=!plan.noSetup&&rr1!=null&&rr1>=1.5;
+  const regimeOK=regime!=="mixed";
+  const cycleOK=!cycleConflict;
+  const reliabilityOK=reliability.tier==="reliable";
+  const mtfOK=hasDirection&&mtfDir!==0&&mtfDir===dirSign;
+  const checks=[
+    {key:"confluence",label:"信号共振度≥60%",pass:confluenceOK,detail:`当前 ${confluence}%`},
+    {key:"rr",label:"首选TP1盈亏比≥1.5",pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
+    {key:"regime",label:"市场状态已明确(非过渡区)",pass:regimeOK,detail:regimeLabel},
+    {key:"cycle",label:"不与周期锚定冲突",pass:cycleOK,detail:cycleAnchor.label},
+    {key:"reliability",label:"机会可信度=高",pass:reliabilityOK,detail:reliability.label},
+    {key:"mtf",label:"更大周期(MTF)方向一致 · 排除短线噪音",pass:mtfOK,detail:mtfDetail},
+  ];
+  const pass=hasDirection&&confluenceOK&&rrOK&&regimeOK&&cycleOK&&reliabilityOK&&mtfOK;
+  return{pass,hasDirection,checks,rr1};
+}
+
 function computeSignal(candles,intervalLabel,symbol,ctx){
   if(!candles||candles.length<30)return null;
   // ctx lets a background batch scan (Opportunity Radar) feed in per-symbol OI/CVD/ratio
@@ -3746,13 +3907,21 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
 
   // 多周期共振(MTF): 只在已经拉到"当前周期对应的上一级更大周期"K线、且确认是同一个币种时才纳入投票,
   // 避免用户刚切换币种/周期、更大周期数据还没取回来时把上一个币种的旧数据当成这个币种的共振结果用。
-  let mtfDir=0,mtfDetail="加载中…";
-  if(typeof higherTfForSymbol!=="undefined"&&higherTfForSymbol===symbol+"|"+intervalLabel&&higherTfCandles.length){
+  let mtfDir=0,mtfDetail="加载中…",mtfLabelUsed=(typeof higherTfLabel!=="undefined"&&higherTfLabel)?higherTfLabel:"–";
+  if(ctx.higherTfCandles&&ctx.higherTfCandles.length){
+    // 机会雷达批量扫描路径: ctx 里带着这个symbol自己的更大周期数据(见fetchSignalContext),
+    // 优先使用,这样MTF这一票、以及下方执行闸门里的"更大周期方向一致"对每个被扫描的币种
+    // 才是真实生效的,而不是永远"加载中…"形同虚设。
+    const hb=computeHigherTfBias(ctx.higherTfCandles);
+    mtfDir=hb.dir;mtfLabelUsed=ctx.higherTfLabel||mtfLabelUsed;
+    mtfDetail=`${mtfLabelUsed}周期: ${hb.detail} → ${hb.dir>0?"与更大周期同向偏多":hb.dir<0?"与更大周期同向偏空":"更大周期方向不明确"}`;
+  }else if(typeof higherTfForSymbol!=="undefined"&&higherTfForSymbol===symbol+"|"+intervalLabel&&higherTfCandles.length){
+    // 用户手动点开单个币种图表模态框的路径,沿用原有的全局变量(不变)。
     const hb=computeHigherTfBias(higherTfCandles);
-    mtfDir=hb.dir;
+    mtfDir=hb.dir;mtfLabelUsed=higherTfLabel;
     mtfDetail=`${higherTfLabel}周期: ${hb.detail} → ${hb.dir>0?"与更大周期同向偏多":hb.dir<0?"与更大周期同向偏空":"更大周期方向不明确"}`;
   }
-  votes.push({name:`多周期共振(${intervalLabel}→${typeof higherTfLabel!=="undefined"&&higherTfLabel?higherTfLabel:"–"})`,cat:"trend",dir:mtfDir,detail:mtfDetail});
+  votes.push({name:`多周期共振(${intervalLabel}→${mtfLabelUsed})`,cat:"trend",dir:mtfDir,detail:mtfDetail});
 
   const m=market.get(symbol);
   const cf=cashFlowVote(ctx.oiHist,ctx.cvdHist,m?m.funding:null);
@@ -3854,8 +4023,12 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
     {state:"neutral_both",label:"周期数据加载中(暂不限制方向)",detail:"日线数据尚未就绪,默认双向放行",slopePct:null};
   const cycleConflict=dirSign!==0&&((cycleAnchor.state==="long_only"&&dirSign<0)||(cycleAnchor.state==="short_only"&&dirSign>0));
 
+  // 执行闸门在这里统一算一次,UI(renderStrategySummary)和追踪记录(recordTrackSignals)
+  // 都直接读 sig.gate,不再各算各的。
+  const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign);
+
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict};
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,gate};
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -5169,22 +5342,12 @@ function renderStrategySummary(sig){
   const rel=sig.reliability;
   const st=outlook.sizeTier;
 
-  // ── 执行闸门(EXECUTION GATE) ── 五条硬性条件全过才判"达标·可执行",任一条不过直接显示
-  // "不够格·跳过"+具体哪条没过,而不是不管条件如何都吐出一套像模像样的交易计划。
-  // 达标时额外生成一行可直接照抄去交易所下单的执行单,不需要再从下面十几行分析里自己拼。
-  const gateChecks=[];
-  const confluenceOK=sig.confluence>=60;
-  gateChecks.push({label:"信号共振度≥60%",pass:confluenceOK,detail:`当前 ${sig.confluence}%`});
-  const rrOK=!plan.noSetup&&(+rr1)>=1.5;
-  gateChecks.push({label:"首选TP1盈亏比≥1.5",pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1}`});
-  const regimeOK=sig.regime!=="mixed";
-  gateChecks.push({label:"市场状态已明确(非过渡区)",pass:regimeOK,detail:esc(sig.regimeLabel)});
-  const cycleOK=!sig.cycleConflict;
-  gateChecks.push({label:"不与周期锚定冲突",pass:cycleOK,detail:esc(sig.cycleAnchor.label)});
-  const reliabilityOK=rel.tier==="reliable";
-  gateChecks.push({label:"机会可信度=高",pass:reliabilityOK,detail:esc(rel.label)});
-  const hasDirection=outlook.confirmed;
-  const gatePass=hasDirection&&confluenceOK&&rrOK&&regimeOK&&cycleOK&&reliabilityOK;
+  // ── 执行闸门(EXECUTION GATE) ── 直接读 sig.gate(computeSignal里统一算好的),与追踪记录
+  // 用的是同一份计算结果,不会再出现"UI显示达标、但追踪日志用另一套更宽松标准偷偷记了一笔"
+  // 这种两套尺子对不上的情况。六条硬性条件(含新增的MTF更大周期一致性)全过才判"达标·可执行"。
+  const gateChecks=sig.gate.checks;
+  const hasDirection=sig.gate.hasDirection;
+  const gatePass=sig.gate.pass;
   const btKeyNow=(typeof btKey==="function")?btKey(selectedSymbol,sig.intervalLabel,(typeof btSampleSize!=="undefined"?btSampleSize:600)):null;
   const btNow=btKeyNow&&(typeof backtestCache!=="undefined")?backtestCache.get(btKeyNow):null;
   const btChecked=btNow&&btNow.status==="done";
