@@ -439,6 +439,9 @@
   .opp-future-prob.p3{color:var(--up);background:var(--up-bg);}
   .opp-future-prob.p2{color:var(--amber);background:var(--amber-bg);}
   .opp-future-prob.p1{color:var(--dim2);background:rgba(255,255,255,.05);}
+  .opp-nearmiss-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:6px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .opp-nearmiss-row:last-child{border-bottom:none;}
+  .opp-nearmiss-detail{color:var(--dim2);font-size:11.5px;}
   @media(max-width:720px){
     .opp-row-head{gap:6px;padding:9px 10px;}
     .opp-row-meta{gap:6px;}
@@ -1066,6 +1069,7 @@
     </div>
     <div class="opp-quality-note">⚡日内脉冲 = 数十分钟~数小时的短线均值回归 · 📈波段趋势 = 1~4日的顺势回调入场 · 🚀主升主跌浪 = 数日~数周的延伸趋势(五重确认,最苛刻) · 🔮结构性拐点 = OI/费率/价格三因子共振的反转机会。四档判定逻辑与止损/仓位/持仓纪律完全独立,不混用。总览按机会质量排序,点击任一行展开该类型专属的入场/止损止盈/仓位/纪律。</div>
     <div class="opp-status-line" id="oppStatusLine">–</div>
+    <div id="oppNearMiss"></div>
     <div class="opp-table" id="oppOverviewTable"><div class="opp-empty">扫描中…</div></div>
     <div class="opp-future-panel">
       <div class="opp-future-title">🔭 未来24小时潜在机会扫描 · 按触发概率排序</div>
@@ -1076,7 +1080,7 @@
   <div class="trk-panel" id="trkPanel">
     <div class="trk-head">
       <span class="trk-title">推荐追踪 · TRACK RECORD</span>
-      <span class="trk-sub">out-of-sample · 只记录不影响任何实盘决策的纯观察日志</span>
+      <span class="trk-sub">out-of-sample · 只记录不影响任何实盘决策的纯观察日志 · 需保持本页面在前台打开才会持续扫描,离开后再回来会自动补扫一次</span>
       <span class="trk-status" id="trkStatus">–</span>
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
     </div>
@@ -1508,7 +1512,7 @@ function init(){
     const trkReset=e.target.closest("#trkResetBtn");
     if(trkReset){
       if(confirm("清空全部追踪记录并重新开始校准?此操作不可撤销,只影响本机浏览器存储的追踪日志,不影响任何实盘仓位。")){
-        try{localStorage.removeItem(TRACK_LOG_KEY);}catch(err){}
+        try{localStorage.removeItem(TRACK_LOG_KEY);localStorage.removeItem(GATE_CONFIRM_KEY);}catch(err){}
         gatePendingConfirm.clear();trkExpandedIds.clear();trkDayOverride.clear();
         renderTrackPanel();
       }
@@ -1668,15 +1672,33 @@ const TRACK_REPEAT_COOLDOWN_MS = 6*3600*1000;  // 同一币种+同方向结算�
 const TRACK_FLIP_COOLDOWN_MS = 12*3600*1000;   // 同一币种但方向反转(比如刚止损又立刻反向开单)结算后
                                                 // 12小时内不记新的一笔——这是修复"半小时前LONG半小时后SHORT"
                                                 // 反复咬的关键节流阀,比同方向冷却期更长
-const GATE_CONFIRM_SCANS = 2;              // 执行闸门必须连续通过这么多次扫描(每次≈90秒)才算稳定信号,
-                                            // 单次扫描通过不算数,防止5分钟K线噪音导致的方向瞬间闪烁被记成推荐
+/* 2026-09-08 修复记录: 上一版用纯内存的 Map<string,{count}> 记连续通过次数,一旦用户刷新页面/
+   切换标签页/锁屏(移动端浏览器对后台标签页的定时器会限流甚至完全暂停),这个计数器就清零,
+   永远也攒不到 GATE_CONFIRM_SCANS 次——这正是"推荐追踪一直没有东西"的根本原因,不是六项
+   执行闸门太严(严格是有意为之,见上面的注释),而是"确认进度"本身从未真正被保存过、
+   也从未在标签页离开又回来时补扫过。现在改为: ① 按时间连续性判定,不再按内存扫描计数
+   ② 状态写入 localStorage,页面刷新/短暂切走不再清零 ③ 只有同一 symbol+方向的"最近一次
+   通过"距现在超过 GATE_STALE_GAP_MS 才视为真的断过(标签页关了很久/网络断很久),重新计时
+   ④ 标签页重新变为前台时,若已错过一个扫描周期,立刻补扫一次,而不是干等下一个定时器。*/
+const GATE_CONFIRM_MIN_MS = 150000;        // 同一 symbol+方向需连续通过执行闸门至少这么久(≈2.5分钟,
+                                            // 对齐原设计"约2次90秒扫描"的意图),才算稳定信号,防止噪音瞬间闪烁被记成推荐
+const GATE_STALE_GAP_MS = 5*60*1000;       // 距上次确认通过已超过这个值,视为中途真的断了,重新从头计时;
+                                            // 短暂刷新页面/切走几十秒不受影响,不会丢掉已经攒的确认进度
+const GATE_CONFIRM_KEY = "orbit_gate_confirm_v2";
 const TRACK_SETTLE_INTERVAL_MS = 20000;    // 用已有的实时WS价格做结算判定,不额外发请求,可以跑得很勤
 const TRACK_POSITION_MARGIN_USDT = 10000;  // 仅用于把"胜负"翻译成有感的盈亏数字,假设每笔用1万U保证金
 const TRACK_POSITION_LEVERAGE = 5;         // 假设5倍杠杆(名义仓位5万U),不代表真实建议仓位/杠杆
 const trkExpandedIds = new Set();          // 会话内记录哪些追踪条目(含热力图里仍持仓的)的"详情"被展开过,面板每次重绘时保持展开状态
-const gatePendingConfirm = new Map();      // symbol|dir -> {count,lastAt},执行闸门连续通过扫描次数的计数器
+function loadGateConfirm(){
+  try{return new Map(JSON.parse(localStorage.getItem(GATE_CONFIRM_KEY)||"[]"));}catch(e){return new Map();}
+}
+function saveGateConfirm(m){
+  try{localStorage.setItem(GATE_CONFIRM_KEY,JSON.stringify([...m.entries()]));}catch(e){}
+}
+const gatePendingConfirm = loadGateConfirm(); // symbol|dir -> {firstPassAt,lastAt},持久化,页面刷新/短暂后台不清零
 let opportunityResults = new Map(); // symbol -> {sig, ts}
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
+let lastOpportunityScanAt = 0;      // 标签页恢复前台时,用于判断该不该立刻补扫一次
 const oppExpandedSymbols = new Set(); // 会话内记录总览表里哪些币种的"类型专属详情"被展开过,重绘时保持展开状态
 
 function mainstreamUniverse(){
@@ -1771,6 +1793,15 @@ function setupOpportunityScan(){
   if(opportunityScanTimer)clearInterval(opportunityScanTimer);
   runOpportunityScan();
   opportunityScanTimer=setInterval(runOpportunityScan, OPP_SCAN_INTERVAL_MS);
+  // 移动端浏览器把后台标签页的定时器限流甚至完全暂停,是"推荐追踪长期不动"的常见外因
+  // (浏览器省电策略,不是bug)。这里在标签页重新回到前台、且已经错过至少一个扫描周期时,
+  // 立刻补扫一次,而不是干等下一个90秒的定时器,尽量把"离开又回来"的空档补回来。
+  document.addEventListener("visibilitychange",()=>{
+    if(document.visibilityState==="visible"&&!opportunityScanning&&Date.now()-lastOpportunityScanAt>OPP_SCAN_INTERVAL_MS){
+      setOppStatus("刚恢复到前台,正在补扫一次…");
+      runOpportunityScan();
+    }
+  });
 }
 // topN changes / tracked-set churn shouldn't spam re-scans — debounce to one scan ~2s after things settle
 function scheduleOpportunityRescan(){
@@ -1854,8 +1885,10 @@ function oppTriggerState(sig,type){
     return{cls:"fail",badge:"⛔ 仅供参考",detail:!extra.pass?extra.reason:"未过执行闸门(见下方六项条件)"};
   }
   const pend=gatePendingConfirm.get((sig.symbol||"")+"|"+sig.dirSign);
-  if(pend&&pend.count>=GATE_CONFIRM_SCANS)return{cls:"pass",badge:"✅ 已触发 · 计入追踪",detail:"已连续通过执行闸门与该类型专属确认条件"};
-  return{cls:"pending",badge:`⏳ 确认中 ${pend?pend.count:0}/${GATE_CONFIRM_SCANS}`,detail:"执行闸门与类型专属条件已过,等待连续多轮扫描稳定"};
+  const elapsed=pend?Date.now()-pend.firstPassAt:0;
+  if(pend&&elapsed>=GATE_CONFIRM_MIN_MS)return{cls:"pass",badge:"✅ 已触发 · 计入追踪",detail:"已连续通过执行闸门与该类型专属确认条件"};
+  const remainSec=Math.max(0,Math.round((GATE_CONFIRM_MIN_MS-elapsed)/1000));
+  return{cls:"pending",badge:`⏳ 确认中 · 还需${remainSec}秒`,detail:"执行闸门与类型专属条件已过,等待持续一段时间稳定后才计入追踪(刷新页面不会重置这个进度)"};
 }
 function oppQualityScore(sig,type,trig){
   let s=sig.outlook.conviction;
@@ -2017,6 +2050,18 @@ function renderOpportunityRadar(){
     const failN=withMeta.filter(x=>x.trig.cls==="fail").length;
     statusEl.innerHTML=`<b>${withMeta.length}</b> 个方向已确认的候选 · <span class="up">✅ ${passN} 笔已触发计入追踪</span> · <span class="amb">⏳ ${pendN} 笔确认中</span> · <span class="dim2">⛔ ${failN} 笔仅供参考</span>(六项执行闸门+该类型专属确认条件任一未过,不计入追踪)。想要更多✅是靠行情本身出现更强共振,不是靠放宽闸门——放宽闸门只会让追踪校准的胜率数字失去意义。`;
   }
+  const nearMissEl=document.getElementById("oppNearMiss");
+  if(nearMissEl){
+    // 只回答一个问题: 现在最好的几个候选,具体差在六项执行闸门(或该类型专属确认条件)的哪一项——
+    // 让"追踪日志为什么是空的"这件事变得可核实,而不是一个不透明的黑箱等待。
+    const nearCands=ref.slice(0,3).map(x=>{
+      const sig=x.r.sig;
+      const failed=(sig.gate&&sig.gate.checks)?sig.gate.checks.filter(c=>!c.pass).map(c=>c.label):[];
+      const reason=failed.length?failed.join(" · "):(typeGateExtra(sig,x.type.key).reason||"该类型专属确认条件未满足");
+      return`<div class="opp-nearmiss-row"><span class="opp-row-sym">${esc(x.symbol.replace("USDT",""))}</span><span class="opp-row-dir ${sig.dirSign>0?"up":"down"}">${sig.dirSign>0?"LONG":"SHORT"}</span><span class="opp-nearmiss-detail">未过: ${esc(reason)}</span></div>`;
+    }).join("");
+    nearMissEl.innerHTML=ref.length?`<div class="opp-future-title">🔍 最接近触发的候选 · 具体差在哪一项</div>${nearCands}`:"";
+  }
   const tableEl=document.getElementById("oppOverviewTable");
   if(tableEl){
     const liveHTML=live.length?`<div class="opp-group-head">🟢 已触发 / 确认中 · 可执行</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
@@ -2085,15 +2130,19 @@ function recordTrackSignals(rows){
     const extraOK=typeGateExtra(sig,type.key).pass;
     if(sig.gate.pass&&extraOK){
       const prev=gatePendingConfirm.get(key);
-      gatePendingConfirm.set(key,{count:(prev?prev.count:0)+1,lastAt:now});
+      const broke=!prev||(now-prev.lastAt)>GATE_STALE_GAP_MS; // 中途真的断过(长时间未见)才重新计时,短暂刷新/后台不受影响
+      gatePendingConfirm.set(key,{firstPassAt:broke?now:prev.firstPassAt,lastAt:now});
     }else{
       gatePendingConfirm.delete(key);
     }
   });
   [...gatePendingConfirm.keys()].forEach(k=>{if(!seenKeys.has(k))gatePendingConfirm.delete(k);});
+  saveGateConfirm(gatePendingConfirm);
+  lastOpportunityScanAt=now;
 
-  // 第二步: 只有"执行闸门通过 + 连续 GATE_CONFIRM_SCANS 次扫描都稳定 + conviction保底65%"
-  // 三个条件同时满足,才算一笔真正够格被记录的推荐——conviction退居次要保底,不再是唯一标准。
+  // 第二步: 只有"执行闸门通过 + 连续通过至少 GATE_CONFIRM_MIN_MS 时长(不是内存扫描计数,
+  // 按时间戳持久化判定) + conviction保底65%"三个条件同时满足,才算一笔真正够格被记录的
+  // 推荐——conviction退居次要保底,不再是唯一标准。
   const qualifying=rows.filter(x=>{
     const sig=x.r.sig,p=sig.plan&&sig.plan.main;
     if(!p||p.noSetup||sig.dirSign===0)return false;
@@ -2102,7 +2151,7 @@ function recordTrackSignals(rows){
     const type=classifyOpportunityType(sig);
     if(!typeGateExtra(sig,type.key).pass)return false;
     const pend=gatePendingConfirm.get(x.symbol+"|"+sig.dirSign);
-    return pend&&pend.count>=GATE_CONFIRM_SCANS;
+    return pend&&(now-pend.firstPassAt)>=GATE_CONFIRM_MIN_MS;
   });
   if(!qualifying.length)return;
   const log=getTrackLog();
