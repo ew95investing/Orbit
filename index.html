@@ -390,6 +390,60 @@
   .opp-gate-badge.pending{color:var(--amber);background:rgba(240,180,60,.12);}
   .opp-gate-badge.fail{color:var(--dim2);background:rgba(255,255,255,.05);}
   .opp-empty{font-size:11.5px;color:var(--dim2);padding:10px 4px;}
+  .opp-quality-note{font-size:11.5px;color:var(--dim2);padding:9px 14px 0;line-height:1.7;}
+  .opp-status-line{font-size:11.5px;color:var(--dim);padding:7px 14px 0;line-height:1.6;}
+  .opp-status-line b{color:var(--text);font-weight:700;}
+  .opp-status-line .up{color:var(--up);font-weight:600;}
+  .opp-status-line .amb{color:var(--amber);font-weight:600;}
+  .opp-status-line .dim2{color:var(--dim2);font-weight:600;}
+  .opp-table{padding:8px 14px 4px;}
+  .opp-group-head{font-size:11px;letter-spacing:.6px;color:var(--dim2);font-weight:700;padding:10px 2px 6px;}
+  .opp-group-head.dim{opacity:.75;}
+  .opp-row{border:1px solid var(--line2);border-radius:6px;background:var(--panel2);margin-bottom:8px;overflow:hidden;}
+  .opp-row.pass{border-color:rgba(90,155,120,.5);}
+  .opp-row.pending{border-color:rgba(198,165,101,.4);}
+  .opp-row.fail{opacity:.72;}
+  .opp-row-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;flex-wrap:wrap;transition:background .15s;}
+  .opp-row-head:hover{background:var(--panel3);}
+  .opp-type-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;white-space:nowrap;letter-spacing:.2px;}
+  .opp-type-badge.pulse{color:var(--blue);background:rgba(127,160,194,.14);}
+  .opp-type-badge.swing{color:var(--up);background:var(--up-bg);}
+  .opp-type-badge.wave{color:var(--amber);background:var(--amber-bg);}
+  .opp-type-badge.turning{color:var(--purple);background:rgba(156,133,176,.14);}
+  .opp-row-sym{font-weight:700;font-size:14px;min-width:52px;}
+  .opp-row-dir{font-size:11.5px;font-weight:700;padding:2px 6px;border-radius:4px;}
+  .opp-row-dir.up{color:var(--up);background:var(--up-bg);}
+  .opp-row-dir.down{color:var(--down);background:var(--down-bg);}
+  .opp-trig-badge{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap;}
+  .opp-trig-badge.pass{color:var(--up);background:var(--up-bg);}
+  .opp-trig-badge.pending{color:var(--amber);background:rgba(198,165,101,.14);}
+  .opp-trig-badge.fail{color:var(--dim2);background:rgba(255,255,255,.05);}
+  .opp-row-meta{font-size:11px;color:var(--dim2);display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .opp-stars{color:var(--amber);letter-spacing:1px;font-size:11.5px;}
+  .opp-row-toggle{font-size:11px;color:var(--dim2);margin-left:auto;flex-shrink:0;}
+  .opp-row-stats{display:flex;gap:16px;flex-wrap:wrap;padding:0 12px 10px;font-family:var(--mono);}
+  .opp-stat{font-size:12px;color:var(--text);white-space:nowrap;}
+  .opp-stat i{font-style:normal;color:var(--dim2);font-size:10.5px;margin-right:5px;}
+  .opp-stat.sl{color:var(--down);}
+  .opp-stat.tp{color:var(--up);}
+  .opp-row-detail{display:none;padding:10px 12px 12px;border-top:1px solid var(--line);font-size:12px;line-height:1.65;}
+  .opp-row.open .opp-row-detail{display:block;}
+  .opp-detail-sec{margin-bottom:9px;}
+  .opp-detail-sec b{color:var(--text);display:block;margin-bottom:3px;font-size:11.5px;letter-spacing:.3px;}
+  .opp-detail-sec div{color:var(--dim);}
+  .opp-future-panel{margin-top:6px;border-top:1px solid var(--line);padding:12px 14px 14px;}
+  .opp-future-title{font-size:11.5px;letter-spacing:1px;color:var(--dim2);text-transform:uppercase;font-weight:700;margin-bottom:9px;}
+  .opp-future-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .opp-future-row:last-child{border-bottom:none;}
+  .opp-future-prob{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap;}
+  .opp-future-prob.p3{color:var(--up);background:var(--up-bg);}
+  .opp-future-prob.p2{color:var(--amber);background:var(--amber-bg);}
+  .opp-future-prob.p1{color:var(--dim2);background:rgba(255,255,255,.05);}
+  @media(max-width:720px){
+    .opp-row-head{gap:6px;padding:9px 10px;}
+    .opp-row-meta{gap:6px;}
+    .opp-row-stats{gap:10px 14px;padding:0 10px 9px;}
+  }
   @media(max-width:640px){
     .opp-panel{margin:0 0 14px;}
     .opp-body{grid-template-columns:1fr;}
@@ -1010,9 +1064,12 @@
       <span class="opp-sub" id="oppUniverseNote">–</span>
       <span class="opp-status" id="oppStatus">等待首次扫描…</span>
     </div>
-    <div class="opp-body">
-      <div class="opp-col"><div class="opp-col-head bull">📈 做多候选 TOP</div><div id="oppLongList" class="opp-empty">扫描中…</div></div>
-      <div class="opp-col"><div class="opp-col-head bear">📉 做空候选 TOP</div><div id="oppShortList" class="opp-empty">扫描中…</div></div>
+    <div class="opp-quality-note">⚡日内脉冲 = 数十分钟~数小时的短线均值回归 · 📈波段趋势 = 1~4日的顺势回调入场 · 🚀主升主跌浪 = 数日~数周的延伸趋势(五重确认,最苛刻) · 🔮结构性拐点 = OI/费率/价格三因子共振的反转机会。四档判定逻辑与止损/仓位/持仓纪律完全独立,不混用。总览按机会质量排序,点击任一行展开该类型专属的入场/止损止盈/仓位/纪律。</div>
+    <div class="opp-status-line" id="oppStatusLine">–</div>
+    <div class="opp-table" id="oppOverviewTable"><div class="opp-empty">扫描中…</div></div>
+    <div class="opp-future-panel">
+      <div class="opp-future-title">🔭 未来24小时潜在机会扫描 · 按触发概率排序</div>
+      <div id="oppFutureScanBody"><div class="opp-empty">扫描中…</div></div>
     </div>
   </div>
 
@@ -1620,6 +1677,7 @@ const trkExpandedIds = new Set();          // 会话内记录哪些追踪条目(
 const gatePendingConfirm = new Map();      // symbol|dir -> {count,lastAt},执行闸门连续通过扫描次数的计数器
 let opportunityResults = new Map(); // symbol -> {sig, ts}
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
+const oppExpandedSymbols = new Set(); // 会话内记录总览表里哪些币种的"类型专属详情"被展开过,重绘时保持展开状态
 
 function mainstreamUniverse(){
   // Deliberately NOT the whole market: only coins that are both (a) currently in the
@@ -1725,34 +1783,218 @@ function topVoteFor(sig){
   return [...sig.votes].filter(v=>Math.sign(v.dir)===sig.dirSign&&Math.abs(v.dir)>0.05)
     .sort((a,b)=>Math.abs(b.dir*b.w)-Math.abs(a.dir*a.w))[0];
 }
-function oppCardHTML(symbol,r){
-  const sig=r.sig,m=market.get(symbol);
-  const topVote=topVoteFor(sig);
-  const cls=sig.dirSign>0?"up":"down";
-  // 雷达上"方向已确认"的候选(dirSign≠0)远比真正被计入追踪日志/校准统计的信号数量多——
-  // 之前用户看到的其实是这整批候选,却以为都是"推荐",这里显式标出每一张卡片到底是
-  // 已经通过六条执行闸门、连续确认后正式计入追踪(✅),闸门已过但还在等第二次扫描确认(⏳),
-  // 还是压根没过闸门只是雷达上的一个方向倾向、不构成正式推荐(⛔)。
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 机会时间维度分类(OPPORTUNITY TIMEFRAME CLASSIFICATION) ──
+   核心原则: 不同时间维度的机会,底层驱动逻辑本质不同,不能用同一套止损/仓位/持仓纪律
+   处理——这正是"入场后几乎没有朝有利方向运行就被打止损"最常见的根因之一: 把一个只适合
+   日内均值回归的短线波动,当成波段甚至主升浪的结构,配了一个跟它的实际行情节奏不匹配的
+   止损/目标,结果噪音一晃就把单打掉,而不是方向真的错了。
+   四档分类,按判定的"苛刻程度"从严到松依次尝试,先中者定档:
+   🔮 结构性拐点 — OI/资金费率/价格滞涨(或抗跌)三因子共振的顶/底部结构信号,且方向与
+      本次信号一致 → 押注当前趋势力竭反转,逻辑与顺势类机会完全相反。
+   🚀 主升主跌浪 — 趋势市 + 高效率比(ER,价格真的在有效移动) + 低Choppiness(强趋势形态)
+      + 更大周期同向 + 指标高度一致 + 机会可信度=高,五重确认同时成立才算,最苛刻的一档。
+   📈 波段趋势 — 趋势市 + 中等以上效率比 + 更大周期不冲突 + 可信度中等以上。
+   ⚡ 日内脉冲 — 其余情况(震荡/过渡区),靠VWAP/布林带边界/资金流挤压等短周期均值回归
+      逻辑驱动,天生就该短打,不该被当成能扛几天的波段来配止损。 */
+function classifyOpportunityType(sig){
+  const o=sig.outlook,dirSign=sig.dirSign;
+  const tb=sig.topBottom||{state:"none",dir:0};
+  const tbAgrees=tb.state!=="none"&&tb.state!=="unknown"&&Math.sign(tb.dir)===dirSign;
+  const mtfAgrees=sig.mtfDir!==0&&sig.mtfDir===dirSign;
+  const strongTrendShape=sig.ciVal!=null&&sig.ciVal<=38.2;
+  const erHigh=sig.er!=null&&sig.er>=0.55;
+  const erMid=sig.er!=null&&sig.er>=0.35;
+  if(tbAgrees){
+    return{key:"turning",icon:"🔮",label:"结构性拐点",
+      hold:"数小时 ~ 2个交易日 · 反转确认后应尽快兑现或移动止损保本,不恋战",
+      logicNote:`OI/资金费率/价格${tb.state==="top"?"滞涨":"抗跌"}三因子共振(${tb.detail}),押注当前趋势力竭转向,与下面两档顺势类机会逻辑相反——不能用"扛一扛等趋势回来"的心态处理这类单。`};
+  }
+  if(sig.regime==="trend"&&erHigh&&strongTrendShape&&mtfAgrees&&sig.reliability.tier==="reliable"&&o.agreementPct>=65){
+    return{key:"wave",icon:"🚀",label:"主升主跌浪",
+      hold:"数日 ~ 数周 · 结构未破、更大周期未转向前不轻易离场",
+      logicNote:`趋势市 + 效率比ER=${sig.er!=null?sig.er.toFixed(2):"–"}(高) + Choppiness=${sig.ciVal!=null?sig.ciVal.toFixed(0):"–"}(低,强趋势形态) + 更大周期同向 + 指标同向占比${o.agreementPct}% + 机会可信度=高,五重确认同时成立,是延伸趋势里最强的一档。`};
+  }
+  if(sig.regime==="trend"&&erMid&&sig.mtfDir!==-dirSign&&(sig.reliability.tier==="reliable"||sig.reliability.tier==="moderate")){
+    return{key:"swing",icon:"📈",label:"波段趋势",
+      hold:"1 ~ 4个交易日 · 分批止盈,首个止盈位后止损移至保本",
+      logicNote:`趋势市 + 效率比ER=${sig.er!=null?sig.er.toFixed(2):"–"}(中高) + 更大周期不冲突,价格在有效朝一个方向运动,属于顺势回调入场。`};
+  }
+  return{key:"pulse",icon:"⚡",label:"日内脉冲",
+    hold:"数十分钟 ~ 数小时 · 不建议隔夜,到时不达阈值应主动离场而非等止损",
+    logicNote:`市场状态为「${esc(sig.regimeLabel)}」,趋势特征不明确,依赖VWAP/布林带边界/资金流挤压等短周期均值回归逻辑驱动,天生只适合短打。`};
+}
+/* 每种类型专属的"额外确认条件"——不是止损位置的问题,是"这笔信号本身适不适合被当作
+   该类型的可执行机会"的问题。顺势类(波段/主浪)如果此时顶/底部结构信号恰好指向反方向
+   (疑似趋势末端),历史上追势胜率明显偏低;日内脉冲类如果价格根本不在布林带边界/均值
+   回归的极端区、而是在区间中部,那本质是在"中部追单猜方向",正是这类机会最常见的
+   假摆动止损来源。任一类型未通过额外确认,一律仅供参考,不计入正式触发/追踪。 */
+function typeGateExtra(sig,type){
+  const dirSign=sig.dirSign;
+  const tb=sig.topBottom||{state:"none",dir:0};
+  const opposingExhaustion=tb.state!=="none"&&tb.state!=="unknown"&&Math.sign(tb.dir)===-dirSign;
+  if((type==="wave"||type==="swing")&&opposingExhaustion){
+    return{pass:false,reason:`顶/底部结构信号(${tb.detail})与本次趋势方向相反,疑似趋势末端,此时追势不满足该类型的额外确认条件`};
+  }
+  if(type==="pulse"){
+    if(sig.bbU==null||sig.bbL==null)return{pass:true,reason:""};
+    const width=sig.bbU-sig.bbL;
+    if(width<=0)return{pass:true,reason:""};
+    const posInBand=(sig.price-sig.bbL)/width; // 0=布林下轨 1=布林上轨
+    const nearExtreme=dirSign>0?posInBand<=0.35:posInBand>=0.65;
+    if(!nearExtreme)return{pass:false,reason:"价格并未处于布林带边界等均值回归极端区,而是在区间中部——中部追单是日内脉冲类机会最常见的假摆动止损来源,不满足该类型的额外确认条件"};
+  }
+  return{pass:true,reason:""};
+}
+function oppTriggerState(sig,type){
   const gate=sig.gate;
-  const pend=gate&&gate.pass?gatePendingConfirm.get(symbol+"|"+sig.dirSign):null;
-  const gateBadge=gate&&gate.pass
-    ?(pend&&pend.count>=GATE_CONFIRM_SCANS?'<span class="opp-gate-badge pass">✅ 已达标 · 计入追踪校准</span>':`<span class="opp-gate-badge pending">⏳ 执行闸门确认中 ${pend?pend.count:0}/${GATE_CONFIRM_SCANS}</span>`)
-    :'<span class="opp-gate-badge fail">⛔ 未过执行闸门 · 仅供参考,不计入追踪</span>';
-  return `<div class="opp-card" data-symbol="${symbol}">
-    <div class="opp-card-top">
-      <span class="opp-card-sym">${symbol.replace("USDT","")}</span>
-      <span class="opp-card-conv ${cls}">${sig.outlook.conviction}% 把握</span>
-    </div>
-    ${gateBadge}
-    <div class="opp-card-meta">
-      <span>${fmtPrice(m?m.price:sig.price)}</span>
-      <span>${esc(sig.regimeLabel)}</span>
-      <span class="ind-tag ${sig.reliability.cls}" style="font-size:9px;padding:1px 5px;">${esc(sig.reliability.label)}</span>
-      <span>${esc(sig.outlook.sizeTier.label)}</span>
-      <span>${esc(sig.outlook.timeframe.label)}</span>
-    </div>
-    ${topVote?`<div class="opp-card-reason">${esc(topVote.name)}: ${esc(topVote.detail)}</div>`:""}
+  const extra=typeGateExtra(sig,type);
+  if(!gate||!gate.pass||!extra.pass){
+    return{cls:"fail",badge:"⛔ 仅供参考",detail:!extra.pass?extra.reason:"未过执行闸门(见下方六项条件)"};
+  }
+  const pend=gatePendingConfirm.get((sig.symbol||"")+"|"+sig.dirSign);
+  if(pend&&pend.count>=GATE_CONFIRM_SCANS)return{cls:"pass",badge:"✅ 已触发 · 计入追踪",detail:"已连续通过执行闸门与该类型专属确认条件"};
+  return{cls:"pending",badge:`⏳ 确认中 ${pend?pend.count:0}/${GATE_CONFIRM_SCANS}`,detail:"执行闸门与类型专属条件已过,等待连续多轮扫描稳定"};
+}
+function oppQualityScore(sig,type,trig){
+  let s=sig.outlook.conviction;
+  if(trig.cls==="pass")s+=15; else if(trig.cls==="pending")s+=6;
+  if(type==="wave")s+=6; else if(type==="turning")s+=3;
+  return s;
+}
+function oppStars(conviction){
+  const n=Math.max(1,Math.min(5,Math.round(conviction/20)));
+  return "★".repeat(n)+"☆".repeat(5-n);
+}
+/* 每种类型专属的入场条件/止损止盈规则/仓位建议/持仓纪律——用该币种这一刻真实算出来的
+   入场价/止损/止盈/ATR/仓位区间填空,不是脱离数字的空话模板。 */
+function buildOppTypeDetail(symbol,sig,type){
+  const p=sig.plan.main,o=sig.outlook,st=o.sizeTier;
+  const dirTxt=sig.dirSign>0?"做多 LONG":"做空 SHORT";
+  const entryPx=fmtPrice(p.entry),slPx=fmtPrice(p.sl);
+  const tpsTxt=p.tps&&p.tps.length?p.tps.map(t=>`${esc(t.label)} ${fmtPrice(t.price)}${t.rr?`(R:R ${t.rr})`:""}`).join(" · "):"–";
+  const atrTxt=sig.atr!=null?fmtPrice(sig.atr):"–";
+  let entryCond,slTpRule,posRule,discipline;
+  if(type==="pulse"){
+    entryCond=`限价挂单于 ${entryPx}(${((p.entryInfo&&p.entryInfo.sources||[]).join("/")||"VWAP/布林带均值回归位")}附近),价格须处于布林带边界或短周期挤压释放的极端区,不在区间中部追单。`;
+    slTpRule=`止损 ${slPx}(约${atrTxt!=="–"?"0.6~1×ATR":"紧止损"}),只设TP1(${p.tps&&p.tps[0]?fmtPrice(p.tps[0].price):"–"})快进快出,不追求TP2/TP3——日内脉冲的本质是快速兑现均值回归差价,拖得越久噪音越可能把利润吃回去。`;
+    posRule=`仓位 ${st.posMin}%~${st.posMax}% · 杠杆 ${st.levMin}~${st.levMax}x,建议取区间下段,单笔风险控制在总仓位可承受的最小单位内。`;
+    discipline=`挂单后若在约${(sig.intervalLabel==="1m"||sig.intervalLabel==="5m")?"1~2小时":"数根K线"}内未成交,主动撤单而不是继续等——日内脉冲讲究的是"当下就该发生",迟迟不触发本身就是信号变弱的证据。不隔夜持有。`;
+  }else if(type==="swing"){
+    entryCond=`限价挂单于 ${entryPx}(${((p.entryInfo&&p.entryInfo.sources||[]).join("/")||"结构支撑/压力位")}附近的顺势回调入场),等待价格回踩到该结构位再进场,不追高/追空在延伸端。`;
+    slTpRule=`止损 ${slPx}(结构位外侧,约1.2~1.8×ATR),TP1(${p.tps&&p.tps[0]?fmtPrice(p.tps[0].price):"–"})止盈后把止损移至保本位,剩余仓位继续看TP2/TP3(${tpsTxt})分批离场。`;
+    posRule=`仓位 ${st.posMin}%~${st.posMax}% · 杠杆 ${st.levMin}~${st.levMax}x,可按标准仓位参与,不必因为是"波段"就刻意加码。`;
+    discipline=`持有期内若更大周期方向反转,或价格有效跌破/突破入场结构位(不是插针,是收盘价站稳),应提前离场而不是等原定止损——止损是最后防线,不是唯一离场条件。`;
+  }else if(type==="wave"){
+    entryCond=`限价挂单于 ${entryPx}(${((p.entryInfo&&p.entryInfo.sources||[]).join("/")||"趋势中继结构位")}附近),这一档只在五重确认(趋势市/高ER/低Choppiness/更大周期同向/高可信度)同时成立时才会出现,出现频率天然较低。`;
+    slTpRule=`初始止损 ${slPx}(约2~3×ATR,给主浪足够的呼吸空间),TP1(${p.tps&&p.tps[0]?fmtPrice(p.tps[0].price):"–"})止盈部分仓位并把止损移至保本后,其余仓位改为跟随趋势结构(如EMA50/更大周期摆动低点)动态上移/下移止损,不再用固定TP2/TP3锁死离场点——主升浪的利润大头往往来自"扛住中途回撤,直到结构真正被破坏"。`;
+    posRule=`仓位 ${st.posMin}%~${st.posMax}% · 杠杆 ${st.levMin}~${st.levMax}x,若确认后价格出现顺势健康回踩,可在结构位分批加仓,但每次加仓后止损同步上移/下移,不倒退。`;
+    discipline=`离场条件是"趋势结构被破坏"(更大周期转向、或关键结构位被收盘价有效击穿),而不是"已经赚了很多想落袋"——主浪机会本来就少,过早离场是这一档最常见的浪费,过晚离场则应交给移动止损而不是主观扛单。`;
+  }else{
+    entryCond=`限价挂单于 ${entryPx}(反转结构极值附近,如${((p.entryInfo&&p.entryInfo.sources||[]).join("/")||"顶/底部结构位")}),等待价格出现确认K线(如吞没/长下影线等反转形态,见"K线形态"一项)再进场,不在OI/资金费率刚开始背离时就抢跑。`;
+    slTpRule=`止损 ${slPx}(设在本次极值蜡烛外侧,留出的空间应尽量小),第一目标(${p.tps&&p.tps[0]?fmtPrice(p.tps[0].price):"–"})达到即可先落袋一部分——结构性拐点的第一波反弹/回落往往最干脆,之后容易反复。`;
+    posRule=`仓位 ${st.posMin}%~${st.posMax}% · 杠杆 ${st.levMin}~${st.levMax}x,建议取区间下段起步,反转确认后若结构持续走强可小幅加仓,绝不在浮亏时为"摊平反转逻辑"加仓。`;
+    discipline=`持仓期原则上不超过2个交易日;若价格重新回到OI/资金费率共振的原极值之外(反转逻辑失效),应立即离场,不要等固定止损——这类机会赌的是"力竭",一旦价格证明并未力竭,继续持有就是在赌一个已被证伪的判断。`;
+  }
+  return{entryCond,slTpRule,posRule,discipline};
+}
+function oppStatsBarHTML(sig){
+  const p=sig.plan.main;
+  const tp1=p.tps&&p.tps[0]?p.tps[0]:null;
+  return`<div class="opp-row-stats">
+    <span class="opp-stat"><i>现价</i>${fmtPrice(sig.price)}</span>
+    <span class="opp-stat"><i>入场</i>${fmtPrice(p.entry)}</span>
+    <span class="opp-stat sl"><i>止损</i>${fmtPrice(p.sl)}</span>
+    <span class="opp-stat tp"><i>TP1</i>${tp1?fmtPrice(tp1.price):"–"}${tp1&&tp1.rr?` (R:R ${tp1.rr})`:""}</span>
+    <span class="opp-stat"><i>把握度</i>${sig.outlook.conviction}%</span>
   </div>`;
+}
+function oppRowHTML(symbol,r){
+  const sig=r.sig;sig.symbol=sig.symbol||symbol;
+  const type=classifyOpportunityType(sig);
+  const trig=oppTriggerState(sig,type.key);
+  const dirCls=sig.dirSign>0?"up":"down";
+  const dirTxt=sig.dirSign>0?"LONG":"SHORT";
+  const expanded=oppExpandedSymbols.has(symbol);
+  const det=buildOppTypeDetail(symbol,sig,type.key);
+  return`<div class="opp-row ${trig.cls}${expanded?" open":""}" data-symbol="${esc(symbol)}">
+    <div class="opp-row-head" data-toggle="${esc(symbol)}">
+      <span class="opp-type-badge ${type.key}">${type.icon} ${esc(type.label)}</span>
+      <span class="opp-row-sym">${esc(symbol.replace("USDT",""))}</span>
+      <span class="opp-row-dir ${dirCls}">${dirTxt}</span>
+      <span class="opp-trig-badge ${trig.cls}" title="${esc(trig.detail)}">${trig.badge}</span>
+      <span class="opp-row-meta">
+        <span>持仓 ${esc(type.hold.split(" · ")[0])}</span>
+        <span class="opp-stars" title="把握度${sig.outlook.conviction}%">${oppStars(sig.outlook.conviction)}</span>
+      </span>
+      <span class="opp-row-toggle">${expanded?"▾ 收起":"▸ 展开"}</span>
+    </div>
+    ${oppStatsBarHTML(sig)}
+    <div class="opp-row-detail">
+      <div class="opp-detail-sec"><b>为什么归为这一档</b><div>${esc(type.logicNote)}</div></div>
+      <div class="opp-detail-sec"><b>持仓纪律与预估时长</b><div>${esc(type.hold)}</div></div>
+      <div class="opp-detail-sec"><b>入场条件</b><div>${esc(det.entryCond)}</div></div>
+      <div class="opp-detail-sec"><b>止损止盈规则</b><div>${esc(det.slTpRule)}</div></div>
+      <div class="opp-detail-sec"><b>仓位建议</b><div>${esc(det.posRule)}</div></div>
+      <div class="opp-detail-sec"><b>持仓纪律</b><div>${esc(det.discipline)}</div></div>
+      <div class="opp-detail-sec"><b>触发状态</b><div>${esc(trig.badge)} — ${esc(trig.detail)}</div></div>
+      <button class="trk-tile-gotomodal" data-symbol="${esc(symbol)}">📈 打开${esc(symbol.replace("USDT",""))}完整行情图 →</button>
+    </div>
+  </div>`;
+}
+/* ── 未来24小时潜在机会扫描 ──
+   不是预测,是"如果价格用近期波动率(ATR)走到某个已知结构位/均值回归边界,大概会对应
+   什么类型的信号"这样一张概率地图。距离用ATR×√(24小时理论根数)做布朗运动式粗略缩放,
+   再乘0.5经验折减(真实路径不会像纯随机游走那样把理论距离走满),只用于给出概率量级,
+   不是精确点位预测。触发后对应的机会类型由"该价位相对更大周期方向的位置"决定:
+   顺更大周期方向的结构突破→🚀主浪延续;逆更大周期方向的击穿→🔮结构性拐点(假突破反转
+   风险);普通回踩确认位→📈波段;布林带边界→⚡日内脉冲。 */
+function priceLevelKind(sig,dir){
+  const withTrend=sig.mtfDir===dir;
+  if(withTrend&&sig.regime==="trend")return{icon:"🚀",label:"主升主跌浪(结构位突破延续)"};
+  if(!withTrend)return{icon:"🔮",label:"结构性拐点(反向击穿/假突破风险位)"};
+  return{icon:"📈",label:"波段趋势(回踩确认位)"};
+}
+function computeFutureScanRows(symbol,sig){
+  if(!sig||!sig.structure||!sig.atr||!sig.price)return[];
+  const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440,"1w":10080}[sig.intervalLabel]||5;
+  const barsIn24h=Math.max(1,Math.round(1440/intervalMinutes));
+  const expectedMove=sig.atr*Math.sqrt(barsIn24h)*0.5;
+  if(!expectedMove)return[];
+  const cands=[];
+  (sig.structure.resistances||[]).slice(0,2).forEach(rs=>cands.push({price:rs.price,dir:1,kind:priceLevelKind(sig,1)}));
+  (sig.structure.supports||[]).slice(0,2).forEach(ss=>cands.push({price:ss.price,dir:-1,kind:priceLevelKind(sig,-1)}));
+  if(sig.bbU!=null)cands.push({price:sig.bbU,dir:1,kind:{icon:"⚡",label:"日内脉冲(布林上轨均值回归)"}});
+  if(sig.bbL!=null)cands.push({price:sig.bbL,dir:-1,kind:{icon:"⚡",label:"日内脉冲(布林下轨均值回归)"}});
+  return cands.map(c=>{
+    const dist=Math.abs(c.price-sig.price);
+    const distRatio=dist/expectedMove;
+    let prob,probLabel;
+    if(distRatio<=0.4){prob=3;probLabel="概率较高";}
+    else if(distRatio<=0.9){prob=2;probLabel="概率中等";}
+    else if(distRatio<=1.6){prob=1;probLabel="概率较低";}
+    else return null;
+    return{symbol,price:c.price,dir:c.dir,kind:c.kind,distPct:dist/sig.price*100,prob,probLabel};
+  }).filter(Boolean);
+}
+function futureScanRowHTML(x){
+  const cls=x.prob>=3?"p3":x.prob>=2?"p2":"p1";
+  return`<div class="opp-future-row">
+    <span class="opp-future-prob ${cls}">${esc(x.probLabel)}</span>
+    <span class="opp-row-sym">${esc(x.symbol.replace("USDT",""))}</span>
+    <span>${x.kind.icon} ${esc(x.kind.label)}</span>
+    <span class="opp-row-meta"><span>触发价 ${fmtPrice(x.price)}(距现价${x.distPct>=0?"":"-"}${Math.abs(x.distPct).toFixed(1)}%)</span></span>
+  </div>`;
+}
+function renderFutureScanSection(){
+  const el=document.getElementById("oppFutureScanBody");
+  if(!el)return;
+  const all=[];
+  opportunityResults.forEach((r,symbol)=>{all.push(...computeFutureScanRows(symbol,r.sig));});
+  all.sort((a,b)=>b.prob-a.prob||a.distPct-b.distPct);
+  const top=all.slice(0,20);
+  el.innerHTML=top.length?top.map(futureScanRowHTML).join(""):'<div class="opp-empty">暂无足够数据估算未来24小时潜在触发位</div>';
 }
 function renderOpportunityRadar(){
   const noteEl=document.getElementById("oppUniverseNote");
@@ -1760,14 +2002,38 @@ function renderOpportunityRadar(){
   if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 每${Math.round(OPP_SCAN_INTERVAL_MS/1000)}秒滚动刷新`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
-  recordTrackSignals(rows); // 记录追踪日志用完整候选集(未截断的rows),不只是下面展示的TOP N卡片
-  const longs=rows.filter(x=>x.r.sig.dirSign>0).sort((a,b)=>b.r.sig.outlook.conviction-a.r.sig.outlook.conviction).slice(0,OPP_TOP_N);
-  const shorts=rows.filter(x=>x.r.sig.dirSign<0).sort((a,b)=>b.r.sig.outlook.conviction-a.r.sig.outlook.conviction).slice(0,OPP_TOP_N);
-  const longEl=document.getElementById("oppLongList"),shortEl=document.getElementById("oppShortList");
-  if(longEl)longEl.innerHTML=longs.length?longs.map(x=>oppCardHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">当前主流币里暂无高把握度做多机会,继续观察</div>';
-  if(shortEl)shortEl.innerHTML=shorts.length?shorts.map(x=>oppCardHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">当前主流币里暂无高把握度做空机会,继续观察</div>';
-  document.querySelectorAll(".opp-card").forEach(el=>{
-    el.addEventListener("click",()=>openCryptoModal(el.dataset.symbol));
+  recordTrackSignals(rows); // 记录追踪日志用完整候选集(未截断的rows),不只是下面展示的总览表
+  const withMeta=rows.map(x=>{
+    const type=classifyOpportunityType(x.r.sig);
+    const trig=oppTriggerState(x.r.sig,type.key);
+    return{...x,type,trig,quality:oppQualityScore(x.r.sig,type.key,trig)};
+  }).sort((a,b)=>b.quality-a.quality);
+  const live=withMeta.filter(x=>x.trig.cls!=="fail").slice(0,OPP_TOP_N*2);
+  const ref=withMeta.filter(x=>x.trig.cls==="fail").slice(0,OPP_TOP_N*2);
+  const statusEl=document.getElementById("oppStatusLine");
+  if(statusEl){
+    const passN=withMeta.filter(x=>x.trig.cls==="pass").length;
+    const pendN=withMeta.filter(x=>x.trig.cls==="pending").length;
+    const failN=withMeta.filter(x=>x.trig.cls==="fail").length;
+    statusEl.innerHTML=`<b>${withMeta.length}</b> 个方向已确认的候选 · <span class="up">✅ ${passN} 笔已触发计入追踪</span> · <span class="amb">⏳ ${pendN} 笔确认中</span> · <span class="dim2">⛔ ${failN} 笔仅供参考</span>(六项执行闸门+该类型专属确认条件任一未过,不计入追踪)。想要更多✅是靠行情本身出现更强共振,不是靠放宽闸门——放宽闸门只会让追踪校准的胜率数字失去意义。`;
+  }
+  const tableEl=document.getElementById("oppOverviewTable");
+  if(tableEl){
+    const liveHTML=live.length?`<div class="opp-group-head">🟢 已触发 / 确认中 · 可执行</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
+      :`<div class="opp-group-head">🟢 已触发 / 确认中 · 可执行</div><div class="opp-empty">当前没有已触发或确认中的机会,以下均为观察中 · 仅供参考</div>`;
+    const refHTML=ref.length?`<div class="opp-group-head dim">⚪ 观察中 · 仅供参考(未过执行闸门,不计入追踪)</div>${ref.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`:"";
+    tableEl.innerHTML=withMeta.length?(liveHTML+refHTML):'<div class="opp-empty">当前主流币里暂无达到方向确认门槛的机会,继续观察</div>';
+  }
+  renderFutureScanSection();
+  document.querySelectorAll(".opp-row-head").forEach(el=>{
+    el.addEventListener("click",()=>{
+      const sym=el.dataset.toggle;
+      if(oppExpandedSymbols.has(sym))oppExpandedSymbols.delete(sym);else oppExpandedSymbols.add(sym);
+      renderOpportunityRadar();
+    });
+  });
+  document.querySelectorAll(".opp-row .trk-tile-gotomodal").forEach(el=>{
+    el.addEventListener("click",(ev)=>{ev.stopPropagation();openCryptoModal(el.dataset.symbol);});
   });
 }
 
@@ -1804,13 +2070,20 @@ function recordTrackSignals(rows){
   // 的"连续通过扫描次数"计数器——这是取代旧的单一 conviction>=65% 门槛的核心修复。
   // 之前没在本轮扫描结果里出现的 symbol+方向(比如已跌出主流池、或方向已变)清空计数,
   // 不能用过期状态继续累积。
+  // 2026新增: 六条执行闸门只回答"方向共振够不够强",完全没回答"这笔信号适不适合被当作
+  // 它现在这个时间维度的机会来执行"——这正是"入场后几乎没朝有利方向走就被打止损"最常见的
+  // 根因之一:把只适合日内均值回归的波动,当成波段/主浪配了不匹配的止损,噪音一晃就打掉。
+  // 现在连续确认计数器额外要求 typeGateExtra(见机会时间维度分类)同时通过,才继续累加,
+  // 任一条不满足就清零重来,而不是只看六条闸门。
   const seenKeys=new Set();
   rows.forEach(x=>{
     const sig=x.r.sig;
     if(!sig||!sig.gate||sig.dirSign===0)return;
     const key=x.symbol+"|"+sig.dirSign;
     seenKeys.add(key);
-    if(sig.gate.pass){
+    const type=classifyOpportunityType(sig);
+    const extraOK=typeGateExtra(sig,type.key).pass;
+    if(sig.gate.pass&&extraOK){
       const prev=gatePendingConfirm.get(key);
       gatePendingConfirm.set(key,{count:(prev?prev.count:0)+1,lastAt:now});
     }else{
@@ -1826,6 +2099,8 @@ function recordTrackSignals(rows){
     if(!p||p.noSetup||sig.dirSign===0)return false;
     if(sig.outlook.conviction<TRACK_CONVICTION_MIN)return false;
     if(!sig.gate||!sig.gate.pass)return false;
+    const type=classifyOpportunityType(sig);
+    if(!typeGateExtra(sig,type.key).pass)return false;
     const pend=gatePendingConfirm.get(x.symbol+"|"+sig.dirSign);
     return pend&&pend.count>=GATE_CONFIRM_SCANS;
   });
@@ -1850,6 +2125,7 @@ function recordTrackSignals(rows){
       if(now-(lastResolved.resolvedAt||lastResolved.createdAt)<cooldown)return;
     }
     const tv=topVoteFor(sig);
+    const oppType=classifyOpportunityType(sig);
     log.push({
       id:symbol+"_"+dir+"_"+now+"_"+Math.random().toString(36).slice(2,7),
       symbol,dir,
@@ -1857,6 +2133,7 @@ function recordTrackSignals(rows){
       tps:p.tps.map(t=>({label:t.label,price:t.price,rr:parseFloat(t.rr)||null})),
       conviction:sig.outlook.conviction,regime:sig.regime,regimeLabel:sig.regimeLabel,
       sizeTierLabel:sig.outlook.sizeTier.label,timeframeLabel:sig.outlook.timeframe.label,
+      oppTypeKey:oppType.key,oppTypeLabel:oppType.icon+" "+oppType.label,oppTypeHold:oppType.hold,
       reasonName:tv?tv.name:"",reasonDetail:tv?tv.detail:"",
       createdAt:now,status:"awaiting",
       filledAt:null,filledPrice:null,mfe:null,
@@ -2009,6 +2286,7 @@ function renderTrkDetail(r,pnl){
     <div class="trk-detail-row"><span>失效撤单价</span><span>${fmtPrice(r.invalidatePrice)}</span></div>
     ${r.resolvedAt?`<div class="trk-detail-row"><span>结算时间/价格</span><span>${fmtTrkDateTime(r.resolvedAt)} · ${fmtPrice(r.resolvedPrice)}</span></div>`:""}
     <div class="trk-detail-row"><span>当时把握度</span><span>${r.conviction}% · ${esc(r.sizeTierLabel)} · ${esc(r.timeframeLabel)}</span></div>
+    ${r.oppTypeLabel?`<div class="trk-detail-row"><span>机会类型</span><span>${esc(r.oppTypeLabel)} · ${esc(r.oppTypeHold||"")}</span></div>`:""}
     ${r.reasonName?`<div class="trk-detail-row"><span>主要理由</span><span>${esc(r.reasonName)}: ${esc(r.reasonDetail)}</span></div>`:""}
     ${drift?`<div class="trk-detail-row"><span>当前实时信号</span><span>${esc(drift.text)}</span></div>`:""}
     <div class="trk-detail-pos">${posNote}</div>`;
@@ -4028,7 +4306,7 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign);
 
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,gate};
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,gate,bbU,bbL,bbM};
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
