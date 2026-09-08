@@ -751,6 +751,18 @@
   .atr-badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 6px;border-radius:3px;border:1px solid rgba(74,158,255,.3);color:var(--blue);background:rgba(74,158,255,.06);margin-top:4px;}
   .stat-mini-row{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;}
   .stat-mini{flex:1;min-width:170px;border:1px solid var(--line2);border-radius:5px;background:var(--panel2);padding:9px 12px;display:flex;flex-direction:column;gap:2px;}
+  /* ── 参数敏感性测试(五类改进-第1项) ── */
+  .sens-group{margin-bottom:14px;}
+  .sens-group-title{font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;font-family:var(--mono);}
+  .sens-param-block{border:1px solid var(--line2);border-radius:6px;background:var(--panel2);padding:10px 12px;margin-bottom:8px;}
+  .sens-param-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .sens-bars-row{display:flex;align-items:flex-end;gap:4px;height:64px;padding-top:8px;}
+  .sens-bar{flex:1;background:var(--dim2);border-radius:2px 2px 0 0;position:relative;min-width:6px;display:flex;align-items:flex-start;justify-content:center;transition:height .2s;}
+  .sens-bar.baseline{background:var(--amber);}
+  .sens-bar-val{font-size:9px;color:var(--bg);position:absolute;top:-13px;color:var(--dim2);}
+  .sens-bars-labels{display:flex;gap:4px;margin-top:3px;}
+  .sens-bars-labels span{flex:1;text-align:center;font-size:9px;color:var(--dim2);font-family:var(--mono);min-width:6px;}
+  .sens-bars-labels span.sens-x-baseline{color:var(--amber);font-weight:600;}
   .stat-mini .k{font-size:11px;color:var(--dim2);letter-spacing:.3px;}
   .stat-mini .v{font-size:17px;font-weight:700;}
   .stat-mini .note{font-size:11px;color:var(--dim2);}
@@ -766,6 +778,13 @@
   .bt-calib.bad{border-color:rgba(240,79,87,.35);background:rgba(240,79,87,.06);}
   .topbottom-banner{border-radius:6px;padding:12px 16px;margin-top:6px;border:1px solid var(--line2);background:var(--panel2);}
   .topbottom-banner.top{border-color:rgba(240,79,87,.35);background:rgba(240,79,87,.06);}
+  /* ── 形态识别 / 缠论 / SKDJ+九转(移植自trading-scan) ── */
+  .ts-bt-panel{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
+  .tbl-wrap-mini{border:1px solid var(--line2);border-radius:6px;overflow:hidden;margin-top:6px;}
+  .ts-bt-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .ts-bt-table thead th{text-align:left;color:var(--dim2);font-weight:600;font-size:10.5px;padding:7px 9px;background:var(--panel2);border-bottom:1px solid var(--line2);white-space:nowrap;}
+  .ts-bt-table td{padding:7px 9px;border-bottom:1px solid var(--line);}
+  .ts-bt-table tr:last-child td{border-bottom:none;}
   .topbottom-banner.bottom{border-color:rgba(62,207,142,.35);background:rgba(62,207,142,.06);}
   .topbottom-banner .tb-h{font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--dim2);margin-bottom:4px;}
   .topbottom-banner.top .tb-h{color:var(--down);} .topbottom-banner.bottom .tb-h{color:var(--up);}
@@ -1218,6 +1237,35 @@ const GLOBAL_POLL_MS = 45000;
 const FETCH_TIMEOUT_MS = 9000;
 const SIGNAL_THROTTLE_MS = 2000;
 
+/* ══════════════════════════════════════════════════════════════════════════
+   PARAM_CONFIG — 关键策略参数集中化(原先分散写死在各函数体内的字面量)。
+   目的: ①让"参数敏感性测试"(见下方 runParamSensitivity)能够真正地临时改动
+   这些数字重跑回测,而不是改代码字符串;②让当前使用的具体数值、允许的稳健区间、
+   为什么这么设,全部有一个唯一可查的地方,不再散落在六七个函数里各存一份。
+   baseline = 当前实盘/回测都在用的默认值。sensRange = 敏感性测试要扫的相对偏移
+   倍数(相对baseline,例如0.5代表-50%,1.2代表+20%)。live信号路径与回测引擎
+   (backtestSnapshotAt/simulateTradeOutcome/buildTradePlan/computeBreakoutState/
+   stepRegimeHysteresis)读取的是同一份 PARAM_CONFIG,测试时临时覆盖再运行
+   runBacktest,即可看到"这个参数如果不是现在这个值,回测结果会变多少"。
+   ══════════════════════════════════════════════════════════════════════════ */
+const PARAM_CONFIG = {
+  tp1RRMin:{baseline:1.3,label:"TP1风险回报下限(×止损距离)",group:"RR下限",
+    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+  breakoutVolMult:{baseline:1.2,label:"突破放量确认倍数(×前20根均量)",group:"放量确认",
+    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+  atrSlDefaultMult:{baseline:2.0,label:"默认止损ATR倍数(无结构位时)",group:"ATR倍数",
+    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+  atrTp1MinMult:{baseline:1.0,label:"TP1最小ATR倍数",group:"ATR倍数",
+    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+  ciTrendEnter:{baseline:28,label:"Choppiness≤该值→判定为趋势市",group:"regime分类阈值",
+    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+  ciRangeEnter:{baseline:65,label:"Choppiness≥该值→判定为震荡市",group:"regime分类阈值",
+    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+};
+// 取某个参数当前有效值(测试期间会被 __paramOverride 临时顶替,平时等于 baseline)
+const __paramOverride={};
+function P(key){return __paramOverride[key]!=null?__paramOverride[key]:PARAM_CONFIG[key].baseline;}
+
 const CG_ID_MAP = {
   BTC:"bitcoin",ETH:"ethereum",BNB:"binancecoin",SOL:"solana",XRP:"ripple",ADA:"cardano",
   DOGE:"dogecoin",TRX:"tron",TON:"the-open-network",AVAX:"avalanche-2",SHIB:"shiba-inu",
@@ -1539,6 +1587,21 @@ function init(){
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
       if(symbol&&interval)performBacktestRun(symbol,interval,btSampleSize);
+    }
+    const tsBtn=e.target.closest(".ts-pattern-bt-btn");
+    if(tsBtn){
+      const symbol=tsBtn.getAttribute("data-ts-symbol"),interval=tsBtn.getAttribute("data-ts-interval");
+      if(symbol&&interval)performTsPatternBacktest(symbol,interval);
+    }
+    const sensBtn=e.target.closest(".sens-run-btn");
+    if(sensBtn){
+      const symbol=sensBtn.getAttribute("data-sens-symbol"),interval=sensBtn.getAttribute("data-sens-interval"),paramKey=sensBtn.getAttribute("data-sens-param");
+      if(symbol&&interval&&paramKey)performSensitivityRun(symbol,interval,btSampleSize,paramKey);
+    }
+    const sensRunAll=e.target.closest("#sensRunAllBtn");
+    if(sensRunAll){
+      const symbol=sensRunAll.getAttribute("data-sens-symbol"),interval=sensRunAll.getAttribute("data-sens-interval");
+      if(symbol&&interval)(async()=>{for(const k of Object.keys(PARAM_CONFIG))await performSensitivityRun(symbol,interval,btSampleSize,k);})();
     }
     const trkRow=e.target.closest(".trk-entry-row");
     if(trkRow&&trkRow.dataset.symbol)openCryptoModal(trkRow.dataset.symbol);
@@ -1990,7 +2053,7 @@ function buildOppTimelineDetail(symbol,sig,type){
     const tpPct=p.entry?(Math.abs(t.price-p.entry)/p.entry*100).toFixed(2):"–";
     return `${esc(t.label)}(${esc(t.horizon)}) 距入场${tpPct}% · R:R ${t.rr} · 先达胜率${t.raceWinProb!=null?t.raceWinProb+"%":"–"}`;
   }).join(" ｜ ");
-  const rrNote=`止损距入场 ${riskPct}%。${tpLines||"–"}。TP1 距离已强制≥止损距离的1.3倍(源头计算时已加入这条下限,不会再出现"止损百分比反而比TP1还宽"这种不成正比的组合);若你看到这一行数字仍显得不合理,大概率是市场刚发生跳空或极端波动,建议以图表实时价位为准并考虑跳过这笔。`;
+  const rrNote=`止损距入场 ${riskPct}%。${tpLines||"–"}。TP1 距离已强制≥止损距离的${PARAM_CONFIG.tp1RRMin.baseline.toFixed(2)}倍(源头计算时已加入这条下限,不会再出现"止损百分比反而比TP1还宽"这种不成正比的组合);若你看到这一行数字仍显得不合理,大概率是市场刚发生跳空或极端波动,建议以图表实时价位为准并考虑跳过这笔。`;
   return{cyclePhase,confirmChecks,breakoutNote,rrNote};
 }
 function oppStatsBarHTML(sig){
@@ -3502,17 +3565,18 @@ function computeBreakoutState(candles,levelPrice,dirSign){
   }
   const avgVol=volAvgBefore(candles,n-1,20);
   const volMult=avgVol>0?(last.volume||0)/avgVol:null;
-  const volOK=avgVol>0&&(last.volume||0)>=avgVol*1.2;
+  const bvMult=P('breakoutVolMult');
+  const volOK=avgVol>0&&(last.volume||0)>=avgVol*bvMult;
   if(!prev||!beyond(prev)){
     return{state:"tentative",label:volOK?"暂破·待确认(已放量)":"暂破·待确认",
-      detail:`仅最新一根收盘越过 ${fmtPrice(levelPrice)}${volOK?`且放量(${volMult.toFixed(1)}倍均量)`:volMult!=null?`但量能仅${volMult.toFixed(1)}倍均量,未达1.2倍确认门槛`:"量能数据不足"},还需下一根继续收在线外才能排除单根插针假突破`,refPrice:levelPrice};
+      detail:`仅最新一根收盘越过 ${fmtPrice(levelPrice)}${volOK?`且放量(${volMult.toFixed(1)}倍均量)`:volMult!=null?`但量能仅${volMult.toFixed(1)}倍均量,未达${bvMult.toFixed(2)}倍确认门槛`:"量能数据不足"},还需下一根继续收在线外才能排除单根插针假突破`,refPrice:levelPrice};
   }
   if(volOK){
     return{state:"confirmed",label:"已确认突破",
       detail:`连续2根收盘站稳 ${fmtPrice(levelPrice)} 外侧,且突破当根成交量达前20根均量的${volMult.toFixed(1)}倍,放量确认`,refPrice:levelPrice};
   }
   return{state:"tentative",label:"暂破·待确认(缺放量)",
-    detail:`已连续2根收盘站稳线外,但突破当根量能仅为前20根均量的${volMult!=null?volMult.toFixed(1):"–"}倍,未达1.2倍放量确认门槛,强度打折`,refPrice:levelPrice};
+    detail:`已连续2根收盘站稳线外,但突破当根量能仅为前20根均量的${volMult!=null?volMult.toFixed(1):"–"}倍,未达${bvMult.toFixed(2)}倍放量确认门槛,强度打折`,refPrice:levelPrice};
 }
 function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap){
   const fibHi=highs.length?Math.max(...highs.slice(-5).map(h=>h.price)):Math.max(...candles.slice(-80).map(c=>c.high));
@@ -4022,8 +4086,9 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     slPrice=dirSign>0?slCandidates[0].price-buf:slCandidates[0].price+buf;
     slSources=slCandidates[0].sources;
   }else{
-    slPrice=dirSign>0?entry-atrVal*2.0*regimeSlMult:entry+atrVal*2.0*regimeSlMult;
-    slSources=["ATR×2 默认缓冲(附近无结构确认位)"];
+    const atrSlDefMult=P('atrSlDefaultMult');
+    slPrice=dirSign>0?entry-atrVal*atrSlDefMult*regimeSlMult:entry+atrVal*atrSlDefMult*regimeSlMult;
+    slSources=[`ATR×${atrSlDefMult.toFixed(2)} 默认缓冲(附近无结构确认位)`];
   }
   // enforce minimum SL distance: at least 0.8 ATR from entry(趋势市放宽/震荡市略收紧,见上方regimeSlMult)
   const minSlDist=atrVal*0.8*regimeSlMult;
@@ -4031,13 +4096,14 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
   if(dirSign<0&&slPrice<entry+minSlDist)slPrice=entry+minSlDist;
   const riskDist=Math.abs(entry-slPrice);
   // TP1 的盈亏比硬性下限。执行闸门要求"已触发"必须 R:R≥1.5,这里在源头就把 TP1 的最小距离顶到
-  // 1.3×riskDist(留一点余量,不等于1.5那条线本身,好让1.5仍然是一个有真实区分度的门槛,而不是
+  // tp1RRMin×riskDist(留一点余量,不等于1.5那条线本身,好让1.5仍然是一个有真实区分度的门槛,而不是
   // 100%必然通过的摆设)——但无论如何,TP1 距离不会再小于止损距离,"止损比目标还宽"的情况被从源头堵死。
-  const minTp1RR=riskDist*1.3;
+  const tp1RRMinVal=P('tp1RRMin');
+  const minTp1RR=riskDist*tp1RRMinVal;
   // Minimum distances per TP tier: TP1≥1×ATR, TP2≥2×ATR, TP3≥3.2×ATR — ensures realistic non-trivial targets,均以限价入场价为起点
   // 上限从原先的65×ATR大幅收紧到18×ATR: 过远的"结构位"即便存在,也早已脱离该资产已实现波动率能支撑的合理范围,
   // 会导致"看似有结构确认、实则统计上不可能在标注周期内达成"的误导性目标 — 交给下面的触碰概率去真实评估,而不是硬选。
-  const minMults=[1.0,2.0,3.2];
+  const minMults=[P('atrTp1MinMult'),2.0,3.2];
   const targets=(dirSign>0?structure.resistances:structure.supports)
     .filter(l=>Math.abs(l.price-entry)>atrVal*0.8&&Math.abs(l.price-entry)<atrVal*18);
   // 三档固定时间窗口(4小时/24小时/3天),不再用"距离÷ATR"反推出一个可以短到几十分钟的假ETA。
@@ -4068,7 +4134,7 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
       tpPrice=withMin;
       weight=0.4;
       sources=lvl?[`附近结构位与${i===0?"入场价":tps[i-1].label}距离过近,改用ATR递进扩展估算`]:["ATR 扩展估算(周边无强结构位)"];
-      if(i===0&&Math.abs(withMin-entry)>Math.abs(raw-entry))sources=["按盈亏比下限(TP1距离≥1.3×止损距离)扩展,避免止损比目标还宽"];
+      if(i===0&&Math.abs(withMin-entry)>Math.abs(raw-entry))sources=[`按盈亏比下限(TP1距离≥${tp1RRMinVal.toFixed(2)}×止损距离)扩展,避免止损比目标还宽`];
     }
     prevDist=Math.abs(tpPrice-entry);
     const dist=prevDist;
@@ -4112,6 +4178,392 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
   });
   return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,tps,rr,sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult};
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 移植自 trading-scan.html 的形态识别 / 缠论 / 逐形态走查式回测 / SKDJ+九转 ──
+   全部函数前缀 ts,避免与ORBIT既有同名函数(ema/rsi/findPivots等,参数形状不同)冲突。
+   K线用 {o,h,l,c,v} 短键(与trading-scan原版一致),用 tsToBars() 从ORBIT的
+   {open,high,low,close,volume} 蜡烛转换而来。
+   性能取舍(明确写在这里,不是漏掉): 形态识别(三角/楔形/结构/谐波/艾略特/缠论)本身
+   只扫最近60~500根K线一次,开销与ORBIT已有的structure/pivot计算量级相当,可以放进
+   机会雷达批量扫描(computeSignal)。但"逐形态走查式回测"(tsBacktestSymbol)是对
+   每根历史K线都重跑一次形态检测,单symbol就有大几十到上百毫秒开销,乘上机会雷达
+   覆盖的全部主流合约、每90秒刷新一次,会明显拖慢页面甚至掉帧——所以回测只在用户
+   点开某个币种的完整行情图(Modal)时,针对那一个symbol按需运行一次并缓存,不放进
+   批量扫描循环。SKDJ+九转同理: 需要额外抓日线+周线K线,批量扫描如果每个symbol都
+   多发2次请求会显著增加API负载,因此也只在Modal里对当前选中symbol计算。 */
+function tsToBars(candles){return candles.map(c=>({t:c.time,o:c.open,h:c.high,l:c.low,c:c.close,v:c.volume||0}));}
+function tsClamp(n,a,b){return Math.max(a,Math.min(b,n));}
+function tsSmaSeries(arr,n,m){const out=new Array(arr.length);out[0]=arr[0];for(let i=1;i<arr.length;i++)out[i]=(m*arr[i]+(n-m)*out[i-1])/n;return out;}
+function tsComputeSKDJ(highs,lows,closes,N,M){
+  N=N||9;M=M||3;const len=closes.length;const rsv=new Array(len).fill(50);
+  for(let i=0;i<len;i++){const s=Math.max(0,i-N+1);const hh=Math.max.apply(null,highs.slice(s,i+1));const ll=Math.min.apply(null,lows.slice(s,i+1));rsv[i]=hh===ll?50:(closes[i]-ll)/(hh-ll)*100;}
+  const marsv=tsSmaSeries(rsv,M,1);const K=tsSmaSeries(marsv,M,1);const D=tsSmaSeries(K,M,1);
+  return{K,D};
+}
+function tsComputeTD(closes){
+  let up=0,down=0,res=[];
+  for(let i=0;i<closes.length;i++){
+    if(i<4){res.push({dir:null,count:0});continue;}
+    if(closes[i]>closes[i-4]){up++;down=0;}else if(closes[i]<closes[i-4]){down++;up=0;}else{up=0;down=0;}
+    if(up>9)up=9;if(down>9)down=9;
+    res.push({dir:up>0?"up":(down>0?"down":null),count:up>0?up:down});
+  }
+  return res;
+}
+function tsLinreg(points){
+  const n=points.length;let sx=0,sy=0,sxy=0,sxx=0;
+  points.forEach(p=>{sx+=p.x;sy+=p.y;sxy+=p.x*p.y;sxx+=p.x*p.x;});
+  const denom=(n*sxx-sx*sx)||1e-9;const slope=(n*sxy-sx*sy)/denom;const intercept=(sy-slope*sx)/n;
+  return{slope,intercept};
+}
+function tsFindPivots(arr,w,mode){
+  const idxs=[];
+  for(let i=w;i<arr.length-w;i++){
+    let ok=true;
+    for(let k=1;k<=w;k++){
+      if(mode==="high"){if(arr[i]<arr[i-k]||arr[i]<arr[i+k]){ok=false;break;}}
+      else{if(arr[i]>arr[i-k]||arr[i]>arr[i+k]){ok=false;break;}}
+    }
+    if(ok)idxs.push(i);
+  }
+  return idxs;
+}
+function tsVolConfirmAt(bars,idx){
+  const s=Math.max(0,idx-20);const prev=bars.slice(s,idx);
+  if(!prev.length)return false;
+  const avg=prev.reduce((a,b)=>a+b.v,0)/prev.length;
+  return avg>0&&bars[idx].v>=avg*1.2;
+}
+function tsConfirmBreak(bars,levelAt,dir){
+  const n=bars.length;if(n<2)return{state:"wait"};
+  const c1=bars[n-1].c,c2=bars[n-2].c;
+  const l1=levelAt(n-1),l2=levelAt(n-2);
+  const beyond1=dir==="up"?c1>l1*1.002:c1<l1*0.998;
+  if(!beyond1)return{state:"wait"};
+  const beyond2=dir==="up"?c2>l2*1.002:c2<l2*0.998;
+  const vol=tsVolConfirmAt(bars,n-1)||tsVolConfirmAt(bars,n-2);
+  if(beyond2&&vol)return{state:"confirmed",vol:true};
+  return{state:"tentative",twoClose:beyond2,vol};
+}
+function tsBrkLabel(bs,dir){
+  if(bs.state==="confirmed")return(dir==="up"?"已确认·上破":"已确认·下破");
+  if(bs.state==="tentative")return"暂破·待确认";
+  return"跟踪中·未突破";
+}
+function tsDetectTriangle(bars){
+  const recent=bars.slice(-60);if(recent.length<25)return null;
+  const offset=bars.length-recent.length;
+  const highs=recent.map(k=>k.h),lows=recent.map(k=>k.l),closes=recent.map(k=>k.c);
+  const hIdxL=tsFindPivots(highs,2,"high"),lIdxL=tsFindPivots(lows,2,"low");
+  if(hIdxL.length<2||lIdxL.length<2)return null;
+  const hPts=hIdxL.slice(-4).map(i=>({x:i+offset,y:highs[i]})),lPts=lIdxL.slice(-4).map(i=>({x:i+offset,y:lows[i]}));
+  const rh=tsLinreg(hPts),rl=tsLinreg(lPts);
+  const lastX=bars.length-1,firstX=Math.min(hPts[0].x,lPts[0].x);
+  const widthStart=(rh.slope*firstX+rh.intercept)-(rl.slope*firstX+rl.intercept);
+  const widthEnd=(rh.slope*lastX+rh.intercept)-(rl.slope*lastX+rl.intercept);
+  if(widthStart<=0||widthEnd<=0)return null;
+  const narrow=1-widthEnd/widthStart;if(narrow<0.15)return null;
+  const range=Math.max.apply(null,highs)-Math.min.apply(null,lows);const eps=range*0.0025;
+  let type;
+  if(Math.abs(rh.slope)<eps&&rl.slope>eps)type="上升三角";
+  else if(rh.slope<-eps&&Math.abs(rl.slope)<eps)type="下降三角";
+  else if(rh.slope<-eps&&rl.slope>eps)type="收敛三角";
+  else return null;
+  const upFn=i=>rh.slope*i+rh.intercept,loFn=i=>rl.slope*i+rl.intercept;
+  const bu=tsConfirmBreak(bars,upFn,"up"),bd=tsConfirmBreak(bars,loFn,"down");
+  let dir=null,bs={state:"wait"};
+  if(bu.state!=="wait"){dir="up";bs=bu;}else if(bd.state!=="wait"){dir="down";bs=bd;}
+  const volAvg=recent.slice(0,-1).reduce((a,k)=>a+k.v,0)/Math.max(1,recent.length-1);
+  const volRatio=volAvg?recent[recent.length-1].v/volAvg:null;
+  const stateBonus=bs.state==="confirmed"?40:(bs.state==="tentative"?18:0);
+  const score=tsClamp(12+stateBonus+Math.min(28,narrow*30)+(volRatio?Math.min(15,volRatio*8):5),0,100);
+  return{type,dir,brk:bs,narrow:(narrow*100).toFixed(1),volRatio,score,
+    upper:{slope:rh.slope,intercept:rh.intercept},lower:{slope:rl.slope,intercept:rl.intercept},xRange:[firstX,lastX]};
+}
+function tsDetectWedge(bars){
+  const recent=bars.slice(-60);if(recent.length<25)return null;
+  const offset=bars.length-recent.length;
+  const highs=recent.map(k=>k.h),lows=recent.map(k=>k.l);
+  const hIdxL=tsFindPivots(highs,2,"high"),lIdxL=tsFindPivots(lows,2,"low");
+  if(hIdxL.length<2||lIdxL.length<2)return null;
+  const hPts=hIdxL.slice(-4).map(i=>({x:i+offset,y:highs[i]})),lPts=lIdxL.slice(-4).map(i=>({x:i+offset,y:lows[i]}));
+  const rh=tsLinreg(hPts),rl=tsLinreg(lPts);
+  const range=Math.max.apply(null,highs)-Math.min.apply(null,lows);const eps=range*0.003;
+  const lastX=bars.length-1,firstX=Math.min(hPts[0].x,lPts[0].x);
+  const widthStart=(rh.slope*firstX+rh.intercept)-(rl.slope*firstX+rl.intercept);
+  const widthEnd=(rh.slope*lastX+rh.intercept)-(rl.slope*lastX+rl.intercept);
+  if(widthStart<=0||widthEnd<=0)return null;
+  const narrow=1-widthEnd/widthStart;if(narrow<0.15)return null;
+  let type=null,dir=null;
+  if(rh.slope>eps&&rl.slope>eps){type="上升楔形";dir="down";}
+  else if(rh.slope<-eps&&rl.slope<-eps){type="下降楔形";dir="up";}
+  else return null;
+  const upFn=i=>rh.slope*i+rh.intercept,loFn=i=>rl.slope*i+rl.intercept;
+  const bs=dir==="down"?tsConfirmBreak(bars,loFn,"down"):tsConfirmBreak(bars,upFn,"up");
+  const stateBonus=bs.state==="confirmed"?40:(bs.state==="tentative"?18:0);
+  const score=tsClamp(10+stateBonus+Math.min(28,narrow*30)+12,0,100);
+  return{type,dir,brk:bs,score,upper:{slope:rh.slope,intercept:rh.intercept},lower:{slope:rl.slope,intercept:rl.intercept},xRange:[firstX,lastX]};
+}
+function tsZigzagFromCloses(bars,pct){
+  if(bars.length<2)return[];
+  const pivots=[];let trend=0;let extremeIdx=0,extremePrice=bars[0].c;let lastPivotPrice=bars[0].c;
+  for(let i=1;i<bars.length;i++){
+    const price=bars[i].c;
+    if(trend===0){
+      if(price>=lastPivotPrice*(1+pct)){trend=1;extremeIdx=i;extremePrice=price;}
+      else if(price<=lastPivotPrice*(1-pct)){trend=-1;extremeIdx=i;extremePrice=price;}
+    }else if(trend===1){
+      if(price>extremePrice){extremePrice=price;extremeIdx=i;}
+      else if(price<=extremePrice*(1-pct)){pivots.push({idx:extremeIdx,price:extremePrice,type:"H"});trend=-1;lastPivotPrice=extremePrice;extremeIdx=i;extremePrice=price;}
+    }else{
+      if(price<extremePrice){extremePrice=price;extremeIdx=i;}
+      else if(price>=extremePrice*(1+pct)){pivots.push({idx:extremeIdx,price:extremePrice,type:"L"});trend=1;lastPivotPrice=extremePrice;extremeIdx=i;extremePrice=price;}
+    }
+  }
+  pivots.push({idx:extremeIdx,price:extremePrice,type:trend===1?"H":(trend===-1?"L":(extremePrice>=bars[0].c?"H":"L")),provisional:true});
+  return pivots;
+}
+function tsDetectStructural(bars){
+  const piv=tsZigzagFromCloses(bars,0.04);const out=[];const n=piv.length;
+  for(let i=0;i+4<n;i++){
+    const w=piv.slice(i,i+5);const types=w.map(p=>p.type).join("");
+    if(types==="HLHLH"||types==="LHLHL"){
+      const s1=w[0],t1=w[1],head=w[2],t2=w[3],s2=w[4];
+      const isTop=types==="HLHLH";
+      const headOK=isTop?(head.price>s1.price&&head.price>s2.price):(head.price<s1.price&&head.price<s2.price);
+      if(!headOK)continue;
+      const diff=Math.abs(s1.price-s2.price)/((s1.price+s2.price)/2);
+      if(diff>=0.06)continue;
+      const slope=(t2.price-t1.price)/((t2.idx-t1.idx)||1);
+      const neckFn=i2=>t1.price+slope*(i2-t1.idx);
+      const bs=tsConfirmBreak(bars,neckFn,isTop?"down":"up");
+      const freshness=Math.max(0,20-(bars.length-1-s2.idx));
+      const stateBonus=bs.state==="confirmed"?45:(bs.state==="tentative"?18:8);
+      const score=tsClamp(stateBonus+(1-diff/0.06)*32+freshness,0,100);
+      out.push({type:isTop?"头肩顶":"头肩底",dir:isTop?"down":"up",brk:bs,lastIdx:s2.idx,score,points:w,neckline:neckFn(bars.length-1),span:[w[0].idx,s2.idx]});
+    }
+  }
+  for(let i=0;i+2<n;i++){
+    const w=piv.slice(i,i+3);const types=w.map(p=>p.type).join("");
+    if(types==="HLH"||types==="LHL"){
+      const isTop=types==="HLH";
+      const p1=w[0],mid=w[1],p2=w[2];
+      const diff=Math.abs(p1.price-p2.price)/((p1.price+p2.price)/2);
+      const depth=isTop?(Math.min(p1.price,p2.price)-mid.price)/Math.min(p1.price,p2.price):(mid.price-Math.max(p1.price,p2.price))/mid.price;
+      if(diff>=0.025||depth<=0.06)continue;
+      const lvl=mid.price;const neckFn=()=>lvl;
+      const bs=tsConfirmBreak(bars,neckFn,isTop?"down":"up");
+      const freshness=Math.max(0,20-(bars.length-1-p2.idx));
+      const stateBonus=bs.state==="confirmed"?45:(bs.state==="tentative"?18:8);
+      const score=tsClamp(stateBonus+(1-diff/0.025)*18+Math.min(15,depth*100)+freshness,0,100);
+      out.push({type:isTop?"双重顶":"双重底",dir:isTop?"down":"up",brk:bs,lastIdx:p2.idx,score,points:w,neckline:lvl,span:[p1.idx,p2.idx]});
+    }
+  }
+  const wedge=tsDetectWedge(bars);if(wedge)out.push(wedge);
+  const byType={};
+  out.forEach(p=>{if(!byType[p.type]||p.score>byType[p.type].score)byType[p.type]=p;});
+  let arr=Object.values(byType).sort((a,b)=>b.score-a.score);
+  const kept=[];
+  arr.forEach(p=>{
+    const sp=p.span||p.xRange;
+    const dup=kept.some(q=>{
+      const sq=q.span||q.xRange;if(!sp||!sq)return false;
+      const ov=Math.max(0,Math.min(sp[1],sq[1])-Math.max(sp[0],sq[0]));
+      const len=Math.max(1,Math.min(sp[1]-sp[0],sq[1]-sq[0]));
+      return ov/len>0.7;
+    });
+    if(!dup)kept.push(p);
+  });
+  return kept.slice(0,2);
+}
+const TS_HARMONIC_DEFS=[
+  {name:"Gartley 加特利",ab:[0.55,0.69],bc:[0.35,0.90],cd:[1.10,1.70],xd:[0.75,0.82]},
+  {name:"Bat 蝙蝠",ab:[0.35,0.53],bc:[0.35,0.90],cd:[1.55,2.65],xd:[0.83,0.90]},
+  {name:"Butterfly 蝴蝶",ab:[0.72,0.82],bc:[0.35,0.90],cd:[1.55,2.30],xd:[1.22,1.65]},
+  {name:"Crab 螃蟹",ab:[0.35,0.65],bc:[0.35,0.90],cd:[2.15,3.65],xd:[1.55,1.65]},
+];
+function tsDetectHarmonics(bars){
+  const piv=tsZigzagFromCloses(bars,0.04);const results=[];
+  for(let i=0;i+4<piv.length;i++){
+    const w=piv.slice(i,i+5);const types=w.map(p=>p.type);
+    let alt=true;for(let k=1;k<5;k++)if(types[k]===types[k-1])alt=false;
+    if(!alt)continue;
+    const X=w[0],A=w[1],B=w[2],C=w[3],D=w[4];
+    const XA=Math.abs(A.price-X.price),AB=Math.abs(B.price-A.price),BC=Math.abs(C.price-B.price),CD=Math.abs(D.price-C.price);
+    if(XA===0||AB===0||BC===0)continue;
+    const abXa=AB/XA,bcAb=BC/AB,cdBc=CD/BC,xdXa=Math.abs(D.price-X.price)/XA;
+    TS_HARMONIC_DEFS.forEach(def=>{
+      if(abXa>=def.ab[0]&&abXa<=def.ab[1]&&bcAb>=def.bc[0]&&bcAb<=def.bc[1]&&cdBc>=def.cd[0]&&cdBc<=def.cd[1]&&xdXa>=def.xd[0]&&xdXa<=def.xd[1]){
+        const abC=(def.ab[0]+def.ab[1])/2,xdC=(def.xd[0]+def.xd[1])/2;
+        const abQ=1-Math.min(1,Math.abs(abXa-abC)/(((def.ab[1]-def.ab[0])/2)||1));
+        const xdQ=1-Math.min(1,Math.abs(xdXa-xdC)/(((def.xd[1]-def.xd[0])/2)||1));
+        const freshness=Math.max(0,20-(bars.length-1-D.idx));
+        results.push({pattern:def.name,status:"completed",bull:X.type==="L",lastIdx:D.idx,dPrice:D.price,score:tsClamp(40+abQ*20+xdQ*20+freshness,0,100),points:[X,A,B,C,D]});
+      }
+    });
+  }
+  if(piv.length>=4){
+    const w=piv.slice(-4);const types=w.map(p=>p.type);
+    let alt=true;for(let k=1;k<4;k++)if(types[k]===types[k-1])alt=false;
+    if(alt){
+      const X=w[0],A=w[1],B=w[2],C=w[3];
+      const XA=Math.abs(A.price-X.price),AB=Math.abs(B.price-A.price),BC=Math.abs(C.price-B.price);
+      if(XA>0&&AB>0){
+        const abXa=AB/XA,bcAb=BC/AB;
+        TS_HARMONIC_DEFS.forEach(def=>{
+          if(abXa>=def.ab[0]&&abXa<=def.ab[1]&&bcAb>=def.bc[0]&&bcAb<=def.bc[1]){
+            const abC=(def.ab[0]+def.ab[1])/2;
+            const abQ=1-Math.min(1,Math.abs(abXa-abC)/(((def.ab[1]-def.ab[0])/2)||1));
+            const freshness=Math.max(0,15-(bars.length-1-C.idx));
+            results.push({pattern:def.name,status:"forming",bull:X.type==="L",lastIdx:C.idx,score:tsClamp(22+abQ*25+freshness,0,100),points:[X,A,B,C]});
+          }
+        });
+      }
+    }
+  }
+  return results.sort((a,b)=>b.score-a.score).slice(0,3);
+}
+function tsDetectElliott(bars){
+  const piv=tsZigzagFromCloses(bars,0.05);const candidates=[];
+  for(let i=0;i+5<piv.length;i++){
+    const p=piv.slice(i,i+6);const types=p.map(x=>x.type);
+    let alt=true;for(let k=1;k<6;k++)if(types[k]===types[k-1])alt=false;
+    if(!alt)continue;
+    const up=p[1].price>p[0].price;
+    if(types[0]!==(up?"L":"H"))continue;
+    const w1=Math.abs(p[1].price-p[0].price),w3=Math.abs(p[3].price-p[2].price),w5=Math.abs(p[5].price-p[4].price);
+    let rule1,rule3;
+    if(up){rule1=p[2].price>p[0].price;rule3=p[4].price>p[1].price;}else{rule1=p[2].price<p[0].price;rule3=p[4].price<p[1].price;}
+    const rule2=!(w3<w1&&w3<w5);
+    if(rule1&&rule2&&rule3){
+      const freshness=Math.max(0,30-(bars.length-1-p[5].idx));
+      candidates.push({dir:up?"up":"down",points:p,w3w1:(w3/w1).toFixed(2),w5w3:(w5/w3).toFixed(2),startIdx:p[0].idx,endIdx:p[5].idx,score:tsClamp(40+tsClamp((w3/w1-1)*15,0,30)+freshness,0,100)});
+    }
+  }
+  return candidates.sort((a,b)=>b.score-a.score).slice(0,2);
+}
+function tsMergeInclusion(bars){
+  const merged=[{h:bars[0].h,l:bars[0].l,startIdx:0,endIdx:0}];
+  for(let i=1;i<bars.length;i++){
+    const cur=bars[i];const last=merged[merged.length-1];
+    const curInLast=cur.h<=last.h&&cur.l>=last.l;const lastInCur=cur.h>=last.h&&cur.l<=last.l;
+    if(curInLast||lastInCur){
+      let mdir=1;
+      if(merged.length>=2){const prev=merged[merged.length-2];mdir=last.h>prev.h?1:-1;}
+      if(mdir>=0){last.h=Math.max(last.h,cur.h);last.l=Math.max(last.l,cur.l);}else{last.h=Math.min(last.h,cur.h);last.l=Math.min(last.l,cur.l);}
+      last.endIdx=i;
+    }else{merged.push({h:cur.h,l:cur.l,startIdx:i,endIdx:i});}
+  }
+  return merged;
+}
+function tsFindFenxing(merged){
+  const fx=[];
+  for(let i=1;i<merged.length-1;i++){
+    const a=merged[i-1],b=merged[i],c=merged[i+1];
+    if(b.h>a.h&&b.h>c.h)fx.push({type:"top",idx:i,price:b.h,kIdx:b.endIdx});
+    else if(b.l<a.l&&b.l<c.l)fx.push({type:"bottom",idx:i,price:b.l,kIdx:b.startIdx});
+  }
+  return fx;
+}
+function tsBuildBi(fx){
+  if(!fx.length)return[];const bis=[];let cur=fx[0];
+  for(let i=1;i<fx.length;i++){
+    const f=fx[i];
+    if(f.type===cur.type){
+      if(f.type==="top"&&f.price>cur.price)cur=f;
+      if(f.type==="bottom"&&f.price<cur.price)cur=f;
+      continue;
+    }
+    if(f.idx-cur.idx>=4){bis.push({from:cur,to:f});cur=f;}
+  }
+  return bis;
+}
+function tsBuildZhongshu(bis){
+  const zs=[];
+  for(let i=0;i+2<bis.length;i++){
+    const b=[bis[i],bis[i+1],bis[i+2]];
+    const ranges=b.map(x=>({hi:Math.max(x.from.price,x.to.price),lo:Math.min(x.from.price,x.to.price)}));
+    const ZG=Math.min(ranges[0].hi,ranges[1].hi,ranges[2].hi);const ZD=Math.max(ranges[0].lo,ranges[1].lo,ranges[2].lo);
+    if(ZG>ZD)zs.push({ZG,ZD,startIdx:b[0].from.kIdx,endIdx:b[2].to.kIdx});
+  }
+  return zs;
+}
+function tsBuildDuan(bis){
+  if(!bis.length)return[];const duans=[];
+  let runStart=bis[0].from,runDir=bis[0].to.price>bis[0].from.price?1:-1,runExtreme=bis[0].to;
+  for(let i=1;i<bis.length;i++){
+    const b=bis[i];const biDir=b.to.price>b.from.price?1:-1;
+    if(biDir===runDir){
+      if((runDir===1&&b.to.price>runExtreme.price)||(runDir===-1&&b.to.price<runExtreme.price))runExtreme=b.to;
+    }else if((runDir===1&&b.to.price<runStart.price)||(runDir===-1&&b.to.price>runStart.price)){
+      duans.push({from:runStart,to:runExtreme,dir:runDir});
+      runStart=runExtreme;runDir=biDir;runExtreme=b.to;
+    }
+  }
+  duans.push({from:runStart,to:runExtreme,dir:runDir});
+  return duans;
+}
+function tsDetectChan(bars){
+  const merged=tsMergeInclusion(bars);const fx=tsFindFenxing(merged);const bis=tsBuildBi(fx);const zs=tsBuildZhongshu(bis);const duans=tsBuildDuan(bis);
+  let score=0,inZhongshu=null,zhongshuBreak=null;
+  if(zs.length){
+    const last=zs[zs.length-1];
+    score=tsClamp(30+Math.min(30,bis.length*3)+Math.max(0,40-(bars.length-1-last.endIdx)),0,100);
+    const lastClose=bars[bars.length-1].c;
+    inZhongshu=lastClose>=last.ZD&&lastClose<=last.ZG;
+    zhongshuBreak=lastClose>last.ZG?"up":(lastClose<last.ZD?"down":null);
+  }
+  return{merged,fx,bis,zs,duans,score,inZhongshu,zhongshuBreak};
+}
+/* 逐形态走查式回测: 只应在用户点开单个symbol的完整行情图时按需触发一次并缓存(见 tsPatternBacktestCache,
+   不放进机会雷达批量扫描循环——理由见文件头注释。 */
+const TS_HORIZONS=[5,10,20];
+function tsBacktestSymbol(bars){
+  const events=[];const lastFire={};
+  const start=80,end=bars.length-1-Math.max.apply(null,TS_HORIZONS);
+  for(let t=start;t<=end;t++){
+    const sub=bars.slice(0,t+1);
+    const found=[];
+    const tri=tsDetectTriangle(sub);
+    if(tri&&tri.brk.state==="confirmed"&&tri.dir)found.push({type:tri.type,dir:tri.dir});
+    tsDetectStructural(sub).forEach(p=>{if(p.brk&&p.brk.state==="confirmed")found.push({type:p.type,dir:p.dir});});
+    found.forEach(f=>{
+      if(lastFire[f.type]!==undefined&&t-lastFire[f.type]<10)return;
+      lastFire[f.type]=t;
+      const base=bars[t].c;const rets={};
+      TS_HORIZONS.forEach(h=>{
+        const fwd=bars[t+h];if(!fwd)return;
+        let r=(fwd.c/base-1)*100;
+        if(f.dir==="down")r=-r;
+        rets["h"+h]=r;
+      });
+      events.push({type:f.type,dir:f.dir,idx:t,rets});
+    });
+  }
+  return events;
+}
+function tsAggregateBacktest(allEvents){
+  const byType={};
+  allEvents.forEach(e=>{
+    if(!byType[e.type])byType[e.type]={type:e.type,n:0,rets:{h5:[],h10:[],h20:[]}};
+    const b=byType[e.type];b.n++;
+    TS_HORIZONS.forEach(h=>{const v=e.rets["h"+h];if(v!==undefined)b.rets["h"+h].push(v);});
+  });
+  return Object.values(byType).map(b=>{
+    const stat={};
+    TS_HORIZONS.forEach(h=>{
+      const arr=b.rets["h"+h];
+      if(!arr.length){stat["h"+h]={n:0};return;}
+      const wins=arr.filter(v=>v>0).length;
+      const mean=arr.reduce((a,c)=>a+c,0)/arr.length;
+      stat["h"+h]={n:arr.length,winRate:wins/arr.length*100,mean};
+    });
+    return{type:b.type,n:b.n,stat};
+  }).sort((a,b)=>b.n-a.n);
+}
+const tsBacktestCache=new Map(); // 走查式回测核心函数(tsBacktestSymbol/tsAggregateBacktest)供参考/复用,
+// 实际UI按需触发走的是下方 performTsPatternBacktest + tsPatternBacktestCache 这条路径(含分块让出主线程)。
 
 /* ── SIGNAL ENGINE ── */
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -4178,9 +4630,11 @@ function stepRegimeHysteresis(state,ciVal){
   if(ciVal==null)return{regime:state.regime,regimeLabel:labelMap[state.regime]};
   let{regime,pendingRegime,pendingCount}=state;
   let candidate=regime;
-  if(regime==="range"){if(ciVal<=55)candidate="mixed";}
-  else if(regime==="trend"){if(ciVal>=45)candidate="mixed";}
-  else{if(ciVal>=65)candidate="range";else if(ciVal<=28)candidate="trend";}
+  const ciTrendEnter=P('ciTrendEnter'),ciRangeEnter=P('ciRangeEnter');
+  const ciRangeExit=ciRangeEnter-10,ciTrendExit=ciTrendEnter+17; // 退出阈值相对进入阈值保持固定间距,维持滞后带宽度不随敏感性测试塌缩
+  if(regime==="range"){if(ciVal<=ciRangeExit)candidate="mixed";}
+  else if(regime==="trend"){if(ciVal>=ciTrendExit)candidate="mixed";}
+  else{if(ciVal>=ciRangeEnter)candidate="range";else if(ciVal<=ciTrendEnter)candidate="trend";}
   if(candidate===regime){pendingRegime=null;pendingCount=0;}
   else if(candidate===pendingRegime){pendingCount++;}
   else{pendingRegime=candidate;pendingCount=1;}
@@ -4202,6 +4656,20 @@ function resolveLiveRegime(symbol,intervalLabel,ciVal){
    斜率+现价相对位置,给出一个几周才会变一次的慢层判断,战术层信号如果和它反着来,
    会在执行闸门里被明确标记为"逆周期",而不是照样给一个高置信度的反向单子。 */
 let cycleAnchorCandles=[],cycleAnchorForSymbol=null;
+// 周线锚定K线 — 专供 SKDJ 日线+周线双周期共振 与 九转序列(TD Sequential) 用,同样独立于图表当前
+// 所选周期单独拉取(定义本身依赖日/周关系,不该随用户切换4h/1h等图表周期而改变)。只在Modal打开时
+// 按需拉取一次,不进入机会雷达批量扫描,避免给每个symbol都多发一次请求。
+let weeklyAnchorCandles=[],weeklyAnchorForSymbol=null;
+async function ensureWeeklyAnchor(symbol){
+  if(weeklyAnchorForSymbol===symbol&&weeklyAnchorCandles.length)return;
+  try{
+    const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=1w&limit=120`);
+    weeklyAnchorCandles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+    weeklyAnchorForSymbol=symbol;
+  }catch(e){weeklyAnchorCandles=[];weeklyAnchorForSymbol=null;}
+}
+const tsPatternBacktestCache=new Map(); // "symbol|interval" -> {status:running/done/error, progress, agg, patterns}
+function tsBtKey(symbol,interval){return symbol+"|"+interval;}
 async function ensureCycleAnchor(symbol){
   if(cycleAnchorForSymbol===symbol&&cycleAnchorCandles.length)return;
   try{
@@ -4730,6 +5198,96 @@ async function runBacktest(candles,intervalLabel,sampleSize,onProgress){
   return{trades,stats:{totalSignals,filled:trades.length-unfilled-cancelled,cancelled,unfilled,timeout,
     resolved:resolved.length,wins:wins.length,losses:losses.length,winRate,avgWinR,expectancy,profitFactor,
     avgPredicted,calibrationGap,sampleBars:endIdx-startIdx+1,intervalLabel}};
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   参数敏感性与稳健性测试(PARAM SENSITIVITY / ROBUSTNESS SWEEP)
+   对 PARAM_CONFIG 里的每个关键参数,在其 baseline 上下按 sens 倍数网格逐点重跑一遍
+   完整走步式回测(与主回测同一套 runBacktest/simulateTradeOutcome,只是临时顶替
+   __paramOverride[key]),记录每个取值对应的胜率/期望值/已分胜负样本数。
+   诊断逻辑(而不是只画个表完事): 用"胜率的取值范围(max-min)"衡量该参数的敏感度——
+   ①如果换个参数值,胜率就跳变一大截(经验阈值:极差>15个百分点,或期望值符号发生翻转,
+   即从正期望变负期望或反之),说明当前 baseline 很可能是"恰好在这段历史数据上表现最好的
+   单点",换一段历史大概率就不灵了,即过拟合迹象,标红提示"参数不稳健,建议采用稳健区间
+   而非当前单点最优值";②如果胜率在整个网格上波动很小,说明这个参数在合理范围内基本不影响
+   结果,策略的有效性不依赖于"刚好卡在这个数字上",标绿提示"参数稳健"。
+   明确不做的事: 不会因为某个网格点胜率比baseline更高就建议改用那个点——网格测试的目的
+   是诊断稳健性,不是拿回测去反向调参数(否则本身就构成新一轮过拟合),因此UI上只展示
+   诊断结论,不会有"一键采用最优参数"这类按钮。
+   ══════════════════════════════════════════════════════════════════════════ */
+const SENS_HIGH_WINRATE_SPREAD=15; // 胜率极差超过15个百分点 → 判定为参数敏感/疑似过拟合
+const SENS_MIN_RESOLVED=15; // 已分胜负样本数低于此值时,该网格点的胜率本身就不可靠,诊断时降权/标注而非直接采信
+
+async function runParamSensitivity(candles,intervalLabel,sampleSize,paramKey,onProgress){
+  const cfg=PARAM_CONFIG[paramKey];
+  const points=[];
+  try{
+    for(let i=0;i<cfg.sens.length;i++){
+      const mult=cfg.sens[i];
+      __paramOverride[paramKey]=cfg.baseline*mult;
+      const res=await runBacktest(candles,intervalLabel,sampleSize,()=>{});
+      points.push({mult,value:cfg.baseline*mult,isBaseline:Math.abs(mult-1)<1e-9,
+        winRate:res.stats.winRate,expectancy:res.stats.expectancy,resolved:res.stats.resolved,
+        profitFactor:res.stats.profitFactor});
+      delete __paramOverride[paramKey];
+      if(onProgress)onProgress(i+1,cfg.sens.length);
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }finally{
+    delete __paramOverride[paramKey]; // 保证即使中途报错,也不会让实盘信号/其它回测继续用着被顶替的参数值
+  }
+  const withRate=points.filter(p=>p.winRate!=null&&p.resolved>=SENS_MIN_RESOLVED);
+  let verdict,spread=null,expSignFlip=false;
+  if(withRate.length<2){
+    verdict={level:"insufficient",text:`该周期/样本下多数网格点已分胜负样本<${SENS_MIN_RESOLVED}笔,数据量不足以判断参数敏感度,建议加大回测样本量后重测。`};
+  }else{
+    const rates=withRate.map(p=>p.winRate*100);
+    spread=Math.max(...rates)-Math.min(...rates);
+    const exps=withRate.map(p=>p.expectancy).filter(e=>e!=null);
+    expSignFlip=exps.some(e=>e>0)&&exps.some(e=>e<0);
+    if(spread>SENS_HIGH_WINRATE_SPREAD||expSignFlip){
+      verdict={level:"sensitive",text:`胜率随该参数在±50%区间内波动达 ${spread.toFixed(1)} 个百分点${expSignFlip?",且期望值出现正负翻转":""},说明当前 baseline 很可能是过拟合到某段历史的单点最优值,不建议把这个数字当作稳定可靠的设定,应参考"稳健区间"(见下方)而非精确数值本身。`};
+    }else{
+      verdict={level:"robust",text:`胜率随该参数在±50%区间内波动仅 ${spread.toFixed(1)} 个百分点,策略表现对这个参数不敏感,当前 baseline 处在一个稳健区间内,不是靠精确调参才成立的单点最优值。`};
+    }
+  }
+  return{paramKey,cfg,points,verdict,spread,expSignFlip};
+}
+
+// 五类改进-第1项 结果缓存: key = symbol|interval|sampleSize|paramKey
+const sensitivityCache=new Map();
+function sensKey(symbol,interval,sampleSize,paramKey){return symbol+"|"+interval+"|"+sampleSize+"|"+paramKey;}
+async function performSensitivityRun(symbol,interval,sampleSize,paramKey){
+  const key=sensKey(symbol,interval,sampleSize,paramKey);
+  sensitivityCache.set(key,{status:"running",progress:0});
+  refreshBacktestUIOnly();
+  try{
+    let candles;
+    if(interval===chartInterval&&selectedSymbol===symbol&&lastCandles.length){
+      candles=lastCandles;
+    }else{
+      try{
+        let kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=1500`);
+        candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+      }catch(e){
+        sensitivityCache.set(key,{status:"error",message:"K线数据拉取失败"});
+        refreshBacktestUIOnly();return;
+      }
+    }
+    if(!candles||candles.length<230){
+      sensitivityCache.set(key,{status:"error",message:`K线数量不足(${candles?candles.length:0}根,至少需要230根)`});
+      refreshBacktestUIOnly();return;
+    }
+    const result=await runParamSensitivity(candles,interval,Math.min(sampleSize,candles.length-210),paramKey,(done,total)=>{
+      sensitivityCache.set(key,{status:"running",progress:total?Math.round(done/total*100):0});
+      refreshBacktestUIOnly();
+    });
+    sensitivityCache.set(key,{status:"done",result});
+  }catch(e){
+    console.error("sensitivity run failed",e);
+    sensitivityCache.set(key,{status:"error",message:"敏感性测试计算出错"});
+  }
+  refreshBacktestUIOnly();
 }
 
 /* ── SIGNAL GROUPING: maps each of the ~23 flat indicators into 4 human categories
@@ -5620,6 +6178,13 @@ async function loadCryptoDetail(symbol){
       renderChartBiasBadge(sig);renderModalScroll(sig);
     }
   });
+  // SKDJ日线+周线共振 / 九转序列 用的周线锚定数据(日线复用上面的cycleAnchorCandles)
+  ensureWeeklyAnchor(symbol).then(()=>{
+    if(selectedSymbol===symbol&&lastCandles.length){
+      const sig=computeSignal(lastCandles,chartInterval,symbol);
+      renderChartBiasBadge(sig);renderModalScroll(sig);
+    }
+  });
   try{
     // Binance caps a single klines call at 1500 bars. Vegas隧道(EMA144/169) and reliable
     // pattern/structure reads need real lookback, so page backward for a 2nd batch → up to
@@ -6068,6 +6633,14 @@ function refreshBacktestUIOnly(){
   const el=document.getElementById("btPanelBody");
   if(!el||!window.__lastSig)return;
   el.innerHTML=renderBacktestBody(window.__lastSig);
+  const sensEl=document.getElementById("sensPanelBody");
+  if(sensEl&&window.__lastSig&&selectedSymbol){
+    const symbol=selectedSymbol,interval=chartInterval;
+    const groups={};
+    Object.keys(PARAM_CONFIG).forEach(k=>{const g=PARAM_CONFIG[k].group;(groups[g]=groups[g]||[]).push(k);});
+    sensEl.innerHTML=Object.keys(groups).map(g=>`<div class="sens-group"><div class="sens-group-title">${esc(g)}</div>${groups[g].map(k=>renderSensParamBlock(symbol,interval,k)).join("")}</div>`).join("")
+      +`<button id="sensRunAllBtn" class="bt-run-btn" data-sens-symbol="${esc(symbol)}" data-sens-interval="${esc(interval)}" style="margin-top:8px;">▶▶ 一次性测试全部6个参数(耗时较长,约2~4分钟)</button>`;
+  }
 }
 function fmtBtPct(x){return x==null?"–":(x*100).toFixed(1)+"%";}
 function renderBacktestStatBlock(label,st){
@@ -6129,13 +6702,230 @@ function renderBacktestBody(sig){
       </div>
     </div>`;
 }
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 形态识别 / 缠论 / SKDJ+九转 · 移植自trading-scan.html ──
+   只在Modal(单symbol深度视图)渲染,不进入机会雷达批量扫描——理由见文件顶部的性能取舍说明。 */
+function tsBreakoutBadgeCls(state){return state==="confirmed"?"pass":state==="tentative"?"pending":"fail";}
+function tsBreakoutBadgeTxt(state,dir){
+  const dirTxt=dir==="up"?"上破":dir==="down"?"下破":"";
+  if(state==="confirmed")return`✅ 已确认${dirTxt}`;
+  if(state==="tentative")return"⏳ 暂破·待确认";
+  return"⛔ 跟踪中·未突破";
+}
+function tsPatternRowHTML(label,dir,brk,score,extra){
+  const st=brk?brk.state:"wait";
+  return`<div class="opp-future-row">
+    <span class="opp-trig-badge ${tsBreakoutBadgeCls(st)}">${tsBreakoutBadgeTxt(st,dir)}</span>
+    <span class="opp-row-sym" style="min-width:auto;">${esc(label)}</span>
+    ${dir?`<span class="opp-row-dir ${dir==="up"?"up":"down"}">${dir==="up"?"看涨":"看跌"}</span>`:""}
+    <span class="opp-row-meta"><span>强度 ${Math.round(score)}/100</span>${extra?`<span>${esc(extra)}</span>`:""}</span>
+  </div>`;
+}
+function renderPatternBody(sig){
+  if(!sig||!lastCandles||lastCandles.length<30)return'<div class="opp-empty">K线数据不足,暂无法识别形态</div>';
+  const bars=tsToBars(lastCandles);
+  const tri=tsDetectTriangle(bars);
+  const structural=tsDetectStructural(bars);
+  const harmonics=tsDetectHarmonics(bars);
+  const elliott=tsDetectElliott(bars);
+  const chan=tsDetectChan(bars);
+  const rows=[];
+  if(tri)rows.push(tsPatternRowHTML(tri.type,tri.dir,tri.brk,tri.score,`收窄度${tri.narrow}%`));
+  structural.forEach(p=>rows.push(tsPatternRowHTML(p.type,p.dir,p.brk,p.score,`颈线 ${fmtPrice(p.neckline)}`)));
+  harmonics.forEach(h=>rows.push(tsPatternRowHTML(`谐波 ${h.pattern}`,h.bull?"up":"down",{state:h.status==="completed"?"confirmed":"tentative"},h.score,h.status==="forming"?"形成中(D点未到)":"已完成")));
+  elliott.forEach(e=>rows.push(tsPatternRowHTML("艾略特 0-5浪",e.dir,{state:"tentative"},e.score,`浪3/浪1=${e.w3w1} · 浪5/浪3=${e.w5w3}`)));
+  const patternHTML=rows.length?rows.join(""):'<div class="opp-empty">当前K线未检测到三角/楔形/头肩/双重顶底/谐波/艾略特形态</div>';
+
+  const chanHTML=(()=>{
+    if(!chan.zs.length)return`<div class="sig-note">缠论: 已识别 ${chan.bis.length} 笔,暂未形成有效中枢(至少需要连续3笔重叠)。</div>`;
+    const lastZs=chan.zs[chan.zs.length-1];
+    const inside=chan.inZhongshu;
+    const brkTxt=chan.zhongshuBreak==="up"?"已向上突破中枢(ZG之上)":chan.zhongshuBreak==="down"?"已向下突破中枢(ZD之下)":"仍在中枢区间内震荡";
+    return`<div class="sig-note">缠论: 共识别 ${chan.bis.length} 笔 · ${chan.duans.length} 段 · 最新中枢区间 [${fmtPrice(lastZs.ZD)} , ${fmtPrice(lastZs.ZG)}] · 现价${inside?"位于中枢内":brkTxt}。中枢是"次级别至少3笔重叠的价格重叠区",突破中枢通常被视为趋势延续/反转的关键确认位,可与上方"结构位突破延续"(见时间线里的突破确认分档)交叉验证。</div>`;
+  })();
+
+  let skdjTdHTML="";
+  if(cycleAnchorForSymbol===selectedSymbol&&cycleAnchorCandles.length>=30&&weeklyAnchorForSymbol===selectedSymbol&&weeklyAnchorCandles.length>=30){
+    const cD=cycleAnchorCandles.map(c=>c.close),hD=cycleAnchorCandles.map(c=>c.high),lD=cycleAnchorCandles.map(c=>c.low);
+    const cW=weeklyAnchorCandles.map(c=>c.close),hW=weeklyAnchorCandles.map(c=>c.high),lW=weeklyAnchorCandles.map(c=>c.low);
+    const skdjD=tsComputeSKDJ(hD,lD,cD),skdjW=tsComputeSKDJ(hW,lW,cW);
+    const kD=skdjD.K[skdjD.K.length-1],kW=skdjW.K[skdjW.K.length-1];
+    const tdD=tsComputeTD(cD),tdDLast=tdD[tdD.length-1];
+    const tdW=tsComputeTD(cW),tdWLast=tdW[tdW.length-1];
+    const skdjBottom=kD<=15&&kW<=15,skdjTop=kD>=80&&kW>=80;
+    const jiuzhuan=(tdDLast.count>=7&&tdWLast.count>=7&&tdDLast.dir===tdWLast.dir)?tdDLast.dir:null;
+    skdjTdHTML=`<div class="sig-note">SKDJ日线+周线共振: K(日)=${kD.toFixed(1)} · K(周)=${kW.toFixed(1)} → ${skdjBottom?"⚪ 双周期同时超卖(≤15),历史上常见于阶段性底部":skdjTop?"⚪ 双周期同时超买(≥80),历史上常见于阶段性顶部":"未形成双周期共振"}。
+      九转序列(TD Sequential): 日线第${tdDLast.count||0}${tdDLast.dir==="up"?"根卖出计数":tdDLast.dir==="down"?"根买入计数":"–"} · 周线第${tdWLast.count||0}${tdWLast.dir==="up"?"根卖出计数":tdWLast.dir==="down"?"根买入计数":"–"} → ${jiuzhuan?`⚪ 日线+周线同向且均达到9,${jiuzhuan==="up"?"警惕阶段性见顶":"警惕阶段性见底"}(九转序列是耗竭型信号,不代表立即反转,通常需要额外的形态/K线确认)`:"未触发双周期九转共振"}。</div>`;
+  }else{
+    skdjTdHTML=`<div class="sig-note dim">SKDJ日线+周线共振 / 九转序列: 日线或周线锚定数据加载中…</div>`;
+  }
+
+  const key=tsBtKey(selectedSymbol,chartInterval);
+  const st=tsPatternBacktestCache.get(key);
+  const btHTML=(()=>{
+    if(!st||st.status==="idle"||!st.status){
+      return`<button class="bt-run-btn ts-pattern-bt-btn" data-ts-symbol="${esc(selectedSymbol)}" data-ts-interval="${esc(chartInterval)}">▶ 运行逐形态历史回测(本币种/本周期)</button>`;
+    }
+    if(st.status==="running"){
+      return`<div class="sig-note">走查式回测中… ${st.progress||0}%(逐根K线只用截止到该根为止的数据重跑形态检测,严格避免用到未来数据)</div>
+        <div class="bt-progress-wrap"><div class="bt-progress-bar" style="width:${st.progress||0}%"></div></div>`;
+    }
+    if(st.status==="error"){
+      return`<div class="sig-note" style="color:var(--down);">${esc(st.message)}</div>
+        <button class="bt-run-btn ts-pattern-bt-btn" data-ts-symbol="${esc(selectedSymbol)}" data-ts-interval="${esc(chartInterval)}">↻ 重试</button>`;
+    }
+    const agg=st.agg;
+    if(!agg.length)return`<div class="sig-note">历史K线里未检测到任何"已确认突破"的三角/头肩/双重顶底信号,样本量为0,该结论本身也是一种真实信息——说明这个symbol在这个周期下,这几类形态并不常发生或很少被放量确认。</div>`;
+    const rows2=agg.map(a=>{
+      const h5=a.stat.h5,h10=a.stat.h10,h20=a.stat.h20;
+      const wr=h10&&h10.n?h10.winRate:null;
+      const lowN=a.n<20;
+      return`<tr>
+        <td>${esc(a.type)}${lowN?' <span class="dim" style="font-size:10px;">(样本量小,参考价值有限)</span>':""}</td>
+        <td>${a.n}</td>
+        <td class="${wr==null?"":(wr>=50?"up":"down")}">${wr!=null?wr.toFixed(0)+"%":"–"}</td>
+        <td>${h5&&h5.n?(h5.mean>=0?"+":"")+h5.mean.toFixed(1)+"%":"–"}</td>
+        <td>${h10&&h10.n?(h10.mean>=0?"+":"")+h10.mean.toFixed(1)+"%":"–"}</td>
+        <td>${h20&&h20.n?(h20.mean>=0?"+":"")+h20.mean.toFixed(1)+"%":"–"}</td>
+      </tr>`;
+    }).join("");
+    return`<div class="tbl-wrap-mini"><table class="ts-bt-table">
+      <thead><tr><th>形态</th><th>历史信号数</th><th>10根胜率</th><th>5根均收益</th><th>10根均收益</th><th>20根均收益</th></tr></thead>
+      <tbody>${rows2}</tbody></table></div>
+      <div class="sig-note" style="margin-top:6px;">走查式回测: 从第80根K线起逐根向前推进,只用"截止到该根为止"的数据重新检测形态,首次出现"已确认突破"记一次历史信号,向后取5/10/20根收盘涨跌幅统计(看跌形态收益取反号,"正收益"=方向应验)。样本来自这一个symbol自己的历史,存在幸存者偏差、不含手续费滑点、未做统计显著性检验,样本量&lt;20的胜率参考价值有限。
+        <button class="bt-run-btn ts-pattern-bt-btn" data-ts-symbol="${esc(selectedSymbol)}" data-ts-interval="${esc(chartInterval)}" style="margin-left:6px;">↻ 重新运行</button>
+      </div>`;
+  })();
+
+  return`${patternHTML}${chanHTML}${skdjTdHTML}<div class="ts-bt-panel">${btHTML}</div>`;
+}
+function renderPatternSection(sig){
+  if(!sig)return"";
+  return`
+    <div class="section-title">🔍 形态识别 · 缠论 · SKDJ/九转共振</div>
+    <div class="section-note">移植自 trading-scan 的形态识别引擎: 三角/楔形/头肩顶底/双重顶底(收紧后的三档突破确认口径,与上方时间线里"结构位突破"用同一套标准)、谐波XABCD、艾略特0-5浪、缠论笔/中枢/线段,以及SKDJ日线+周线双周期共振与九转序列(TD Sequential)。下方"逐形态历史回测"按需运行(计算量较大,不会自动触发),对这一个symbol自己的历史K线做走查式回测,给出每种形态的历史信号数与胜率——这是"机会价值判断"真正该看的历史依据,而不只是当下截面的统计特征打分。</div>
+    <div id="tsPatternBody">${renderPatternBody(sig)}</div>`;
+}
+async function performTsPatternBacktest(symbol,interval){
+  const key=tsBtKey(symbol,interval);
+  tsPatternBacktestCache.set(key,{status:"running",progress:0});
+  refreshTsPatternUIOnly();
+  let candles;
+  try{
+    const limit=interval==="1w"?300:500;
+    const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+    candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+  }catch(e){
+    tsPatternBacktestCache.set(key,{status:"error",message:"K线数据拉取失败"});
+    refreshTsPatternUIOnly();return;
+  }
+  if(candles.length<110){
+    tsPatternBacktestCache.set(key,{status:"error",message:`K线数量不足(${candles.length}根,至少需要110根)`});
+    refreshTsPatternUIOnly();return;
+  }
+  try{
+    const bars=tsToBars(candles);
+    // 走查式回测本身是同步计算(与trading-scan原版一致),但对500根K线逐根重跑形态检测仍有明显开销,
+    // 这里分块让出主线程,避免长样本卡住UI——与ORBIT既有的走步式回测(runBacktest)用同一手法。
+    const events=[];
+    const lastFire={};
+    const start=80,end=bars.length-1-Math.max.apply(null,TS_HORIZONS);
+    for(let t=start;t<=end;t++){
+      const sub=bars.slice(0,t+1);
+      const found=[];
+      const tri=tsDetectTriangle(sub);
+      if(tri&&tri.brk.state==="confirmed"&&tri.dir)found.push({type:tri.type,dir:tri.dir});
+      tsDetectStructural(sub).forEach(p=>{if(p.brk&&p.brk.state==="confirmed")found.push({type:p.type,dir:p.dir});});
+      found.forEach(f=>{
+        if(lastFire[f.type]!==undefined&&t-lastFire[f.type]<10)return;
+        lastFire[f.type]=t;
+        const base=bars[t].c;const rets={};
+        TS_HORIZONS.forEach(h=>{const fwd=bars[t+h];if(!fwd)return;let r=(fwd.c/base-1)*100;if(f.dir==="down")r=-r;rets["h"+h]=r;});
+        events.push({type:f.type,dir:f.dir,idx:t,rets});
+      });
+      if((t-start)%40===0){
+        tsPatternBacktestCache.set(key,{status:"running",progress:Math.round((t-start)/(end-start||1)*100)});
+        refreshTsPatternUIOnly();
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
+    const agg=tsAggregateBacktest(events);
+    tsPatternBacktestCache.set(key,{status:"done",agg,n:events.length});
+  }catch(e){
+    console.error("pattern backtest failed",e);
+    tsPatternBacktestCache.set(key,{status:"error",message:"回测计算出错"});
+  }
+  refreshTsPatternUIOnly();
+}
+function refreshTsPatternUIOnly(){
+  const el=document.getElementById("tsPatternBody");
+  if(!el||!window.__lastSig)return;
+  el.innerHTML=renderPatternBody(window.__lastSig);
+}
+
+/* ── 参数敏感性与稳健性测试 UI ── 独立于走步式回测面板下方,同一symbol/interval/样本量,
+   逐参数按钮触发(避免一次性跑6个参数×7个网格点=42遍完整回测卡死浏览器)。
+   每个参数一个迷你条形图(纯CSS,不依赖canvas/svg库),baseline点高亮,悬浮显示具体数值。 */
+function sensBarHTML(pt,maxRate){
+  const rate=pt.winRate!=null?pt.winRate*100:null;
+  const h=rate!=null&&maxRate>0?Math.max(4,Math.round(rate/maxRate*64)):3;
+  const lowN=pt.resolved<SENS_MIN_RESOLVED;
+  const cls=pt.isBaseline?"sens-bar baseline":"sens-bar";
+  const title=`取值 ${pt.value.toFixed(pt.value<10?2:0)} · 胜率 ${rate!=null?rate.toFixed(1)+"%":"–"} · 期望值 ${pt.expectancy!=null?pt.expectancy.toFixed(2)+"R":"–"} · 已分胜负 n=${pt.resolved}${lowN?"(样本偏少)":""}`;
+  return `<div class="${cls}" title="${esc(title)}" style="height:${h}px;${lowN?"opacity:.45;":""}">
+    <span class="sens-bar-val">${rate!=null?rate.toFixed(0):"–"}</span></div>`;
+}
+function renderSensParamBlock(symbol,interval,paramKey){
+  const cfg=PARAM_CONFIG[paramKey];
+  const key=sensKey(symbol,interval,btSampleSize,paramKey);
+  const st=sensitivityCache.get(key);
+  const head=`<div class="sens-param-head"><b>${esc(cfg.label)}</b><span class="dim2" style="font-size:10.5px;">当前基准值 ${cfg.baseline} · 分组:${esc(cfg.group)}</span></div>`;
+  if(!st){
+    return `<div class="sens-param-block">${head}
+      <button class="bt-run-btn sens-run-btn" data-sens-symbol="${esc(symbol)}" data-sens-interval="${esc(interval)}" data-sens-param="${esc(paramKey)}">▶ 测试该参数(±50%网格,7点×走步式回测)</button></div>`;
+  }
+  if(st.status==="running"){
+    return `<div class="sens-param-block">${head}<div class="sig-note">敏感性测试中(第${Math.round((st.progress||0)/100*cfg.sens.length)||"…"}/${cfg.sens.length}个网格点)… ${st.progress||0}%</div></div>`;
+  }
+  if(st.status==="error"){
+    return `<div class="sens-param-block">${head}<div class="sig-note" style="color:var(--down);">${esc(st.message)}</div>
+      <button class="bt-run-btn sens-run-btn" data-sens-symbol="${esc(symbol)}" data-sens-interval="${esc(interval)}" data-sens-param="${esc(paramKey)}">↻ 重试</button></div>`;
+  }
+  const r=st.result;
+  const rates=r.points.map(p=>p.winRate!=null?p.winRate*100:0);
+  const maxRate=Math.max(20,...rates);
+  const vLevel=r.verdict.level;
+  const vColor=vLevel==="sensitive"?"var(--down)":vLevel==="robust"?"var(--up)":"var(--dim)";
+  const vIcon=vLevel==="sensitive"?"⚠️":vLevel==="robust"?"✅":"ℹ️";
+  return `<div class="sens-param-block">${head}
+    <div class="sens-bars-row">${r.points.map(p=>sensBarHTML(p,maxRate)).join("")}</div>
+    <div class="sens-bars-labels">${r.points.map(p=>`<span class="${p.isBaseline?"sens-x-baseline":""}">${p.mult===1?"基准":(p.mult<1?"":"+")+Math.round((p.mult-1)*100)+"%"}</span>`).join("")}</div>
+    <div class="sig-note" style="margin-top:6px;border-left:3px solid ${vColor};padding-left:8px;"><b style="color:${vColor};">${vIcon} ${vLevel==="sensitive"?"参数敏感 · 疑似过拟合":vLevel==="robust"?"参数稳健":"样本不足"}</b><br>${esc(r.verdict.text)}</div>
+    <button class="bt-run-btn sens-run-btn" data-sens-symbol="${esc(symbol)}" data-sens-interval="${esc(interval)}" data-sens-param="${esc(paramKey)}" style="margin-top:6px;">↻ 重新测试</button>
+  </div>`;
+}
+function renderSensitivitySection(sig){
+  if(!sig||!selectedSymbol)return"";
+  const symbol=selectedSymbol,interval=chartInterval;
+  const groups={};
+  Object.keys(PARAM_CONFIG).forEach(k=>{const g=PARAM_CONFIG[k].group;(groups[g]=groups[g]||[]).push(k);});
+  const body=Object.keys(groups).map(g=>`<div class="sens-group"><div class="sens-group-title">${esc(g)}</div>${groups[g].map(k=>renderSensParamBlock(symbol,interval,k)).join("")}</div>`).join("");
+  return `
+    <div class="section-title">🔬 参数敏感性与稳健性测试 · PARAM SENSITIVITY SWEEP</div>
+    <div class="section-note">对当前硬编码的关键参数(ATR倍数/regime分类阈值/TP1风险回报下限/突破放量确认倍数)逐个在 baseline 上下 -50%~+50% 做网格测试,每个取值点重跑一遍完整走步式回测(与上方"走步式回测"同一套引擎、同一symbol/周期/样本量),比较胜率与期望值的波动幅度。
+      如果换个参数值结果就剧烈跳变(胜率极差&gt;15个百分点,或期望值正负翻转),说明当前设定是过拟合到了某一段历史,标为"参数敏感";如果在合理范围内基本不影响结果,标为"参数稳健"。<b>本测试只诊断稳健性,不会根据回测结果反向建议"改用哪个数值"</b>——用回测结果去挑选参数本身就是新一轮过拟合。</div>
+    <div id="sensPanelBody">${body}
+      <button id="sensRunAllBtn" class="bt-run-btn" data-sens-symbol="${esc(symbol)}" data-sens-interval="${esc(interval)}" style="margin-top:8px;">▶▶ 一次性测试全部6个参数(耗时较长,约2~4分钟)</button>
+    </div>`;
+}
 function renderBacktestSection(sig){
   if(!sig)return"";
   return `
     <div class="section-title">🧪 走步式回测 · WALK-FORWARD BACKTEST</div>
     <div class="section-note">逐根历史K线往前走,每一步只用这根K线之前的数据算信号(不用未来数据),记录这笔限价单历史上有没有真的成交、成交后先摸到止盈还是先摸到止损。
       入场/止盈/止损的计算函数与实盘完全同一套代码,不是另外写的简化版。受限于Binance K线接口不提供历史资金费率/OI/CVD/清算/期权数据,回测只覆盖EMA/Vegas隧道/RSI/MACD/布林带/KDJ/量能/K线形态/Supertrend/BIAS/VWAP/锚定VWAP/缠论笔结构/斐波那契/趋势线(回归拟合)这部分——即"图形分析"相关的全部指标,也正是可以诚实回测的部分。</div>
-    <div id="btPanelBody">${renderBacktestBody(sig)}</div>`;
+    <div id="btPanelBody">${renderBacktestBody(sig)}</div>
+    <div style="margin-top:16px;">${renderSensitivitySection(sig)}</div>`;
 }
 
 function renderModalScroll(sig){
@@ -6165,6 +6955,7 @@ function renderModalScrollNow(sig){
     ${renderSignalDetail(sig)}
     ${renderSectorHeatmap(sig)}
     ${renderStructureSection(sig)}
+    ${renderPatternSection(sig)}
     ${renderBacktestSection(sig)}
     ${renderOICVDSection(sig)}
     ${renderIntelCoverageSection(sig)}
