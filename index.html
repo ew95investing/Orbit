@@ -431,7 +431,7 @@
   .opp-detail-sec{margin-bottom:9px;}
   .opp-detail-sec b{color:var(--text);display:block;margin-bottom:3px;font-size:11.5px;letter-spacing:.3px;}
   .opp-detail-sec div{color:var(--dim);}
-  .opp-future-panel{margin-top:6px;border-top:1px solid var(--line);padding:12px 14px 14px;}
+  .opp-future-panel{margin-top:6px;border-top:1px solid var(--line);padding:10px 14px 4px;}
   .opp-future-title{font-size:11.5px;letter-spacing:1px;color:var(--dim2);text-transform:uppercase;font-weight:700;margin-bottom:9px;}
   .opp-future-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;}
   .opp-future-row:last-child{border-bottom:none;}
@@ -442,6 +442,19 @@
   .opp-nearmiss-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:6px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
   .opp-nearmiss-row:last-child{border-bottom:none;}
   .opp-nearmiss-detail{color:var(--dim2);font-size:11.5px;}
+  /* ── 可折叠区块(未来24小时扫描 / 观察中·仅供参考) ── 默认收起,不占屏幕、不干扰"已识别机会"这一
+     真正应该常显的核心内容;标题栏本身可点开合,展开时才渲染/显示明细,减少视觉噪音也减少无谓DOM。 */
+  .opp-collapse-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:4px 0;}
+  .opp-collapse-head:hover .opp-future-title,.opp-collapse-head:hover .opp-group-head{color:var(--text);}
+  .opp-collapse-arrow{font-size:10px;color:var(--dim2);transition:transform .15s;flex-shrink:0;}
+  .opp-collapse-head.open .opp-collapse-arrow{transform:rotate(90deg);}
+  .opp-collapse-count{font-size:10.5px;color:var(--dim2);font-weight:600;background:rgba(255,255,255,.05);padding:1px 7px;border-radius:5px;margin-left:auto;}
+  .opp-collapse-body{display:none;}
+  .opp-collapse-body.open{display:block;}
+  .opp-timeline-block{background:rgba(198,165,101,.05);border:1px solid rgba(198,165,101,.18);border-radius:5px;padding:8px 10px;margin-bottom:10px;}
+  .opp-timeline-block b{color:var(--amber);display:block;margin-bottom:4px;font-size:11.5px;letter-spacing:.3px;}
+  .opp-timeline-block div{color:var(--text);opacity:.92;}
+  .opp-timeline-sub{margin-top:6px;padding-top:6px;border-top:1px dashed rgba(198,165,101,.18);}
   @media(max-width:720px){
     .opp-row-head{gap:6px;padding:9px 10px;}
     .opp-row-meta{gap:6px;}
@@ -1072,8 +1085,12 @@
     <div id="oppNearMiss"></div>
     <div class="opp-table" id="oppOverviewTable"><div class="opp-empty">扫描中…</div></div>
     <div class="opp-future-panel">
-      <div class="opp-future-title">🔭 未来24小时潜在机会扫描 · 按触发概率排序</div>
-      <div id="oppFutureScanBody"><div class="opp-empty">扫描中…</div></div>
+      <div class="opp-collapse-head" id="oppFutureToggle">
+        <span class="opp-collapse-arrow">▶</span>
+        <span class="opp-future-title" style="margin-bottom:0;">🔭 未来24小时潜在机会扫描 · 按触发概率排序</span>
+        <span class="opp-collapse-count" id="oppFutureCount">–</span>
+      </div>
+      <div class="opp-collapse-body" id="oppFutureScanBody"><div class="opp-empty">扫描中…</div></div>
     </div>
   </div>
 
@@ -1700,6 +1717,11 @@ let opportunityResults = new Map(); // symbol -> {sig, ts}
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
 let lastOpportunityScanAt = 0;      // 标签页恢复前台时,用于判断该不该立刻补扫一次
 const oppExpandedSymbols = new Set(); // 会话内记录总览表里哪些币种的"类型专属详情"被展开过,重绘时保持展开状态
+// 可折叠区块的展开状态 — 默认收起(false): "未来24小时潜在机会扫描"是概率地图不是机会,"观察中·仅供参考"
+// 是没过执行闸门的候选,两者都不该占着屏幕常驻显示;真正该常显的是下面 renderOpportunityRadar 里的
+// "已识别机会"分组(live)。会话内记住用户手动展开过的状态,重绘(每次扫描刷新)不会把它们弹回去。
+let oppFutureOpen = false;
+let oppRefOpen = false;
 
 function mainstreamUniverse(){
   // Deliberately NOT the whole market: only coins that are both (a) currently in the
@@ -1868,6 +1890,13 @@ function typeGateExtra(sig,type){
   if((type==="wave"||type==="swing")&&opposingExhaustion){
     return{pass:false,reason:`顶/底部结构信号(${tb.detail})与本次趋势方向相反,疑似趋势末端,此时追势不满足该类型的额外确认条件`};
   }
+  // "主升主跌浪"专属: 名字本身就叫"结构位突破延续",如果参考摆动位根本还没被真正突破(跟踪中)
+  // 或只是单根插针式暂破(未放量/未连续2根站稳),不满足这一档最核心的前提——之前完全没有校验这一点,
+  // 只靠趋势市/高ER/低CI/MTF同向/高可信度五个统计特征就放行,等于承认"突破"只是分类的名字,不是真的
+  // 验证过的事实。见 computeBreakoutState。
+  if(type==="wave"&&sig.breakout&&sig.breakout.state!=="confirmed"){
+    return{pass:false,reason:`突破确认未达标(${sig.breakout.label}): ${sig.breakout.detail} — "主升主跌浪"要求关键摆动位已被连续2根收盘+放量确认突破,不满足该类型的额外确认条件`};
+  }
   if(type==="pulse"){
     if(sig.bbU==null||sig.bbL==null)return{pass:true,reason:""};
     const width=sig.bbU-sig.bbL;
@@ -1932,14 +1961,49 @@ function buildOppTypeDetail(symbol,sig,type){
   }
   return{entryCond,slTpRule,posRule,discipline};
 }
+/* 每个"已识别机会"最该常显的内容: 这一档到底是怎么判断出来的、周期多长、有没有认真核对过
+   震荡/趋势状态、更大周期是否冲突、突破是不是真突破——而不是只给一个"结构性拐点"的标签就完事。
+   四个字段对应用户要的"时间线/周期/回测口径/突破口": cyclePhase(周期定性,震荡or趋势,以及为什么
+   这个类型配这个持有周期) · confirmChecks(顺势类要不要考虑过回踩/背离/更大周期一致,已经检验过
+   哪几项) · breakoutNote(结构位是否真被突破,分tracking/tentative/confirmed三档,不是嘴上说说) ·
+   rrNote(TP1/TP2/TP3各自的盈亏比与先达胜率,明确写出"止损%比目标%更宽"这类不成正比的情况已被
+   源头堵死,现在能看到的数字应当始终是TP距离≥止损距离)。 */
+function buildOppTimelineDetail(symbol,sig,type){
+  const p=sig.plan.main,o=sig.outlook;
+  const cycleWindow={pulse:"数十分钟~数小时(仅TP1,4h窗口内)",swing:"1~4个交易日(TP1→TP2,4h~24h窗口)",
+    wave:"数日~数周(TP1→TP2→TP3,4h/24h/3日三档窗口依次展开)",turning:"数小时~2个交易日(以TP1快速兑现为主)"}[type]||"–";
+  const regimeTxt=sig.regimeLabel||"–";
+  const erTxt=sig.er!=null?sig.er.toFixed(2):"–";
+  const ciTxt=sig.ciVal!=null?sig.ciVal.toFixed(0):"–";
+  const cyclePhase=`市场状态: ${esc(regimeTxt)}(效率比ER=${erTxt}、Choppiness=${ciTxt},ER越接近1/CI越低=趋势越干净,ER越接近0/CI越高=越震荡)。据此判定的持有周期是「${esc(type.hold||cycleWindow)}」——${sig.regime==="range"?"当前偏震荡,所以只按TP1(4h窗口)设计,不奢望TP2/TP3能顺利跑出来":sig.regime==="trend"?"当前偏趋势,才允许把目标放到TP2/TP3(24h~3日窗口)":"当前处于过渡区,周期判断本身把握不足,窗口按基准值不做放大或收紧"}。`;
+  const mtfTxt=sig.mtfDir===sig.dirSign&&sig.mtfDir!==0?"更大周期同向,不是单一小周期里的噪音抖动":sig.mtfDir===0?"更大周期数据不足或方向不明确,尚未获得跨周期确认":"更大周期方向与本次信号冲突,可信度已相应打折";
+  const tb=sig.topBottom||{state:"none"};
+  const tbTxt=tb.state==="none"?"OI/资金费率/价格三因子未共振出顶/底部信号,暂无背离迹象":tb.state==="unknown"?"顶/底部背离数据不足":`已检测到${tb.state==="top"?"滞涨":"抗跌"}式背离信号(${esc(tb.detail||"")})`;
+  const confirmChecks=`更大周期(MTF)复核: ${esc(mtfTxt)}。顶/底部背离复核: ${esc(tbTxt)}。${type==="wave"||type==="swing"?"顺势类机会额外要求价格不处于与本方向相反的背离区(见上),否则会被归为「仅供参考」而非正式触发。":""}`;
+  const bo=sig.breakout||{state:"unknown",label:"–",detail:""};
+  const breakoutNote=(type==="wave")
+    ?`这一档的核心前提是"结构位已被真正突破",不是趋势特征像就算数: 当前突破确认状态 = ${esc(bo.label)}(${esc(bo.detail)})。只有"已确认突破"(连续2根收盘站稳+突破当根放量≥1.2倍均量)才允许归为主升主跌浪,单根插针式的"暂破"或价格根本还没越线的"跟踪中"都会被下方执行闸门拦下,归入"观察中"。`
+    :`参考摆动位突破状态: ${esc(bo.label)}(${esc(bo.detail)})——该状态仅供辅助参考,不是这一档(${esc(type.label)})分类的硬性前提。`;
+  const risk=p.sl!=null?Math.abs(p.entry-p.sl):null;
+  const riskPct=risk!=null&&p.entry?(risk/p.entry*100).toFixed(2):"–";
+  const tpLines=(p.tps||[]).map(t=>{
+    const tpPct=p.entry?(Math.abs(t.price-p.entry)/p.entry*100).toFixed(2):"–";
+    return `${esc(t.label)}(${esc(t.horizon)}) 距入场${tpPct}% · R:R ${t.rr} · 先达胜率${t.raceWinProb!=null?t.raceWinProb+"%":"–"}`;
+  }).join(" ｜ ");
+  const rrNote=`止损距入场 ${riskPct}%。${tpLines||"–"}。TP1 距离已强制≥止损距离的1.3倍(源头计算时已加入这条下限,不会再出现"止损百分比反而比TP1还宽"这种不成正比的组合);若你看到这一行数字仍显得不合理,大概率是市场刚发生跳空或极端波动,建议以图表实时价位为准并考虑跳过这笔。`;
+  return{cyclePhase,confirmChecks,breakoutNote,rrNote};
+}
 function oppStatsBarHTML(sig){
   const p=sig.plan.main;
-  const tp1=p.tps&&p.tps[0]?p.tps[0]:null;
+  const tp1=p.tps&&p.tps[0]?p.tps[0]:null,tp2=p.tps&&p.tps[1]?p.tps[1]:null,tp3=p.tps&&p.tps[2]?p.tps[2]:null;
   return`<div class="opp-row-stats">
     <span class="opp-stat"><i>现价</i>${fmtPrice(sig.price)}</span>
     <span class="opp-stat"><i>入场</i>${fmtPrice(p.entry)}</span>
     <span class="opp-stat sl"><i>止损</i>${fmtPrice(p.sl)}</span>
     <span class="opp-stat tp"><i>TP1</i>${tp1?fmtPrice(tp1.price):"–"}${tp1&&tp1.rr?` (R:R ${tp1.rr})`:""}</span>
+    <span class="opp-stat tp"><i>TP2</i>${tp2?fmtPrice(tp2.price):"–"}${tp2&&tp2.rr?` (R:R ${tp2.rr})`:""}</span>
+    <span class="opp-stat tp"><i>TP3</i>${tp3?fmtPrice(tp3.price):"–"}${tp3&&tp3.rr?` (R:R ${tp3.rr})`:""}</span>
+    <span class="opp-stat"><i>先达胜率</i>${tp1&&tp1.raceWinProb!=null?tp1.raceWinProb+"%":"–"}</span>
     <span class="opp-stat"><i>把握度</i>${sig.outlook.conviction}%</span>
   </div>`;
 }
@@ -1951,6 +2015,7 @@ function oppRowHTML(symbol,r){
   const dirTxt=sig.dirSign>0?"LONG":"SHORT";
   const expanded=oppExpandedSymbols.has(symbol);
   const det=buildOppTypeDetail(symbol,sig,type.key);
+  const tl=buildOppTimelineDetail(symbol,sig,type);
   return`<div class="opp-row ${trig.cls}${expanded?" open":""}" data-symbol="${esc(symbol)}">
     <div class="opp-row-head" data-toggle="${esc(symbol)}">
       <span class="opp-type-badge ${type.key}">${type.icon} ${esc(type.label)}</span>
@@ -1965,6 +2030,13 @@ function oppRowHTML(symbol,r){
     </div>
     ${oppStatsBarHTML(sig)}
     <div class="opp-row-detail">
+      <div class="opp-timeline-block">
+        <b>⏱ 时间线与判断依据</b>
+        <div>${esc(tl.cyclePhase)}</div>
+        <div class="opp-timeline-sub">${esc(tl.confirmChecks)}</div>
+        <div class="opp-timeline-sub">${esc(tl.breakoutNote)}</div>
+        <div class="opp-timeline-sub">${esc(tl.rrNote)}</div>
+      </div>
       <div class="opp-detail-sec"><b>为什么归为这一档</b><div>${esc(type.logicNote)}</div></div>
       <div class="opp-detail-sec"><b>持仓纪律与预估时长</b><div>${esc(type.hold)}</div></div>
       <div class="opp-detail-sec"><b>入场条件</b><div>${esc(det.entryCond)}</div></div>
@@ -2022,12 +2094,26 @@ function futureScanRowHTML(x){
 }
 function renderFutureScanSection(){
   const el=document.getElementById("oppFutureScanBody");
+  const head=document.getElementById("oppFutureToggle");
+  const countEl=document.getElementById("oppFutureCount");
   if(!el)return;
   const all=[];
   opportunityResults.forEach((r,symbol)=>{all.push(...computeFutureScanRows(symbol,r.sig));});
   all.sort((a,b)=>b.prob-a.prob||a.distPct-b.distPct);
   const top=all.slice(0,20);
   el.innerHTML=top.length?top.map(futureScanRowHTML).join(""):'<div class="opp-empty">暂无足够数据估算未来24小时潜在触发位</div>';
+  if(countEl)countEl.textContent=`${top.length} 个潜在触发位 · 概率地图,非机会`;
+  if(head&&!head.dataset.bound){
+    head.dataset.bound="1";
+    head.addEventListener("click",()=>{oppFutureOpen=!oppFutureOpen;applyOppCollapseState();});
+  }
+  applyOppCollapseState();
+}
+function applyOppCollapseState(){
+  const head=document.getElementById("oppFutureToggle"),body=document.getElementById("oppFutureScanBody");
+  if(head&&body){head.classList.toggle("open",oppFutureOpen);body.classList.toggle("open",oppFutureOpen);}
+  const rhead=document.getElementById("oppRefToggle"),rbody=document.getElementById("oppRefBody");
+  if(rhead&&rbody){rhead.classList.toggle("open",oppRefOpen);rbody.classList.toggle("open",oppRefOpen);}
 }
 function renderOpportunityRadar(){
   const noteEl=document.getElementById("oppUniverseNote");
@@ -2064,12 +2150,23 @@ function renderOpportunityRadar(){
   }
   const tableEl=document.getElementById("oppOverviewTable");
   if(tableEl){
-    const liveHTML=live.length?`<div class="opp-group-head">🟢 已触发 / 确认中 · 可执行</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
-      :`<div class="opp-group-head">🟢 已触发 / 确认中 · 可执行</div><div class="opp-empty">当前没有已触发或确认中的机会,以下均为观察中 · 仅供参考</div>`;
-    const refHTML=ref.length?`<div class="opp-group-head dim">⚪ 观察中 · 仅供参考(未过执行闸门,不计入追踪)</div>${ref.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`:"";
+    // "已识别机会"= 真正该常显的核心内容: 已触发/确认中,附带时间线/几率/价格策略(见 oppRowHTML 内的
+    // buildOppTimelineDetail)。"观察中·仅供参考"改为默认收起的可折叠区块——那些是没过执行闸门的候选,
+    // 常驻显示只会挤占"已识别机会"的注意力,想核实模型有没有在装死才需要点开看。
+    const liveHTML=live.length?`<div class="opp-group-head">✅ 已识别机会 · 时间线 / 几率 / 价格策略</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
+      :`<div class="opp-group-head">✅ 已识别机会 · 时间线 / 几率 / 价格策略</div><div class="opp-empty">当前没有已触发或确认中的机会,可展开下方"观察中"查看候选具体差在哪一项</div>`;
+    const refHTML=`<div class="opp-collapse-head" id="oppRefToggle">
+        <span class="opp-collapse-arrow">▶</span>
+        <span class="opp-group-head dim" style="padding:0;">⚪ 观察中 · 仅供参考(未过执行闸门,不计入追踪)</span>
+        <span class="opp-collapse-count">${ref.length} 项</span>
+      </div>
+      <div class="opp-collapse-body" id="oppRefBody">${ref.length?ref.map(x=>oppRowHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">暂无观察中的候选</div>'}</div>`;
     tableEl.innerHTML=withMeta.length?(liveHTML+refHTML):'<div class="opp-empty">当前主流币里暂无达到方向确认门槛的机会,继续观察</div>';
   }
   renderFutureScanSection();
+  const refToggle=document.getElementById("oppRefToggle");
+  if(refToggle)refToggle.addEventListener("click",()=>{oppRefOpen=!oppRefOpen;applyOppCollapseState();});
+  applyOppCollapseState();
   document.querySelectorAll(".opp-row-head").forEach(el=>{
     el.addEventListener("click",()=>{
       const sym=el.dataset.toggle;
@@ -3381,6 +3478,42 @@ function linRegTrendline(points){
   const r2=ssTot>0?Math.max(0,1-ssRes/ssTot):(ssRes===0?1:0);
   return{slope,intercept,r2,n};
 }
+/* ── 突破确认分档(移植自 trading-scan.html 的 confirmBreak 逻辑,原本是给三角/结构形态用的) ──
+   之前"主升主跌浪"这一档只看趋势市/高ER/低Choppiness/更大周期同向/高可信度五个统计特征,完全没有
+   回答一个最朴素的问题: 价格是不是已经真正突破了最近的关键摆动位,还是只是往那个方向蹭了一下就
+   被计入了"突破延续"。这里补上三档判定,不再是"收盘价越线一次就算突破":
+   tracking(跟踪中·未越线) → tentative(暂破·仅最新一根收盘越线) → confirmed(已确认·连续2根收盘
+   站稳线外 + 突破那根成交量≥前20根均量的1.2倍)。用于给"主升主跌浪"分类做额外确认(见typeGateExtra),
+   也用于时间线里明确告诉用户"这次突破的质量如何",而不是空口说"结构位突破延续"。 */
+function volAvgBefore(candles,idx,lookback){
+  const s=Math.max(0,idx-lookback);
+  const arr=candles.slice(s,idx);
+  if(!arr.length)return 0;
+  return arr.reduce((a,c)=>a+(c.volume||0),0)/arr.length;
+}
+function computeBreakoutState(candles,levelPrice,dirSign){
+  if(!candles||candles.length<25||levelPrice==null)return{state:"unknown",label:"数据不足",detail:"近期摆动高低点数据不足,无法评估突破确认状态",refPrice:levelPrice};
+  const n=candles.length;
+  const beyond=c=>dirSign>0?c.close>levelPrice:c.close<levelPrice;
+  const last=candles[n-1],prev=candles[n-2];
+  if(!beyond(last)){
+    return{state:"tracking",label:"跟踪中·未突破",
+      detail:`最新收盘 ${fmtPrice(last.close)} 尚未越过参考摆动位 ${fmtPrice(levelPrice)},在此之前不构成\"结构位突破延续\"`,refPrice:levelPrice};
+  }
+  const avgVol=volAvgBefore(candles,n-1,20);
+  const volMult=avgVol>0?(last.volume||0)/avgVol:null;
+  const volOK=avgVol>0&&(last.volume||0)>=avgVol*1.2;
+  if(!prev||!beyond(prev)){
+    return{state:"tentative",label:volOK?"暂破·待确认(已放量)":"暂破·待确认",
+      detail:`仅最新一根收盘越过 ${fmtPrice(levelPrice)}${volOK?`且放量(${volMult.toFixed(1)}倍均量)`:volMult!=null?`但量能仅${volMult.toFixed(1)}倍均量,未达1.2倍确认门槛`:"量能数据不足"},还需下一根继续收在线外才能排除单根插针假突破`,refPrice:levelPrice};
+  }
+  if(volOK){
+    return{state:"confirmed",label:"已确认突破",
+      detail:`连续2根收盘站稳 ${fmtPrice(levelPrice)} 外侧,且突破当根成交量达前20根均量的${volMult.toFixed(1)}倍,放量确认`,refPrice:levelPrice};
+  }
+  return{state:"tentative",label:"暂破·待确认(缺放量)",
+    detail:`已连续2根收盘站稳线外,但突破当根量能仅为前20根均量的${volMult!=null?volMult.toFixed(1):"–"}倍,未达1.2倍放量确认门槛,强度打折`,refPrice:levelPrice};
+}
 function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap){
   const fibHi=highs.length?Math.max(...highs.slice(-5).map(h=>h.price)):Math.max(...candles.slice(-80).map(c=>c.high));
   const fibLo=lows.length?Math.min(...lows.slice(-5).map(l=>l.price)):Math.min(...candles.slice(-80).map(c=>c.low));
@@ -3874,6 +4007,33 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
   // 这两个诉求,都直接体现在距离本身上,而不是靠感觉调参。
   const regimeSlMult=regime==="trend"?1.25:regime==="range"?1.05:1.0;
   const regimeTpMult=regime==="trend"?1.15:regime==="range"?0.8:1.0;
+  // ── SL 先算(顺序修复) ── 之前 SL 是在整段TP循环算完之后才算的,导致 TP1 的最小距离下限
+  // (minMults[0]×ATR)和 SL 的最小距离下限(0.8×ATR)是两条完全独立、互不知晓对方的线——震荡市系数
+  // 一个放大 SL(regimeSlMult)一个缩小 TP(regimeTpMult)的极端组合下,SL 下限(0.8×1.05≈0.84×ATR)会
+  // 反而比 TP1 下限(1.0×0.8=0.8×ATR)更远,算出"止损比首个止盈还宽"这种不成正比的计划,却完全没有
+  // 兜底。现在把 SL 挪到 TP 循环之前算,再把 riskDist 当成 TP1 minDist 的一条硬性下限(见下方循环
+  // 里的 minDist),从源头保证"TP1 的目标距离不会比止损距离还窄",而不是事后靠执行闸门的
+  // rr≥1.5 去被动过滤、把不成正比的计划原样展示成"仅供参考"。
+  const slCandidates=(dirSign>0?structure.supports:structure.resistances)
+    .filter(l=>dirSign>0?(l.price<entry&&(entry-l.price)>atrVal*0.5):(l.price>entry&&(l.price-entry)>atrVal*0.5));
+  let slPrice,slSources;
+  if(slCandidates[0]){
+    const buf=atrVal*0.4*regimeSlMult;
+    slPrice=dirSign>0?slCandidates[0].price-buf:slCandidates[0].price+buf;
+    slSources=slCandidates[0].sources;
+  }else{
+    slPrice=dirSign>0?entry-atrVal*2.0*regimeSlMult:entry+atrVal*2.0*regimeSlMult;
+    slSources=["ATR×2 默认缓冲(附近无结构确认位)"];
+  }
+  // enforce minimum SL distance: at least 0.8 ATR from entry(趋势市放宽/震荡市略收紧,见上方regimeSlMult)
+  const minSlDist=atrVal*0.8*regimeSlMult;
+  if(dirSign>0&&slPrice>entry-minSlDist)slPrice=entry-minSlDist;
+  if(dirSign<0&&slPrice<entry+minSlDist)slPrice=entry+minSlDist;
+  const riskDist=Math.abs(entry-slPrice);
+  // TP1 的盈亏比硬性下限。执行闸门要求"已触发"必须 R:R≥1.5,这里在源头就把 TP1 的最小距离顶到
+  // 1.3×riskDist(留一点余量,不等于1.5那条线本身,好让1.5仍然是一个有真实区分度的门槛,而不是
+  // 100%必然通过的摆设)——但无论如何,TP1 距离不会再小于止损距离,"止损比目标还宽"的情况被从源头堵死。
+  const minTp1RR=riskDist*1.3;
   // Minimum distances per TP tier: TP1≥1×ATR, TP2≥2×ATR, TP3≥3.2×ATR — ensures realistic non-trivial targets,均以限价入场价为起点
   // 上限从原先的65×ATR大幅收紧到18×ATR: 过远的"结构位"即便存在,也早已脱离该资产已实现波动率能支撑的合理范围,
   // 会导致"看似有结构确认、实则统计上不可能在标注周期内达成"的误导性目标 — 交给下面的触碰概率去真实评估,而不是硬选。
@@ -3895,8 +4055,9 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     // 密集区HVN),而 TP3 附近没有结构位、退化成"ATR×5.5"兜底,这个兜底距离反而比前两档的真实结构位距离更
     // 短,导致最终出现"TP3 比 TP1/TP2 还近、甚至方向上往回缩"这种不符合交易逻辑的倒挂(生产环境实测case:
     // TP1距离699点/TP2距离1438点,TP3的ATR兜底只有594点,比TP1还近)。加入 prevDist*1.15 这个下限后,
-    // 三档永远保证 TP1 < TP2 < TP3(按到入场价的距离,严格递增),形成正确的止盈阶梯。
-    const minDist=Math.max(atrVal*minMults[i]*regimeTpMult,prevDist*1.15);
+    // 三档永远保证 TP1 < TP2 < TP3(按到入场价的距离,严格递增),形成正确的止盈阶梯。第一档(i===0)
+    // 额外再加 minTp1RR 这条下限,确保 TP1 不会比止损距离还窄(见上方注释)。
+    const minDist=Math.max(atrVal*minMults[i]*regimeTpMult,prevDist*1.15,i===0?minTp1RR:0);
     let tpPrice,weight,sources;
     if(lvl&&Math.abs(lvl.price-entry)>=minDist){tpPrice=lvl.price;weight=lvl.weight;sources=lvl.sources;}
     else{
@@ -3907,6 +4068,7 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
       tpPrice=withMin;
       weight=0.4;
       sources=lvl?[`附近结构位与${i===0?"入场价":tps[i-1].label}距离过近,改用ATR递进扩展估算`]:["ATR 扩展估算(周边无强结构位)"];
+      if(i===0&&Math.abs(withMin-entry)>Math.abs(raw-entry))sources=["按盈亏比下限(TP1距离≥1.3×止损距离)扩展,避免止损比目标还宽"];
     }
     prevDist=Math.abs(tpPrice-entry);
     const dist=prevDist;
@@ -3934,22 +4096,7 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     }
     tps.push({label:hz.label,price:tpPrice,sources,weight,eta:etaMin,prob,horizon:horizonLabel,horizonMins});
   }
-  const slCandidates=(dirSign>0?structure.supports:structure.resistances)
-    .filter(l=>dirSign>0?(l.price<entry&&(entry-l.price)>atrVal*0.5):(l.price>entry&&(l.price-entry)>atrVal*0.5));
-  let slPrice,slSources;
-  if(slCandidates[0]){
-    const buf=atrVal*0.4*regimeSlMult;
-    slPrice=dirSign>0?slCandidates[0].price-buf:slCandidates[0].price+buf;
-    slSources=slCandidates[0].sources;
-  }else{
-    slPrice=dirSign>0?entry-atrVal*2.0*regimeSlMult:entry+atrVal*2.0*regimeSlMult;
-    slSources=["ATR×2 默认缓冲(附近无结构确认位)"];
-  }
-  // enforce minimum SL distance: at least 0.8 ATR from entry(趋势市放宽/震荡市略收紧,见上方regimeSlMult)
-  const minSlDist=atrVal*0.8*regimeSlMult;
-  if(dirSign>0&&slPrice>entry-minSlDist)slPrice=entry-minSlDist;
-  if(dirSign<0&&slPrice<entry+minSlDist)slPrice=entry+minSlDist;
-  const risk=Math.abs(entry-slPrice),reward=Math.abs(tps[0].price-entry);
+  const risk=riskDist,reward=Math.abs(tps[0].price-entry);
   // 注意: 这个 rr 只是"TP1 相对 SL"的盈亏比,不代表整套三档计划的风险回报——见下方 t.rr 才是每一档
   // 各自的盈亏比(TP3 的距离在上面的递进修复后必然 > TP2 > TP1,所以 TP3.rr 也必然是三档里最大的,
   // 越靠后的目标承担的时间更长,但对应换来的也应该是更高的盈亏比,这才是分批止盈的意义所在)。
@@ -4319,6 +4466,12 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   // Update table badge
   if(m)m.signalDir=dirSign;
 
+  // 突破确认分档: 参考位取"最近一个摆动高点(LONG)/摆动低点(SHORT)"——如果价格还没越过它,
+  // 诚实标为"跟踪中·未突破"(此时不该被算作突破延续机会);越过了则进一步核验是否连续2根收盘+放量,
+  // 而不是单根插针就被当成"结构位突破延续"。详见 computeBreakoutState。
+  const breakoutRef=dirSign>0?(highs.length?highs[highs.length-1].price:null):(lows.length?lows[lows.length-1].price:null);
+  const breakout=dirSign!==0?computeBreakoutState(candles,breakoutRef,dirSign):{state:"unknown",label:"无方向",detail:"未形成方向共识,暂不评估突破确认状态",refPrice:breakoutRef};
+
   // 指标同向占比 — 与加权得分比是两把不同的尺子:得分比可能被少数高权重指标拉高,
   // 而这里看的是"N项指标里到底有多少项真的指向同一个方向",两者都过线才算真正可信的趋势。
   const voteBull=clusterRes.clusterBull, voteBear=clusterRes.clusterBear, voteTotal=clusterRes.totalClusters;
@@ -4355,7 +4508,7 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign);
 
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,gate,bbU,bbL,bbM};
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,mtfDetail,gate,bbU,bbL,bbM,breakout,sigma:sigmaVal};
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
