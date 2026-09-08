@@ -1829,6 +1829,65 @@ async function fetchHigherTfForScan(symbol,interval){
     return entry;
   }
 }
+/* 2026-09-08 新增: "三通"三重共振信号(收盘价<日线EMA120 + 日线RSI<30超卖 + SKDJ日线/周线
+   双周期同时超卖≤15,移植自trading-scan的三通判定;顶部同理反向对称补一档"三重逃顶")之前
+   只能在单symbol深度视图里算,因为它依赖日线+周线K线,而机会雷达批量扫描一直没有给每个symbol
+   都拉一份日线+周线数据——不是没写,是权衡后没做:每轮90秒扫描 20~40 个symbol,如果每个都
+   现拉일日线+周线,请求量直接翻倍还多,正是"不想把请求量打爆"这条顾虑。
+   现在按用户要求做,但用更长的独立缓存把请求量摊薄到可接受的水平: 日线蜡烛一天只收一根、
+   周线一周只收一根,数据本身天然低频,没必要跟着90秒的扫描节奏重复拉取——这里用30分钟缓存
+   (SANTONG_SCAN_TTL_MS),平均下来20次扫描周期只真正发一次日线+周线请求,不是每次都发。
+   顺带把这份日线K线也喂给 cycleAnchor(周期锚定/仅做多仅做空判定)——之前这一条执行闸门
+   条件在批量扫描路径下因为拿不到日线数据,永远默认"neutral_both"(等于形同虚设、从不真正
+   拦人),现在用同一份已经拉到的日线数据顺便算出真实的周期锚定状态,是同一笔请求的免费产出,
+   不额外增加请求量。 */
+const santongScanCache=new Map(); // key: symbol -> {dailyCandles,weeklyCandles,fetchedAt}
+const SANTONG_SCAN_TTL_MS=30*60*1000;
+async function fetchSantongForScan(symbol){
+  const cached=santongScanCache.get(symbol);
+  if(cached&&Date.now()-cached.fetchedAt<SANTONG_SCAN_TTL_MS)return cached;
+  try{
+    const[dl,wl]=await Promise.all([
+      fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=260`),
+      fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=1w&limit=120`),
+    ]);
+    const entry={
+      dailyCandles:dl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]})),
+      weeklyCandles:wl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]})),
+      fetchedAt:Date.now()
+    };
+    santongScanCache.set(symbol,entry);
+    return entry;
+  }catch(e){
+    const entry={dailyCandles:[],weeklyCandles:[],fetchedAt:Date.now()};
+    santongScanCache.set(symbol,entry); // 失败也短暂缓存(仍受30分钟TTL约束),避免失效symbol每轮重试拖慢整体扫描
+    return entry;
+  }
+}
+/* 用日线+周线K线算出三通所需的四个数字,单symbol深度视图(用已有的cycleAnchorCandles/
+   weeklyAnchorCandles全局)与机会雷达批量扫描(用上面的独立缓存)最终都调这一个函数,
+   两处口径完全一致,不会出现"详情页说超卖、雷达说没有"这种同一个symbol两套结论的情况。*/
+function computeSantong(dailyCandles,weeklyCandles){
+  if(!dailyCandles||dailyCandles.length<125||!weeklyCandles||weeklyCandles.length<12)return null;
+  const cD=dailyCandles.map(c=>c.close),hD=dailyCandles.map(c=>c.high),lD=dailyCandles.map(c=>c.low);
+  const cW=weeklyCandles.map(c=>c.close),hW=weeklyCandles.map(c=>c.high),lW=weeklyCandles.map(c=>c.low);
+  const ema120=ema(cD,120),lastEma120=ema120[ema120.length-1];
+  const rsiD=rsi(cD,14),lastRsi=rsiD[rsiD.length-1];
+  const skdjD=tsComputeSKDJ(hD,lD,cD),skdjW=tsComputeSKDJ(hW,lW,cW);
+  const kD=skdjD.K[skdjD.K.length-1],kW=skdjW.K[skdjW.K.length-1];
+  const lastClose=cD[cD.length-1];
+  const skdjBottom=kD<=15&&kW<=15,skdjTop=kD>=80&&kW>=80;
+  const bottomFlag=lastClose<lastEma120&&lastRsi!=null&&lastRsi<30&&skdjBottom;
+  const topFlag=lastClose>lastEma120&&lastRsi!=null&&lastRsi>70&&skdjTop;
+  return{bottomFlag,topFlag,lastEma120,lastRsi,kD,kW,lastClose};
+}
+function santongVote(santong){
+  const name="三通(EMA120+RSI+SKDJ日周共振)";
+  if(!santong)return{name,cat:"meanrev",dir:0,detail:"日线/周线数据未就绪"};
+  if(santong.bottomFlag)return{name,cat:"meanrev",dir:1,detail:`收盘${fmtPrice(santong.lastClose)}<日线EMA120 ${fmtPrice(santong.lastEma120)} · 日线RSI ${santong.lastRsi.toFixed(1)}(超卖) · SKDJ日${santong.kD.toFixed(1)}/周${santong.kW.toFixed(1)}(双周期≤15) → 三重共振深度超卖`};
+  if(santong.topFlag)return{name,cat:"meanrev",dir:-1,detail:`收盘${fmtPrice(santong.lastClose)}>日线EMA120 ${fmtPrice(santong.lastEma120)} · 日线RSI ${santong.lastRsi.toFixed(1)}(超买) · SKDJ日${santong.kD.toFixed(1)}/周${santong.kW.toFixed(1)}(双周期≥80) → 三重共振深度超买`};
+  return{name,cat:"meanrev",dir:0,detail:`未触发三重共振(日线RSI ${santong.lastRsi!=null?santong.lastRsi.toFixed(1):"–"} · SKDJ日${santong.kD.toFixed(1)}/周${santong.kW.toFixed(1)})`};
+}
 async function fetchSignalContext(symbol){
   const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=${chartInterval}&limit=300`);
   const candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
@@ -1850,7 +1909,12 @@ async function fetchSignalContext(symbol){
   // 永远显示"加载中…"(dir=0,形同虚设)——这是让执行闸门里新增的"更大周期方向一致"这一条
   // 对雷达扫出来的每个币种都真正生效的前提,不只是对用户手动点开的那一个币种生效。
   const htf=await fetchHigherTfForScan(symbol,chartInterval);
-  return{candles,ctx:{oiHist,cvdHist,lsRatio,topLsRatio,topLsTrendSrc,takerRatio,fundingHist:[],higherTfCandles:htf.candles,higherTfLabel:htf.label}};
+  // 三通(见上方 fetchSantongForScan)与周期锚定共用同一份日线K线,一次请求两处都用上,
+  // 不为周期锚定单独再发一次日线请求。
+  const santongData=await fetchSantongForScan(symbol);
+  const santong=computeSantong(santongData.dailyCandles,santongData.weeklyCandles);
+  const cycleAnchorScan=computeCycleAnchor(santongData.dailyCandles);
+  return{candles,ctx:{oiHist,cvdHist,lsRatio,topLsRatio,topLsTrendSrc,takerRatio,fundingHist:[],higherTfCandles:htf.candles,higherTfLabel:htf.label,santong,cycleAnchorScan}};
 }
 
 async function scanOneOpportunity(symbol){
@@ -4193,6 +4257,34 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
    批量扫描循环。SKDJ+九转同理: 需要额外抓日线+周线K线,批量扫描如果每个symbol都
    多发2次请求会显著增加API负载,因此也只在Modal里对当前选中symbol计算。 */
 function tsToBars(candles){return candles.map(c=>({t:c.time,o:c.open,h:c.high,l:c.low,c:c.close,v:c.volume||0}));}
+/* 2026-09-08 新增: 三角/楔形/头肩顶底/双重顶底这套形态引擎(移植自trading-scan)之前只在
+   单symbol深度视图里画出来给人看,完全没有接入votes/confluence/执行闸门——对照trading-scan
+   的"逻辑和思维"复查后发现的真实缺口: 界面上显示的图形语言和模型自己用来做方向判断的
+   票数是两套互不相通的东西,图形只是好看,没有被模型真正"读懂"用来决策。现在接入实时信号
+   (computeSignal,含机会雷达批量扫描),但只有"已确认突破"(brk.state==="confirmed",即
+   连续收盘价确认过、不是单根插针式的暂破)才计入方向票,强度按各自的score(0-100)加权,
+   避免"跟踪中·未突破"的候选形态本身还没成立就先干扰了方向判断。谐波XABCD/艾略特0-5浪/
+   缠论中枢突破因为需要额外的递归确认或额外周期数据,继续留在单symbol深度视图供人工核实,
+   暂不计入自动信号——这是"部分图形形态未接入自动信号"的对称豁免,道理与OI/CVD/资金费率
+   这些"回测测不到的实盘专属信号"完全一样(见下方走步式回测的免责声明),不是隐藏的不一致,
+   而是同一份诚实边界的延伸。出于同样的性能考虑(逐bar跑三角/头肩这类窗口回归运算),这一票
+   只接入实时信号,不接入下方逐bar运行的走步式回测循环,避免把回测拖慢。 */
+function chartPatternVote(candles){
+  const name="图形形态(三角/楔形/头肩/双重顶底)";
+  if(!candles||candles.length<30)return{name,cat:"trend",dir:0,detail:"K线数据不足"};
+  const bars=tsToBars(candles);
+  const confirmed=[];
+  const tri=tsDetectTriangle(bars);
+  if(tri&&tri.dir&&tri.brk&&tri.brk.state==="confirmed")confirmed.push({label:tri.type,dir:tri.dir==="up"?1:-1,score:tri.score});
+  tsDetectStructural(bars).forEach(p=>{
+    if(p.dir&&p.brk&&p.brk.state==="confirmed")confirmed.push({label:p.type,dir:p.dir==="up"?1:-1,score:p.score});
+  });
+  if(!confirmed.length)return{name,cat:"trend",dir:0,detail:"当前K线未检测到已确认突破的形态(跟踪中/未突破的候选不计入方向判断,可在下方「形态识别」区查看)"};
+  const wSum=confirmed.reduce((a,c)=>a+c.score,0);
+  const dirW=wSum>0?confirmed.reduce((a,c)=>a+c.dir*c.score,0)/wSum:0;
+  const label=confirmed.map(c=>c.label).join(" + ");
+  return{name,cat:"trend",dir:dirW,detail:`已确认突破: ${label}(平均强度${Math.round(wSum/confirmed.length)}/100)`};
+}
 function tsClamp(n,a,b){return Math.max(a,Math.min(b,n));}
 function tsSmaSeries(arr,n,m){const out=new Array(arr.length);out[0]=arr[0];for(let i=1;i<arr.length;i++)out[i]=(m*arr[i]+(n-m)*out[i-1])/n;return out;}
 function tsComputeSKDJ(highs,lows,closes,N,M){
@@ -4580,7 +4672,7 @@ function clusterOfVoteName(name){
   if(/EMA|Vegas|MACD|Supertrend|VWAP|多周期共振/.test(name))return"A";
   if(/RSI|布林|KDJ|BIAS/.test(name))return"B";
   if(/CVD背离|量能挤压/.test(name))return"D";
-  if(/缠论|斐波|动量因子|量能|K线形态/.test(name))return"C";
+  if(/缠论|斐波|动量因子|量能|K线形态|图形形态/.test(name))return"C";
   if(/资金流|持仓量变化率|吃单买卖比|资金费率连续性|顶\/底部结构预警|清算流向|Deribit|期权/.test(name))return"D";
   if(/多空比\(散户|大户多空比/.test(name))return"E";
   if(/波动率状态/.test(name))return null; // 风险因子,不参与方向聚合(dir恒为0)
@@ -4702,7 +4794,27 @@ function computeCycleAnchor(candles){
    新增第六条"更大周期(MTF)方向一致"——直接回应"是不是太短线了"的质疑: 5分钟K线上算出来的
    方向,如果连自己往上一级的周期(比如5m→1h)都不同向,大概率只是小周期里的噪音抖动,
    不该被当作可执行的推荐。 */
-function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign){
+/* 2026-09-08 根因修复: 之前这里六条闸门是"通用款",不管机会属于四档时间维度分类
+   (classifyOpportunityType)里的哪一档,一律要求 regime!=="mixed" 且 MTF方向必须与本次
+   信号完全一致。这在逻辑上直接跟另外两档机会的定义自相矛盾:
+   · "日内脉冲"的定义就是"震荡/过渡区"(regime==="mixed" 正是它的典型触发场景,且新symbol
+     刚开始扫描时 liveRegimeStateStore 默认初始状态就是 mixed)——用"regime必须非mixed"
+     去卡一个定义域本身就是mixed的机会类型,等于这一档从物理上永远不可能通过闸门。
+   · "结构性拐点"的定义就是"趋势尚未被更大周期确认转向前抢反转"——如果硬要求MTF已经跟
+     本次方向完全一致,那时"拐点"早已变成后知后觉的顺势单,失去了它存在的意义。
+   这正是"推荐追踪/机会雷达长期空转、模型自己都相信的信号也进不了追踪"的结构性根因,不是
+   六条闸门本身松紧的问题——之前的两次修复(见上面2026-09-04/09-08两段记录)修的是"确认
+   进度会不会被清零"这个存储层问题,而这里是判定逻辑层面的问题,两者独立,都要修。
+   现在把 regime/MTF 这两条闸门按机会自己的类型分别定义,标准仍然写在每一条 check 的
+   detail 里,UI和追踪记录全部同源同标准(不新增第二套口径):
+   · wave(主升主跌浪): 保留最严标准——必须非过渡区 + 更大周期方向与本次完全一致。
+   · swing(波段趋势): 与 classifyOpportunityType 自己对 swing 的定义对齐——非过渡区,
+     但 MTF 只要求"不冲突"(sig.mtfDir!==-dirSign),不强求方向已经完全同向。
+   · turning(结构性拐点): 不限制 regime;MTF 只要求"没有处于与本次方向相反的强趋势中"
+     (不在教科书式主升浪半山腰硬猜顶/猜底),不要求MTF已经同向。
+   · pulse(日内脉冲): 不限制 regime(mixed本来就是它的定义域);MTF 同样只要求"不在相反
+     方向的强趋势里逆势摸顶摸底",不要求跟随更大周期。 */
+function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppType){
   const hasDirection=outlook.confirmed;
   const entryPx=plan.entry;
   const risk=plan.noSetup?null:Math.abs(entryPx-plan.sl);
@@ -4710,20 +4822,25 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   const rr1=(!plan.noSetup&&risk>0)?(reward1/risk):null;
   const confluenceOK=confluence>=60;
   const rrOK=!plan.noSetup&&rr1!=null&&rr1>=1.5;
-  const regimeOK=regime!=="mixed";
+  const isWave=oppType==="wave", isSwing=oppType==="swing", isTurning=oppType==="turning", isPulse=oppType==="pulse";
+  const regimeOK=(isTurning||isPulse)?true:(regime!=="mixed");
+  const strongOpposingTrend=regime==="trend"&&mtfDir!==0&&mtfDir===-dirSign; // MTF正处在与本次方向相反的强趋势里
+  const mtfOK=isWave?(hasDirection&&mtfDir!==0&&mtfDir===dirSign)
+    :isSwing?(hasDirection&&mtfDir!==-dirSign)
+    :(hasDirection&&!strongOpposingTrend); // turning/pulse: 只排除逆势摸顶摸底,不要求MTF已同向
   const cycleOK=!cycleConflict;
-  const reliabilityOK=reliability.tier==="reliable";
-  const mtfOK=hasDirection&&mtfDir!==0&&mtfDir===dirSign;
+  const reliabilityOK=isSwing?(reliability.tier==="reliable"||reliability.tier==="moderate"):(reliability.tier==="reliable");
+  const regimeLabelTxt=(isTurning||isPulse)?`${regimeLabel} · 该类型不限市场状态`:regimeLabel;
   const checks=[
     {key:"confluence",label:"信号共振度≥60%",pass:confluenceOK,detail:`当前 ${confluence}%`},
     {key:"rr",label:"首选TP1盈亏比≥1.5",pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
-    {key:"regime",label:"市场状态已明确(非过渡区)",pass:regimeOK,detail:regimeLabel},
+    {key:"regime",label:(isTurning||isPulse)?"市场状态(该档不限过渡区)":"市场状态已明确(非过渡区)",pass:regimeOK,detail:regimeLabelTxt},
     {key:"cycle",label:"不与周期锚定冲突",pass:cycleOK,detail:cycleAnchor.label},
-    {key:"reliability",label:"机会可信度=高",pass:reliabilityOK,detail:reliability.label},
-    {key:"mtf",label:"更大周期(MTF)方向一致 · 排除短线噪音",pass:mtfOK,detail:mtfDetail},
+    {key:"reliability",label:isSwing?"机会可信度=中或高":"机会可信度=高",pass:reliabilityOK,detail:reliability.label},
+    {key:"mtf",label:isWave?"更大周期(MTF)方向一致 · 排除短线噪音":isSwing?"更大周期不冲突":"未处于与本次方向相反的强趋势中(排除逆势摸顶摸底)",pass:mtfOK,detail:mtfDetail},
   ];
   const pass=hasDirection&&confluenceOK&&rrOK&&regimeOK&&cycleOK&&reliabilityOK&&mtfOK;
-  return{pass,hasDirection,checks,rr1};
+  return{pass,hasDirection,checks,rr1,oppType};
 }
 
 function computeSignal(candles,intervalLabel,symbol,ctx){
@@ -4839,6 +4956,14 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
     structDetail=`高点${hh?"抬升↑":"下移↓"} / 低点${hl?"抬升↑":"下移↓"} → ${structDir>0?"多头结构":structDir<0?"空头结构":"震荡结构"}`;
   }
   votes.push({name:"缠论 · 笔结构分析",cat:"trend",dir:structDir,detail:structDetail});
+  votes.push(chartPatternVote(candles));
+  // 三通: 批量扫描路径用 ctx.santong(见fetchSignalContext,已用该symbol自己的日线+周线算好);
+  // 单symbol深度视图没有ctx,退回原有的全局 cycleAnchorForSymbol/weeklyAnchorForSymbol 路径,
+  // 只有当前modal打开的正是这个symbol、且日线+周线锚定数据都已就绪时才算,否则显示"未就绪"
+  // 而不是编一个假结果。两条路径最终都调同一个 computeSantong 纯函数,口径不会分裂。
+  const santongForSig=(ctx&&ctx.santong!==undefined)?ctx.santong
+    :(cycleAnchorForSymbol===symbol&&weeklyAnchorForSymbol===symbol)?computeSantong(cycleAnchorCandles,weeklyAnchorCandles):null;
+  votes.push(santongVote(santongForSig));
 
   const volProfile=buildVolumeProfile(candles);
   const structure=buildStructureLevels(candles,price,highs,lows,volProfile,avwap);
@@ -4967,13 +5092,24 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
 
   // 周期锚定层判定 + 与本次战术方向做一致性检查——只在两者都已给出确定方向(非neutral_both/无方向)
   // 且明确相反时才标记为cycleConflict,这是执行闸门(见renderStrategySummary)的一票否决条件之一。
-  const cycleAnchor=(cycleAnchorForSymbol===symbol)?computeCycleAnchor(cycleAnchorCandles):
+  // 2026-09-08新增: 机会雷达批量扫描现在会通过 ctx.cycleAnchorScan 带一份用该symbol自己日线
+  // 算出来的真实周期锚定(见 fetchSignalContext/fetchSantongForScan),不再对批量扫描里的每个
+  // symbol都用"neutral_both"这个形同虚设的默认值——这条闸门条件终于对雷达扫出来的机会真正生效,
+  // 不只是对用户手动点开的那一个币种生效(单symbol深度视图仍走原有的全局
+  // cycleAnchorForSymbol/cycleAnchorCandles路径,两条路径用的都是同一个computeCycleAnchor纯函数)。
+  const cycleAnchor=(ctx&&ctx.cycleAnchorScan)?ctx.cycleAnchorScan:
+    (cycleAnchorForSymbol===symbol)?computeCycleAnchor(cycleAnchorCandles):
     {state:"neutral_both",label:"周期数据加载中(暂不限制方向)",detail:"日线数据尚未就绪,默认双向放行",slopePct:null};
   const cycleConflict=dirSign!==0&&((cycleAnchor.state==="long_only"&&dirSign<0)||(cycleAnchor.state==="short_only"&&dirSign>0));
 
   // 执行闸门在这里统一算一次,UI(renderStrategySummary)和追踪记录(recordTrackSignals)
-  // 都直接读 sig.gate,不再各算各的。
-  const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign);
+  // 都直接读 sig.gate,不再各算各的。闸门标准按机会所属的时间维度分档(见 computeExecutionGate
+  // 顶部2026-09-08修复记录),所以要先用一个只含分类所需字段的轻量对象跑一次
+  // classifyOpportunityType——分类本身不依赖gate,不构成循环依赖;真正返回给UI/追踪记录的
+  // sig.gate.oppType 与之后 classifyOpportunityType(sig) 用的是完全相同的输入字段,
+  // 两处分类结果必然一致,不会出现"闸门按A档判定、显示按B档分类"的口径分裂。
+  const oppTypeForGate=classifyOpportunityType({outlook,dirSign,topBottom:tbs,mtfDir,ciVal,er,regime,reliability}).key;
+  const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppTypeForGate);
 
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
     regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,mtfDetail,gate,bbU,bbL,bbM,breakout,sigma:sigmaVal};
@@ -6366,6 +6502,11 @@ function renderStrategySummary(sig){
   // 这一行是修复"顶部中性、底部SHORT"矛盾的核心。
   const direction=outlook.confirmed?(outlook.leanDir>0?"偏多 LONG 🟢":"偏空 SHORT 🔴"):"中性 NEUTRAL";
   const dirCls=outlook.confirmed?(outlook.leanDir>0?"bull":"bear"):"neutral";
+  // 明确标出这笔信号属于四档时间维度里的哪一档(短/中/长 + 反转档),不再让用户自己从
+  // 一堆指标里猜"这到底是该隔夜扛的波段还是该几十分钟内兑现的日内单"——这是"短中长线都要
+  // 明确注明"的直接实现,与 renderOpportunityRadar/推荐追踪 用的是同一套 classifyOpportunityType,
+  // 三处口径统一。
+  const oppTypeSummary=outlook.confirmed?classifyOpportunityType(sig):null;
   // Risk per TP — 以限价挂单入场价(plan.entry)为基准,而非当前市价,因为全部按 LIMIT 单执行
   // (plan.noSetup 时 entry/sl/tps 均为空,不构成交易机会,不计算风险回报比)
   const entryPx=plan.entry;
@@ -6430,6 +6571,10 @@ function renderStrategySummary(sig){
         <span class="strat-label">建议周期</span>
         <span class="strat-val">${esc(outlook.timeframe.label)} — ${esc(outlook.timeframe.note)}</span>
       </div>
+      ${oppTypeSummary?`<div class="strat-row">
+        <span class="strat-label">时间维度分类</span>
+        <span class="strat-val">${oppTypeSummary.icon} <b>${esc(oppTypeSummary.label)}</b> · 持有 ${esc(oppTypeSummary.hold)}<br><span class="dim" style="font-size:11px;">${esc(oppTypeSummary.logicNote)}</span></span>
+      </div>`:""}
       <div class="strat-row">
         <span class="strat-label">💰 建议仓位 / 杠杆</span>
         <span class="strat-val ${st.cls}"><b>${esc(st.label)}(把握度 ${outlook.conviction}/100)</b> · 仓位 ${st.posMin}%–${st.posMax}% 净值 · 杠杆 ${st.levMin}–${st.levMax}x<br><span class="dim" style="font-size:11px;">${esc(st.note)}</span></span>
@@ -6754,10 +6899,15 @@ function renderPatternBody(sig){
     const tdW=tsComputeTD(cW),tdWLast=tdW[tdW.length-1];
     const skdjBottom=kD<=15&&kW<=15,skdjTop=kD>=80&&kW>=80;
     const jiuzhuan=(tdDLast.count>=7&&tdWLast.count>=7&&tdDLast.dir===tdWLast.dir)?tdDLast.dir:null;
+    // 三通面板复用与实时信号完全同一个 computeSantong 纯函数(见文件顶部机会雷达批量扫描区),
+    // 不再在这里重复写一份判定逻辑——避免详情页和雷达/追踪对同一个symbol给出两套三通结论。
+    const santongDetail=computeSantong(cycleAnchorCandles,weeklyAnchorCandles);
+    const santongTxt=santongDetail?(santongDetail.bottomFlag?"⚪ 已触发三通(三重共振深度超卖)":santongDetail.topFlag?"⚪ 已触发三通(三重共振深度超买)":"未触发三通"):"数据不足";
     skdjTdHTML=`<div class="sig-note">SKDJ日线+周线共振: K(日)=${kD.toFixed(1)} · K(周)=${kW.toFixed(1)} → ${skdjBottom?"⚪ 双周期同时超卖(≤15),历史上常见于阶段性底部":skdjTop?"⚪ 双周期同时超买(≥80),历史上常见于阶段性顶部":"未形成双周期共振"}。
-      九转序列(TD Sequential): 日线第${tdDLast.count||0}${tdDLast.dir==="up"?"根卖出计数":tdDLast.dir==="down"?"根买入计数":"–"} · 周线第${tdWLast.count||0}${tdWLast.dir==="up"?"根卖出计数":tdWLast.dir==="down"?"根买入计数":"–"} → ${jiuzhuan?`⚪ 日线+周线同向且均达到9,${jiuzhuan==="up"?"警惕阶段性见顶":"警惕阶段性见底"}(九转序列是耗竭型信号,不代表立即反转,通常需要额外的形态/K线确认)`:"未触发双周期九转共振"}。</div>`;
+      九转序列(TD Sequential): 日线第${tdDLast.count||0}${tdDLast.dir==="up"?"根卖出计数":tdDLast.dir==="down"?"根买入计数":"–"} · 周线第${tdWLast.count||0}${tdWLast.dir==="up"?"根卖出计数":tdWLast.dir==="down"?"根买入计数":"–"} → ${jiuzhuan?`⚪ 日线+周线同向且均达到9,${jiuzhuan==="up"?"警惕阶段性见顶":"警惕阶段性见底"}(九转序列是耗竭型信号,不代表立即反转,通常需要额外的形态/K线确认)`:"未触发双周期九转共振"}。
+      三通(EMA120+RSI+SKDJ日周共振): ${santongTxt}${santongDetail&&santongDetail.lastRsi!=null?` · 日线RSI=${santongDetail.lastRsi.toFixed(1)} · 收盘${santongDetail.bottomFlag?"低于":santongDetail.topFlag?"高于":"相对"}日线EMA120 ${fmtPrice(santongDetail.lastEma120)}`:""} — 现已计入上方综合票数,不再只是这里的展示,机会雷达批量扫描也会用同一份数据同步判定(约30分钟刷新一次日线/周线,不跟随90秒扫描节奏)。</div>`;
   }else{
-    skdjTdHTML=`<div class="sig-note dim">SKDJ日线+周线共振 / 九转序列: 日线或周线锚定数据加载中…</div>`;
+    skdjTdHTML=`<div class="sig-note dim">SKDJ日线+周线共振 / 九转序列 / 三通: 日线或周线锚定数据加载中…</div>`;
   }
 
   const key=tsBtKey(selectedSymbol,chartInterval);
