@@ -1118,6 +1118,7 @@
       <span class="trk-title">推荐追踪 · TRACK RECORD</span>
       <span class="trk-sub">out-of-sample · 只记录不影响任何实盘决策的纯观察日志 · 需保持本页面在前台打开才会持续扫描,离开后再回来会自动补扫一次</span>
       <span class="trk-status" id="trkStatus">–</span>
+      <button class="trk-reset-btn" id="trkScanNowBtn" title="不等定时器,立刻手动跑一轮扫描(诊断/验证扫描引擎是否还在正常工作用)">▶ 立即扫描一次</button>
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
     </div>
     <div class="trk-body" id="trkBody">加载中…</div>
@@ -1574,6 +1575,12 @@ function init(){
       renderTrackPanel();
       return;
     }
+    const trkScanNow=e.target.closest("#trkScanNowBtn");
+    if(trkScanNow){
+      trkScanNow.disabled=true;const orig=trkScanNow.textContent;trkScanNow.textContent="扫描中…";
+      Promise.resolve(runOpportunityScan()).finally(()=>{trkScanNow.disabled=false;trkScanNow.textContent=orig;});
+      return;
+    }
     const trkReset=e.target.closest("#trkResetBtn");
     if(trkReset){
       if(confirm("清空全部追踪记录并重新开始校准?此操作不可撤销,只影响本机浏览器存储的追踪日志,不影响任何实盘仓位。")){
@@ -1627,6 +1634,17 @@ function init(){
   loadETF(); setInterval(loadETF,120000);
   renderTrackPanel(); // 先用localStorage里已有的记录渲染一次,不用等第一次扫描/结算跑完
   setInterval(settleTrackLog,TRACK_SETTLE_INTERVAL_MS);
+  // 2026-09-09 看门狗(第二道保险,不是主路径): 主路径现在是 refreshTopN 在 trackedSet 首次
+  // 填充时自己排定15秒后启动(见refreshTopN/initCrypto的2026-09-09修复记录),已经不再依赖
+  // initCrypto那次性的固定延迟。这里的60秒轮询留着当兜底——万一 scannerWarmupScheduled 那次
+  // setTimeout因为某些意外(比如页面在等待期间被挂起很久)没有真正执行到,每60秒补检查一次,
+  // 只要trackedSet已经有数据但扫描引擎还没启动,就补启动一次。
+  setInterval(()=>{
+    if(!opportunityScanTimer&&trackedSet.size>0){
+      console.log("[ORBIT] 60秒看门狗: 检测到trackedSet已就绪但扫描引擎未启动,补启动");
+      setupOpportunityScan();
+    }
+  },60000);
 }
 function tickClock(){
   const d=new Date();
@@ -1696,13 +1714,16 @@ async function initCrypto(){
     clearError("crypto"); renderCryptoTable(); refreshTopN(true); connectWS(); startOiPoller(); startRestFallbackPoller();
     if(rankTimer)clearInterval(rankTimer);
     rankTimer=setInterval(()=>refreshTopN(false),RANK_REFRESH_MS);
-    // give the OI poller / aggTrade CVD stream ~15s to accumulate a first data point per
-    // symbol before the first opportunity scan runs, so the earliest scan isn't all "数据不足"
-    setTimeout(setupOpportunityScan,15000);
+    cryptoInitRetryMs=5000; // 成功了,重置退避计时,下次万一再失败重新从5秒开始
+    console.log("[ORBIT] initCrypto 成功 · market="+market.size+" · trackedSet="+trackedSet.size);
   }catch(e){
     console.error("crypto init failed",e); setStatus("crypto","err","error");
     document.getElementById("tbodyCrypto").innerHTML='<tr><td colspan="10" class="dim" style="text-align:center;padding:28px;">加载失败</td></tr>';
     showError("crypto","Binance 数据加载失败: "+e.message);
+    // 自动退避重试,不再要求用户手动点重试按钮才能恢复——5秒起步,每次失败*1.5倍,封顶30秒。
+    console.log(`[ORBIT] initCrypto 失败,将于${(cryptoInitRetryMs/1000).toFixed(1)}秒后自动重试`);
+    setTimeout(initCrypto,cryptoInitRetryMs);
+    cryptoInitRetryMs=Math.min(cryptoInitRetryMs*1.5,30000);
   }
 }
 function refreshTopN(force){
@@ -1715,6 +1736,15 @@ function refreshTopN(force){
   trackedSet=newSet; oiPollQueue=[...trackedSet];
   document.getElementById("statTracked").textContent=trackedSet.size;
   renderCryptoTable();
+  // 扫描引擎启动时机: trackedSet第一次被填充非空时,等15秒让OI轮询/CVD聚合流积累出第一个
+  // 数据点(避免第一轮扫描一堆"数据不足"),再启动——只排一次(scannerWarmupScheduled卫哨),
+  // 不会每次refreshTopN跑都重复排定时器。不再依赖initCrypto那一次性、失败就永久不触发的
+  // setTimeout(见initCrypto的2026-09-09修复记录)。
+  if(!scannerWarmupScheduled&&!opportunityScanTimer&&trackedSet.size>0){
+    scannerWarmupScheduled=true;
+    console.log("[ORBIT] trackedSet 首次填充("+trackedSet.size+"个) · 15秒后启动机会扫描引擎");
+    setTimeout(()=>{if(!opportunityScanTimer)setupOpportunityScan();},15000);
+  }
   scheduleOpportunityRescan();
 }
 
@@ -1779,6 +1809,18 @@ const gatePendingConfirm = loadGateConfirm(); // symbol|dir -> {firstPassAt,last
 let opportunityResults = new Map(); // symbol -> {sig, ts}
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
 let lastOpportunityScanAt = 0;      // 标签页恢复前台时,用于判断该不该立刻补扫一次
+// 2026-09-09 新增: 用户报告"持仓热力图/推荐追踪长期空白"根因复查——之前 setupOpportunityScan
+// 只由 initCrypto() 成功路径里的一次性 setTimeout(…,15000) 触发。真正的坑在于:如果 initCrypto()
+// 第一次请求(exchangeInfo/ticker/24hr)失败(网络抖动/代理超时),catch块只是显示错误、
+// 什么都不重试——那个15秒定时器根本没被排到,trackedSet永远是空的,rankTimer/WS订阅/
+// setupOpportunityScan全部永久不会启动,必须手动点页面上的重试按钮才能恢复。之前加的60秒
+// 看门狗(见下方init末尾)只能治"trackedSet已经有数据但扫描器没启动"这一种情况,治不了
+// "trackedSet从头到尾都没数据"这一种——这才是真正的root cause。
+// 现在做两件事: ①initCrypto失败自动退避重试(而不是仅等用户手动点); ②扫描器启动时机从
+// "initCrypto成功后固定15秒"改成"trackedSet第一次被填充后再等15秒热身"——两者结合,
+// 不管API第一次是不是失败、失败几次,只要最终恢复,扫描器都会在数据填充后自动跟上,
+// 不再需要人工干预。
+let cryptoInitRetryMs=5000, scannerWarmupScheduled=false;
 const oppExpandedSymbols = new Set(); // 会话内记录总览表里哪些币种的"类型专属详情"被展开过,重绘时保持展开状态
 // 可折叠区块的展开状态 — 默认收起(false): "未来24小时潜在机会扫描"是概率地图不是机会,"观察中·仅供参考"
 // 是没过执行闸门的候选,两者都不该占着屏幕常驻显示;真正该常显的是下面 renderOpportunityRadar 里的
@@ -1786,11 +1828,74 @@ const oppExpandedSymbols = new Set(); // 会话内记录总览表里哪些币种
 let oppFutureOpen = false;
 let oppRefOpen = false;
 
+/* ── 扫描诊断(SCAN DIAGNOSTICS) ──
+   2026-09-09 新增: 之前两次"根因修复"(见上方2026-09-04/09-08记录)都是在看不到扫描引擎实际
+   运行状态的情况下凭代码逻辑猜根因,猜完之后如果没解决,用户和下一次排查者都无法判断到底是
+   "扫描根本没跑"(比如setupOpportunityScan意外没被调用/initCrypto一直失败/中间抛异常导致
+   opportunityScanning卡死)还是"扫描确实在跑,只是六项执行闸门+类型专属确认+150秒连续确认
+   这套本来就很严格的漏斗,恰好这段时间没有任何候选能穿透"——这两种情况给用户看到的现象完全
+   一样(推荐追踪/热力图长期空白),但原因和该不该"修"是两件完全不同的事:前者是bug,后者是
+   设计如此(见下方recordTrackSignals里"想要更多✅是靠行情本身出现更强共振,不是靠放宽闸门"
+   这条原则)。这里不再猜,而是把整条漏斗每一步的真实计数与最近N次扫描历史都存下来并展示出来,
+   把"为什么是空的"从黑箱变成可以一眼核对的事实;同时给扫描主循环加上try/catch兜底——任何
+   一步意外抛出异常,都不能让opportunityScanning卡在true从而让后续所有定时器永久失效,必须
+   把错误记下来、状态复位、下一轮90秒后继续尝试,而不是静默卡死。 */
+const SCAN_HISTORY_MAX = 20;
+const scanHistory = []; // 最近N次扫描: {ts,universeSize,resultCount,confirmedRows,qualifying,pending,pendingNearestRemainMs,error}
+let lastScanError = null;
+function pushScanHistory(entry){
+  scanHistory.push(entry);
+  if(scanHistory.length>SCAN_HISTORY_MAX)scanHistory.shift();
+}
+function scanEngineDiagnostics(){
+  const now=Date.now();
+  const pendingEntries=[...gatePendingConfirm.entries()].map(([key,v])=>{
+    const elapsed=now-v.firstPassAt;
+    const remain=Math.max(0,GATE_CONFIRM_MIN_MS-elapsed);
+    const[symbol,dir]=key.split("|");
+    return{symbol,dir:+dir,elapsedMs:elapsed,remainMs:remain};
+  }).sort((a,b)=>a.remainMs-b.remainMs);
+  return{
+    everStarted:!!opportunityScanTimer,
+    scanning:opportunityScanning,
+    lastScanAt:lastOpportunityScanAt,
+    msSinceLastScan:lastOpportunityScanAt?now-lastOpportunityScanAt:null,
+    universeSize:mainstreamUniverse().length,
+    resultCount:opportunityResults.size,
+    pending:pendingEntries,
+    lastError:lastScanError,
+    history:scanHistory.slice()
+  };
+}
+function renderScanDiagnostics(){
+  const d=scanEngineDiagnostics();
+  const engineLine=!d.everStarted
+    ?`<span class="dim2">⚪ 扫描引擎从未启动过(initCrypto尚未成功完成,15秒后会自动重试setupOpportunityScan)</span>`
+    :d.lastError
+      ?`<span class="down">⚠ 上一轮扫描抛出异常并已被捕获: ${esc(d.lastError.message||String(d.lastError))} · 已自动复位,下一轮90秒后继续</span>`
+      :d.scanning?`<span class="amb">🔄 扫描进行中…</span>`
+      :d.lastScanAt?`<span class="up">● 扫描引擎运行中</span> · 上次扫描 ${new Date(d.lastScanAt).toLocaleTimeString("zh-CN",{hour12:false})}(距今${Math.round(d.msSinceLastScan/1000)}秒)`
+      :`<span class="dim2">⚪ 引擎已启动,等待第一轮扫描…</span>`;
+  const pendTop=d.pending.slice(0,5).map(p=>`${esc(p.symbol.replace("USDT",""))}${p.dir>0?"多":"空"}(还需${Math.ceil(p.remainMs/1000)}秒确认)`).join(" · ");
+  const pendLine=d.pending.length?`闸门确认倒计时中: ${d.pending.length}个候选 · ${pendTop}`:`当前没有候选处于闸门确认倒计时中`;
+  const histCounts=d.history.map(h=>h.qualifying).join(",");
+  const histLine=d.history.length?`最近${d.history.length}次扫描每轮新增推荐数: [${esc(histCounts)}] · 每轮候选池 ${d.history[d.history.length-1].universeSize}个主流币 · 已过方向确认 ${d.history[d.history.length-1].confirmedRows}个`:"尚无扫描历史";
+  return`<div class="opp-status-line" style="margin-bottom:8px;">
+    <div>${engineLine}</div>
+    <div style="margin-top:4px;">${pendLine}</div>
+    <div style="margin-top:4px;" class="dim2">${histLine}</div>
+  </div>`;
+}
+
 function mainstreamUniverse(){
   // Deliberately NOT the whole market: only coins that are both (a) currently in the
   // volume-ranked tracked set (respects the Top20/25/30/40 dropdown) and (b) recognized
   // as an established/major coin via the existing CG_ID_MAP — this is the "主流币,不要
   // 太多小币" filter, using data already in the file rather than a new API dependency.
+  // 防御性检查(用户要求): trackedSet理论上不会是null/undefined(见refreshTopN,只会被赋值
+  // 为new Set(...)),这里加上是为了防止未来任何改动不小心引入这种情况时直接报错崩掉整条
+  // 扫描链路,而不是优雅地返回空数组等下一轮。
+  if(!trackedSet||trackedSet.size===0)return[];
   return [...trackedSet].filter(sym=>!!CG_ID_MAP[sym.replace("USDT","")]);
 }
 
@@ -1930,27 +2035,66 @@ async function runOpportunityScan(){
   opportunityScanning=true;
   setOppStatus("扫描中…");
   const universe=mainstreamUniverse();
-  // drop stale results for coins no longer in the universe (e.g. topN dropdown changed)
-  [...opportunityResults.keys()].forEach(s=>{if(!universe.includes(s))opportunityResults.delete(s);});
-  await poolRun(universe, scanOneOpportunity, OPP_CONCURRENCY);
+  let scanErr=null;
+  try{
+    // drop stale results for coins no longer in the universe (e.g. topN dropdown changed)
+    [...opportunityResults.keys()].forEach(s=>{if(!universe.includes(s))opportunityResults.delete(s);});
+    await poolRun(universe, scanOneOpportunity, OPP_CONCURRENCY);
+  }catch(e){
+    scanErr=e; // poolRun本身单币种已容错,这里兜底的是universe计算/清理逻辑本身意外抛出的情况
+  }
+  // 2026-09-09: opportunityScanning 必须在 renderOpportunityRadar 之前、且不论上面是否抛出异常都复位,
+  // 否则一旦 recordTrackSignals/renderOpportunityRadar 内部意外抛出未捕获异常,这个标志位会永久卡在
+  // true,后续每一次90秒定时器都会被顶部的 if(opportunityScanning)return; 挡回去,整条推荐追踪/热力图
+  // 链路从此静默死掉且没有任何报错提示——这正是"某天起就再也不更新,也看不出哪里报错"这类现象最危险
+  // 的成因之一,不管这次触发的实际原因是不是它,都必须堵死这个失效模式本身。
   opportunityScanning=false;
-  renderOpportunityRadar();
-  setOppStatus(`已更新 · ${new Date().toLocaleTimeString("zh-CN",{hour12:false})}`);
+  recordTrackSignals.lastStats=null;
+  try{
+    renderOpportunityRadar();
+  }catch(e){
+    scanErr=scanErr||e;
+    console.error("renderOpportunityRadar failed",e);
+  }
+  lastScanError=scanErr?{message:scanErr.message||String(scanErr),at:Date.now()}:null;
+  pushScanHistory({
+    ts:Date.now(),
+    universeSize:universe.length,
+    resultCount:opportunityResults.size,
+    confirmedRows:recordTrackSignals.lastStats?recordTrackSignals.lastStats.confirmedRows:0,
+    qualifying:recordTrackSignals.lastStats?recordTrackSignals.lastStats.qualifying:0,
+    pending:recordTrackSignals.lastStats?recordTrackSignals.lastStats.pending:gatePendingConfirm.size,
+    error:scanErr?(scanErr.message||String(scanErr)):null
+  });
+  setOppStatus(scanErr?`⚠ 本轮出错(已记录,自动重试): ${scanErr.message||scanErr}`:`已更新 · ${new Date().toLocaleTimeString("zh-CN",{hour12:false})}`);
+  renderTrackPanel(); // 让诊断行(扫描历史/闸门倒计时)跟每轮扫描同步刷新,不用等20秒结算定时器
 }
 function setOppStatus(text){const el=document.getElementById("oppStatus");if(el)el.textContent=text;}
+let opportunityVisibilityListenerAttached=false;
 function setupOpportunityScan(){
-  if(opportunityScanTimer)clearInterval(opportunityScanTimer);
+  // 防御性检查(用户要求): 已经在跑就不重复起一份新的定时器/请勿用空数据集空转。
+  if(opportunityScanTimer){console.log("[ORBIT] setupOpportunityScan: 已在运行,跳过重复启动");return;}
+  if(trackedSet.size===0){console.log("[ORBIT] setupOpportunityScan: trackedSet为空,暂不启动(等下一次数据就绪触发)");return;}
+  console.log("[ORBIT] setupOpportunityScan: 启动机会扫描引擎 · universe="+mainstreamUniverse().length+"个主流合约");
   runOpportunityScan();
   opportunityScanTimer=setInterval(runOpportunityScan, OPP_SCAN_INTERVAL_MS);
   // 移动端浏览器把后台标签页的定时器限流甚至完全暂停,是"推荐追踪长期不动"的常见外因
   // (浏览器省电策略,不是bug)。这里在标签页重新回到前台、且已经错过至少一个扫描周期时,
   // 立刻补扫一次,而不是干等下一个90秒的定时器,尽量把"离开又回来"的空档补回来。
-  document.addEventListener("visibilitychange",()=>{
-    if(document.visibilityState==="visible"&&!opportunityScanning&&Date.now()-lastOpportunityScanAt>OPP_SCAN_INTERVAL_MS){
-      setOppStatus("刚恢复到前台,正在补扫一次…");
-      runOpportunityScan();
-    }
-  });
+  // 2026-09-09修复: 这个监听器之前挂在setupOpportunityScan函数体内——如果setupOpportunityScan
+  // 被调用超过一次(理论上现在有"启动时机"改造+60秒看门狗两条路径都可能触发它,虽然都已加了
+  // if(opportunityScanTimer)卫哨基本不会真的并发,但作为独立的防御层不应该依赖那份卫哨不出错),
+  // 每调一次就会重复挂一个新的visibilitychange监听器,导致回到前台时重复触发多次补扫。
+  // 现在用opportunityVisibilityListenerAttached卫哨确保这个监听器全局只挂一次。
+  if(!opportunityVisibilityListenerAttached){
+    opportunityVisibilityListenerAttached=true;
+    document.addEventListener("visibilitychange",()=>{
+      if(document.visibilityState==="visible"&&!opportunityScanning&&Date.now()-lastOpportunityScanAt>OPP_SCAN_INTERVAL_MS){
+        setOppStatus("刚恢复到前台,正在补扫一次…");
+        runOpportunityScan();
+      }
+    });
+  }
 }
 // topN changes / tracked-set churn shouldn't spam re-scans — debounce to one scan ~2s after things settle
 function scheduleOpportunityRescan(){
@@ -2345,6 +2489,12 @@ function recordTrackSignals(rows){
   // 现在连续确认计数器额外要求 typeGateExtra(见机会时间维度分类)同时通过,才继续累加,
   // 任一条不满足就清零重来,而不是只看六条闸门。
   const seenKeys=new Set();
+  // 2026再修: 之前这里"只要有一次没过就立刻delete"导致 GATE_STALE_GAP_MS(5分钟宽限)这个
+  // 常量在实践中从未真正生效——六项闸门+类型专属条件在90秒扫描间隔里哪怕只是confluence从
+  // 61%抖到59%这种量级的噪音,就会让计数器归零重来,而 GATE_CONFIRM_MIN_MS(150秒)要求至少
+  // 连续2轮扫描零抖动才能过,这是雷达长期空白的主因,不是"市场没方向"。
+  // 现在允许一次单轮抖动不清零(missStreak<1时只记录未推进lastAt,不delete),连续两轮才真正
+  // 判定为"断了"重新计时——真正兑现注释里原本承诺的"短暂波动不应清零"。
   rows.forEach(x=>{
     const sig=x.r.sig;
     if(!sig||!sig.gate||sig.dirSign===0)return;
@@ -2355,9 +2505,18 @@ function recordTrackSignals(rows){
     if(sig.gate.pass&&extraOK){
       const prev=gatePendingConfirm.get(key);
       const broke=!prev||(now-prev.lastAt)>GATE_STALE_GAP_MS; // 中途真的断过(长时间未见)才重新计时,短暂刷新/后台不受影响
-      gatePendingConfirm.set(key,{firstPassAt:broke?now:prev.firstPassAt,lastAt:now});
+      gatePendingConfirm.set(key,{firstPassAt:broke?now:prev.firstPassAt,lastAt:now,missStreak:0});
     }else{
-      gatePendingConfirm.delete(key);
+      const prev=gatePendingConfirm.get(key);
+      const withinGap=prev&&(now-prev.lastAt)<=GATE_STALE_GAP_MS;
+      const missStreak=prev?(prev.missStreak||0)+1:1;
+      if(withinGap&&missStreak<=1){
+        // 容忍一次单轮抖动: 保留 firstPassAt(不重新计时),不推进 lastAt(避免被抖动"续命"太久),
+        // 只记一次未过的痕迹——连续第二次没过就会落到下面的 else,真正清零。
+        gatePendingConfirm.set(key,{...prev,missStreak});
+      }else{
+        gatePendingConfirm.delete(key);
+      }
     }
   });
   [...gatePendingConfirm.keys()].forEach(k=>{if(!seenKeys.has(k))gatePendingConfirm.delete(k);});
@@ -2377,6 +2536,8 @@ function recordTrackSignals(rows){
     const pend=gatePendingConfirm.get(x.symbol+"|"+sig.dirSign);
     return pend&&(now-pend.firstPassAt)>=GATE_CONFIRM_MIN_MS;
   });
+  // 供 runOpportunityScan 写入 scanHistory 诊断用,不影响任何判定逻辑本身。
+  recordTrackSignals.lastStats={confirmedRows:rows.length,qualifying:qualifying.length,pending:gatePendingConfirm.size};
   if(!qualifying.length)return;
   const log=getTrackLog();
   let changed=false;
@@ -2703,6 +2864,7 @@ function renderTrackPanel(){
   const gapAbs=s.calibrationGap!=null?Math.abs(s.calibrationGap):null;
   const calibCls=gapAbs==null?"":(gapAbs<=10?"good":gapAbs<=25?"":"bad");
   el.innerHTML=`
+    ${renderScanDiagnostics()}
     <div class="stat-mini-row">
       <div class="stat-mini"><span class="k">预测胜率(实时价格结算)</span><span class="v ${s.winRate==null?"":(s.winRate>=0.5?"up":"down")}">${fmtTrkPct(s.winRate)}</span><span class="note">已分胜负 n=${s.resolved}(${s.wins}胜${s.losses}负,另有${s.timeout}笔到期未分胜负)</span></div>
       <div class="stat-mini"><span class="k">期望值(R,每笔平均)</span><span class="v ${s.expectancy==null?"":(s.expectancy>=0?"up":"down")}">${s.expectancy!=null?(s.expectancy>=0?"+":"")+s.expectancy.toFixed(2)+"R":"–"}</span><span class="note">盈亏比 Profit Factor ${s.profitFactor==null?"–":(s.profitFactor===Infinity?"∞":s.profitFactor.toFixed(2))}</span></div>
@@ -4821,7 +4983,11 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   const reward1=(!plan.noSetup&&plan.tps&&plan.tps[0])?Math.abs(plan.tps[0].price-entryPx):0;
   const rr1=(!plan.noSetup&&risk>0)?(reward1/risk):null;
   const confluenceOK=confluence>=60;
-  const rrOK=!plan.noSetup&&rr1!=null&&rr1>=1.5;
+  // 2026再修: buildTradePlan 源头只保证 TP1距离 >= riskDist * tp1RRMin.baseline(=1.3),
+  // 这里之前却要求 rr1>=1.5——两个数字互相打架,等于系统性拒绝所有 RR 落在[1.3,1.5)区间、
+  // 本身完全合规的信号。改为跟 PARAM_CONFIG.tp1RRMin 同一个数字,不再凭空多出一道无依据的门槛。
+  const rrMinGate=P('tp1RRMin'); // 用 P()读取当前生效值(尊重用户在参数面板里的手动调整),不是写死的baseline
+  const rrOK=!plan.noSetup&&rr1!=null&&rr1>=rrMinGate;
   const isWave=oppType==="wave", isSwing=oppType==="swing", isTurning=oppType==="turning", isPulse=oppType==="pulse";
   const regimeOK=(isTurning||isPulse)?true:(regime!=="mixed");
   const strongOpposingTrend=regime==="trend"&&mtfDir!==0&&mtfDir===-dirSign; // MTF正处在与本次方向相反的强趋势里
@@ -4833,7 +4999,7 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   const regimeLabelTxt=(isTurning||isPulse)?`${regimeLabel} · 该类型不限市场状态`:regimeLabel;
   const checks=[
     {key:"confluence",label:"信号共振度≥60%",pass:confluenceOK,detail:`当前 ${confluence}%`},
-    {key:"rr",label:"首选TP1盈亏比≥1.5",pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
+    {key:"rr",label:`首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
     {key:"regime",label:(isTurning||isPulse)?"市场状态(该档不限过渡区)":"市场状态已明确(非过渡区)",pass:regimeOK,detail:regimeLabelTxt},
     {key:"cycle",label:"不与周期锚定冲突",pass:cycleOK,detail:cycleAnchor.label},
     {key:"reliability",label:isSwing?"机会可信度=中或高":"机会可信度=高",pass:reliabilityOK,detail:reliability.label},
