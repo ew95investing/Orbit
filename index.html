@@ -2067,6 +2067,10 @@ async function runOpportunityScan(){
     error:scanErr?(scanErr.message||String(scanErr)):null
   });
   setOppStatus(scanErr?`⚠ 本轮出错(已记录,自动重试): ${scanErr.message||scanErr}`:`已更新 · ${new Date().toLocaleTimeString("zh-CN",{hour12:false})}`);
+  // 2026再修: 之前这一轮扫描完全没有"跑完了"的console输出——只有开始时的[ORBIT]启动日志,
+  // 和"真出异常"才会有的console.error。正常跑完但没信号,跟卡住/中途死掉,从控制台上完全看
+  // 不出区别,上一次排查就是卡在这里。现在每轮扫描完,不论有没有信号,都打一行汇总,肉眼可辨。
+  console.log(`[ORBIT] runOpportunityScan 完成 · universe=${universe.length} · results=${opportunityResults.size} · confirmed=${recordTrackSignals.lastStats?recordTrackSignals.lastStats.confirmedRows:0} · pending=${gatePendingConfirm.size}${scanErr?" · ⚠错误: "+(scanErr.message||scanErr):""}`);
   renderTrackPanel(); // 让诊断行(扫描历史/闸门倒计时)跟每轮扫描同步刷新,不用等20秒结算定时器
 }
 function setOppStatus(text){const el=document.getElementById("oppStatus");if(el)el.textContent=text;}
