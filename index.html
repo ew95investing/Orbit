@@ -592,6 +592,8 @@
   .eta-live{display:inline-flex;align-items:center;gap:4px;color:var(--amber);font-weight:700;}
   .eta-live::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--amber);box-shadow:0 0 5px var(--amber);animation:blink 1.3s ease-in-out infinite;flex-shrink:0;}
   .rr-badge{display:inline-flex;align-items:center;gap:4px;background:var(--panel3);border:1px solid var(--line2);border-radius:3px;padding:2px 7px;font-size:12px;color:var(--amber);}
+  .ci-tag{display:inline-block;font-size:10.5px;color:var(--dim2);border:1px solid var(--line2);border-radius:3px;padding:1px 6px;margin-left:6px;}
+  .ci-tag.ci-wide{color:var(--amber);border-color:rgba(198,165,101,.35);}
   .horizon-badge{font-size:12px;padding:2px 6px;border-radius:3px;border:1px solid var(--line2);color:var(--blue);background:rgba(74,158,255,.06);}
 
   /* 按真实价格比例定位的时间轴(见 timelineHTML): 现价/入场/SL/TP1-3 全部在同一条轴上,左右位置由价格
@@ -603,15 +605,29 @@
      ① .meta 用 line-clamp 硬性限制最多2行、超出省略,保证每个节点的内容高度有明确上限;
      ② 容器高度从 112px 提高到 132px,略高于"两行meta"情形下的实际需要高度,留出安全余量。
      这样不管未来 meta 文案多长(比如新增的持仓预警文案),都不会再撑破/压穿下面的卡片。 */
-  .timeline-axis{position:relative;margin:18px 0 8px;height:132px;}
-  .axis-rail{position:absolute;top:5px;left:8%;right:8%;height:2px;background:var(--line);}
-  .axis-item{position:absolute;top:0;transform:translateX(-50%);width:118px;text-align:center;}
-  .axis-item .dot2{width:11px;height:11px;margin:0 auto 6px;border-radius:50%;border:2px solid var(--bg);box-shadow:0 0 6px currentColor;}
-  .axis-item .lbl{font-size:11px;color:var(--dim2);letter-spacing:.4px;}
-  .axis-item .px{font-size:13px;font-weight:700;margin-top:2px;}
+  /* 2026-09-10 时间轴重构: 之前所有节点挤在单行 + 事后"整体左移"修正 overflow,当节点数(7个:
+     现价/入场/失效撤单/SL/TP1-3)所需的最小间距总和超过轴的可用宽度时,左移会把最左侧的节点
+     (通常是TP2/TP3)直接推出容器左边界,肉眼看就是"文字被截断/飞出去"。
+     修复两部分: ① JS里minGap改成按节点数动态收窄,数学上保证永不越界(见 layoutAxisNodes),
+     不再需要事后"整体左移"这种治标不治本的兜底 ② 呈现方式改成上下交错(zig-zag)双行——
+     相邻节点分别贴轴上方/下方,同一行内的两个节点之间的实际可用间距因此翻倍,7个节点也能在
+     常见宽度下保持文字不重叠,而不必靠一直缩字号硬撑。 */
+  .timeline-axis{position:relative;margin:32px 0 10px;height:158px;}
+  .axis-rail{position:absolute;top:50%;left:6%;right:6%;height:2px;background:var(--line);transform:translateY(-50%);}
+  .axis-item{position:absolute;transform:translateX(-50%);width:102px;text-align:center;display:flex;flex-direction:column;align-items:center;}
+  .axis-item.pos-above{top:0;height:calc(50% - 2px);justify-content:flex-end;padding-bottom:7px;}
+  .axis-item.pos-below{top:calc(50% + 2px);height:calc(50% - 2px);justify-content:flex-start;padding-top:7px;}
+  .axis-item.pos-above .dot2{order:4;margin-top:5px;}
+  .axis-item.pos-above .lbl{order:3;}
+  .axis-item.pos-above .px{order:2;}
+  .axis-item.pos-above .meta{order:1;}
+  .axis-item.pos-below .dot2{order:0;margin-bottom:5px;}
+  .axis-item .dot2{width:10px;height:10px;border-radius:50%;border:2px solid var(--bg);box-shadow:0 0 6px currentColor;flex-shrink:0;}
+  .axis-item .lbl{font-size:10.5px;color:var(--dim2);letter-spacing:.3px;white-space:nowrap;}
+  .axis-item .px{font-size:12.5px;font-weight:700;line-height:1.25;margin:1px 0;}
   .axis-item.sl .px{color:var(--down);}
   .axis-item.entry .px{color:var(--amber);}
-  .axis-item .meta{font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.35;
+  .axis-item .meta{font-size:10px;color:var(--dim);line-height:1.3;
     display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
 
   /* ── STRUCTURE ── */
@@ -1073,6 +1089,11 @@
     <div class="etf-note" id="etfNote"></div>
   </div>
 
+  <div class="etf-strip" id="trendingStrip">
+    <span class="global-title">🔥热点轮动<em>CoinGecko</em></span>
+    <div class="etf-cards" id="trendingCards"><span class="dim">loading…</span></div>
+  </div>
+
   <div class="hero-overview" id="heroOverview">
     <div class="hero-donut-card">
       <div class="hero-head">
@@ -1122,6 +1143,8 @@
       <span class="trk-status" id="trkStatus">–</span>
       <button class="trk-reset-btn" id="trkScanNowBtn" title="不等定时器,立刻手动跑一轮扫描(诊断/验证扫描引擎是否还在正常工作用)">▶ 立即扫描一次</button>
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
+      <button class="trk-reset-btn" id="trkExportBtn" title="导出全部追踪记录为CSV文件(含入场/止损/止盈/结算结果),方便自己在Excel里存档或另行统计">⬇ 导出CSV</button>
+      <button class="trk-reset-btn" id="trkTgBtn" title="设置Telegram推送: 有新的推荐信号被记录时自动推送到你的Telegram,不用一直盯着屏幕">📨 Telegram推送</button>
     </div>
     <div class="trk-body" id="trkBody">加载中…</div>
   </div>
@@ -1239,6 +1262,50 @@ const RECONNECT_BASE_MS = 1500;
 const GLOBAL_POLL_MS = 45000;
 const FETCH_TIMEOUT_MS = 9000;
 const SIGNAL_THROTTLE_MS = 2000;
+
+/* 2026-09-10新增: BTC占比历史(来自CoinGecko /global,每次 loadGlobalCrypto 成功就追加一条),
+   用于判断"资金正在往BTC集中(山寨承压)"还是"资金正在往山寨扩散(山寨季)"——这是单看某一个
+   币种自己的K线永远看不到的宏观轮动层信息,Binance接口不提供全市值/占比数据,必须靠CoinGecko。
+   只保留最近约4小时的样本(45秒轮询*300条≈3.75小时),够算1小时趋势,又不无限增长占内存。 */
+const DOM_HIST_MAX=300;
+let btcDominanceHistory=[];
+function pushDominanceHistory(domPct,totalMcap){
+  btcDominanceHistory.push({t:Date.now(),dom:domPct,mcap:totalMcap});
+  if(btcDominanceHistory.length>DOM_HIST_MAX)btcDominanceHistory.shift();
+}
+function domTrendOverMs(ms){
+  if(btcDominanceHistory.length<2)return null;
+  const now=Date.now();
+  const cur=btcDominanceHistory[btcDominanceHistory.length-1];
+  let base=null;
+  for(let i=0;i<btcDominanceHistory.length;i++){
+    if(btcDominanceHistory[i].t<=now-ms)base=btcDominanceHistory[i];else break;
+  }
+  if(!base)base=btcDominanceHistory[0];
+  if(base===cur)return null;
+  return{domDelta:cur.dom-base.dom,
+    mcapDelta:base.mcap?((cur.mcap-base.mcap)/base.mcap*100):null,
+    spanMin:Math.round((cur.t-base.t)/60000)};
+}
+/* 宏观投票: 对BTC自己而言,占比上升=资金正在向BTC集中(偏多本币);对山寨币而言,
+   占比上升=资金从山寨流向BTC(对山寨多单是逆风),占比下降=山寨季迹象(对山寨多单是顺风)。
+   样本不足20分钟时不给方向(cat:"neutral",不参与趋势/震荡动态加权,只是加法项)。 */
+function macroDominanceVote(symbol){
+  const name="宏观 · BTC占比轮动(CoinGecko,山寨季/BTC季判断)";
+  const trend=domTrendOverMs(60*60*1000);
+  if(!trend||trend.spanMin<20)return{name,cat:"neutral",dir:0,detail:"宏观历史数据积累中(需要约20分钟以上的BTC占比走势样本才开始生效)"};
+  const domUp=trend.domDelta>0.15,domDown=trend.domDelta<-0.15;
+  const base=symbol.replace("USDT","");
+  let dir=0,detail;
+  if(base==="BTC"){
+    dir=domUp?0.4:domDown?-0.2:0;
+    detail=`近${trend.spanMin}分钟BTC市值占比${trend.domDelta>=0?"+":""}${trend.domDelta.toFixed(2)}个百分点 → ${domUp?"资金正向BTC集中":domDown?"资金正从BTC扩散至山寨":"占比持平,无明显偏向"}`;
+  }else{
+    dir=domDown?0.4:domUp?-0.4:0;
+    detail=`近${trend.spanMin}分钟BTC市值占比${trend.domDelta>=0?"+":""}${trend.domDelta.toFixed(2)}个百分点 → ${domDown?"山寨季迹象,对本币多单是顺风":domUp?"资金正回流BTC,对本币多单是逆风":"占比持平,无明显宏观偏向"}`;
+  }
+  return{name,cat:"neutral",dir,detail};
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    PARAM_CONFIG — 关键策略参数集中化(原先分散写死在各函数体内的字面量)。
@@ -1464,6 +1531,93 @@ function fmtEtaFull(mins){
   return "≈"+(mins/60/24).toFixed(1)+" 天";
 }
 function esc(s){return(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+/* ==================== 移植自 trading-scan: Wilson 置信区间 ====================
+   小样本胜率光看一个百分比数字会显得比实际更"确定"——n=8时62.5%和n=200时62.5%
+   可信度天差地别,但两者显示出来一模一样。Wilson score interval 给出该胜率在95%置信度下
+   真实值可能落在的区间,样本越小区间越宽,直观提醒"这个数字目前还不够稳"。 */
+function wilsonCI(k,n,z){
+  z=z||1.96; if(!n)return[0,0];
+  const p=k/n,d=1+z*z/n;
+  const c=(p+z*z/(2*n))/d;
+  const half=(z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n)))/d;
+  return[Math.max(0,Math.min(100,(c-half)*100)),Math.max(0,Math.min(100,(c+half)*100))];
+}
+function ciLabel(wins,n){
+  if(!n)return"";
+  const[lo,hi]=wilsonCI(wins,n);
+  const wide=(hi-lo)>=40; // 区间跨度≥40个百分点 → 样本太小,数字还谈不上可信
+  return`<span class="ci-tag${wide?" ci-wide":""}" title="Wilson 95%置信区间: 样本量为n=${n}时,真实胜率有95%概率落在这个区间内,区间越宽代表样本越小、这个胜率数字越不可信">95%CI ${lo.toFixed(0)}–${hi.toFixed(0)}%</span>`;
+}
+
+/* ==================== 移植自 trading-scan: CSV导出(追踪日志) ====================
+   导出这一份而不是回测结果,是因为追踪日志才是"这个工具自己出过什么牌、结果如何"的
+   完整审计记录——对需要留痕核对的使用场景(比如自己另外做税务/复盘统计)更有用。 */
+function exportTrackLogCSV(){
+  const log=getTrackLog();
+  if(!log.length){alert("追踪日志目前是空的,暂无可导出的记录。");return;}
+  const cols=["id","symbol","dir","status","createdAt","filledAt","entry","sl","invalidatePrice",
+    "tp1","tp2","tp3","conviction","regimeLabel","sizeTierLabel","timeframeLabel","oppTypeLabel",
+    "resolvedAt","resolvedPrice","resolvedLabel"];
+  const fmtTs=t=>t?new Date(t).toISOString():"";
+  const rows=log.slice().sort((a,b)=>a.createdAt-b.createdAt).map(r=>{
+    const tps=r.tps||[];
+    const cells={
+      id:r.id,symbol:r.symbol,dir:r.dir>0?"LONG":"SHORT",status:r.status,
+      createdAt:fmtTs(r.createdAt),filledAt:fmtTs(r.filledAt),
+      entry:r.entry,sl:r.sl,invalidatePrice:r.invalidatePrice,
+      tp1:tps[0]?tps[0].price:"",tp2:tps[1]?tps[1].price:"",tp3:tps[2]?tps[2].price:"",
+      conviction:r.conviction,regimeLabel:r.regimeLabel,sizeTierLabel:r.sizeTierLabel,
+      timeframeLabel:r.timeframeLabel,oppTypeLabel:r.oppTypeLabel,
+      resolvedAt:fmtTs(r.resolvedAt),resolvedPrice:r.resolvedPrice,resolvedLabel:r.resolvedLabel
+    };
+    return cols.map(c=>{
+      let v=cells[c];if(v==null)v="";v=String(v).replace(/"/g,'""');
+      return /[",\n]/.test(v)?`"${v}"`:v;
+    }).join(",");
+  });
+  const csv="\uFEFF"+cols.join(",")+"\n"+rows.join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`orbit_tracklog_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+/* ==================== 移植自 trading-scan: Telegram 推送 ==================== */
+const TG_CFG_KEY="orbit_tg_cfg";
+function tgConfig(){try{return JSON.parse(localStorage.getItem(TG_CFG_KEY)||"null")||{token:"",chatId:"",enabled:false};}catch(e){return{token:"",chatId:"",enabled:false};}}
+function saveTgConfig(cfg){try{localStorage.setItem(TG_CFG_KEY,JSON.stringify(cfg));}catch(e){}}
+async function sendTelegramMessage(text){
+  const cfg=tgConfig();
+  if(!cfg.enabled||!cfg.token||!cfg.chatId)return false;
+  try{
+    const url=`https://api.telegram.org/bot${cfg.token}/sendMessage`;
+    const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({chat_id:cfg.chatId,text,parse_mode:"HTML"})});
+    return res.ok;
+  }catch(e){console.error("Telegram推送失败",e);return false;}
+}
+function buildTgMessage(entry){
+  const dirLabel=entry.dir>0?"🟢做多 LONG":"🔴做空 SHORT";
+  const tpLines=(entry.tps||[]).map((t,i)=>`TP${i+1} ${fmtPrice(t.price)}(R:R ${t.rr||"–"})`).join("\n");
+  return `<b>ORBIT 新推荐 · ${esc(entry.symbol)}</b>\n${dirLabel} · 把握度${entry.conviction}\n入场 ${fmtPrice(entry.entry)} · SL ${fmtPrice(entry.sl)}\n${tpLines}\n类型: ${esc(entry.oppTypeLabel||"")} · ${esc(entry.timeframeLabel||"")}`;
+}
+function promptTelegramSetup(){
+  const cfg=tgConfig();
+  const token=prompt("设置Telegram推送 — 第1步:\n请输入Bot Token(找 @BotFather 创建一个机器人即可获得,留空并确定=关闭推送):",cfg.token||"");
+  if(token===null)return;
+  if(!token.trim()){saveTgConfig({token:"",chatId:"",enabled:false});alert("已关闭Telegram推送。");return;}
+  const chatId=prompt("设置Telegram推送 — 第2步:\n请输入接收消息的Chat ID(给 @userinfobot 发一条消息即可查到自己的ID):",cfg.chatId||"");
+  if(chatId===null)return;
+  const enabled=!!(token.trim()&&chatId.trim());
+  saveTgConfig({token:token.trim(),chatId:chatId.trim(),enabled});
+  if(enabled){
+    sendTelegramMessage("✅ ORBIT 已连接成功。此后每有新的推荐信号被正式记录(通过全部执行闸门+连续确认),会自动推送到这里。").then(ok=>{
+      alert(ok?"设置成功,测试消息已发送,请检查Telegram。":"已保存设置,但测试消息发送失败,请检查Token/ChatID是否正确,或该Bot是否已被你在Telegram里点击过Start。");
+    });
+  }
+}
 function fmtTimeSgt(ms){
   const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(new Date(ms));
   const p={};parts.forEach(x=>p[x.type]=x.value);
@@ -1598,6 +1752,10 @@ function init(){
       }
       return;
     }
+    const trkExport=e.target.closest("#trkExportBtn");
+    if(trkExport){exportTrackLogCSV();return;}
+    const trkTg=e.target.closest("#trkTgBtn");
+    if(trkTg){promptTelegramSetup();return;}
     const btn=e.target.closest(".bt-run-btn");
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
@@ -1638,6 +1796,7 @@ function init(){
   initOrbitCore();
   initCrypto();
   loadGlobalCrypto(); setInterval(loadGlobalCrypto,GLOBAL_POLL_MS);
+  loadTrendingCoins(); setInterval(loadTrendingCoins,TRENDING_POLL_MS);
   setInterval(pruneLiquidations,600000);
   loadETF(); setInterval(loadETF,120000);
   renderTrackPanel(); // 先用localStorage里已有的记录渲染一次,不用等第一次扫描/结算跑完
@@ -2269,7 +2428,7 @@ function oppTriggerState(sig,type){
   const gate=sig.gate;
   const extra=typeGateExtra(sig,type);
   if(!gate||!gate.pass||!extra.pass){
-    return{cls:"fail",badge:"⛔ 仅供参考",detail:!extra.pass?extra.reason:"未过执行闸门(见下方六项条件)"};
+    return{cls:"fail",badge:"⛔ 仅供参考",detail:!extra.pass?extra.reason:"未过执行闸门(方向/盈亏比为硬性条件,其余五项软确认最多容错1项,见下方明细)"};
   }
   const pend=gatePendingConfirm.get((sig.symbol||"")+"|"+sig.dirSign);
   const elapsed=pend?Date.now()-pend.firstPassAt:0;
@@ -2492,7 +2651,7 @@ function renderOpportunityRadar(){
     const passN=withMeta.filter(x=>x.trig.cls==="pass").length;
     const pendN=withMeta.filter(x=>x.trig.cls==="pending").length;
     const failN=withMeta.filter(x=>x.trig.cls==="fail").length;
-    statusEl.innerHTML=`<b>${withMeta.length}</b> 个方向已确认的候选 · <span class="up">✅ ${passN} 笔已触发计入追踪</span> · <span class="amb">⏳ ${pendN} 笔确认中</span> · <span class="dim2">⛔ ${failN} 笔仅供参考</span>(六项执行闸门+该类型专属确认条件任一未过,不计入追踪)。想要更多✅是靠行情本身出现更强共振,不是靠放宽闸门——放宽闸门只会让追踪校准的胜率数字失去意义。`;
+    statusEl.innerHTML=`<b>${withMeta.length}</b> 个方向已确认的候选 · <span class="up">✅ ${passN} 笔已触发计入追踪</span> · <span class="amb">⏳ ${pendN} 笔确认中</span> · <span class="dim2">⛔ ${failN} 笔仅供参考</span>(方向/盈亏比未达标,或五项软确认里错了2项以上,或该类型专属确认条件未过,不计入追踪)。想要更多✅是靠行情本身出现更强共振,不是靠继续放宽闸门——闸门放太松会让追踪校准的胜率数字失去意义。`;
   }
   const nearMissEl=document.getElementById("oppNearMiss");
   if(nearMissEl){
@@ -2647,7 +2806,7 @@ function recordTrackSignals(rows){
     }
     const tv=topVoteFor(sig);
     const oppType=classifyOpportunityType(sig);
-    log.push({
+    const newEntry={
       id:symbol+"_"+dir+"_"+now+"_"+Math.random().toString(36).slice(2,7),
       symbol,dir,
       entry:p.entry,sl:p.sl,invalidatePrice:p.entryInfo.invalidatePrice,
@@ -2659,8 +2818,13 @@ function recordTrackSignals(rows){
       createdAt:now,status:"awaiting",
       filledAt:null,filledPrice:null,mfe:null,
       resolvedAt:null,resolvedPrice:null,resolvedLabel:null
-    });
+    };
+    log.push(newEntry);
     changed=true;
+    // 移植自 trading-scan 的 Telegram 推送: 有新的一笔通过全部执行闸门+连续确认的推荐被
+    // 正式记录时才推送(与写入追踪日志用同一个判定时点),不对扫描过程中的候选/观察项推送,
+    // 避免刷屏。失败静默(不阻断记录本身),已开启但发送失败时只在控制台留痕。
+    sendTelegramMessage(buildTgMessage(newEntry)).catch(()=>{});
   });
   if(changed)saveTrackLog(log);
 }
@@ -2798,6 +2962,12 @@ function renderTrkDetail(r,pnl){
     ?`假设仓位: 保证金 ${TRACK_POSITION_MARGIN_USDT.toLocaleString()}U · ${TRACK_POSITION_LEVERAGE}x杠杆(名义 ${(TRACK_POSITION_MARGIN_USDT*TRACK_POSITION_LEVERAGE).toLocaleString()}U) · 数量≈${pnl.qty.toFixed(pnl.qty<1?4:2)} ${r.symbol.replace("USDT","")} · 未计入手续费与资金费率,仅供直观参考,不是真实建议仓位。`
     :"尚未成交,暂无持仓盈亏可算。";
   const drift=trkSignalDriftInfo(r);
+  // 2026-09-10 P1-4配套修复: r.entry是系统建议限价、r.filledPrice是settleTrackLog用market.price
+  // 自动模拟出来的"系统成交价",两者都不是用户自己在交易所的真实成交价——用户点开这里的
+  // "限价入场"/"实际成交"字样,很容易误以为这就是自己当初成交的价格。这两套记录(orbit_tracklog
+  // 的系统模拟 vs orbit_positions 的用户手动标记)本来就是故意分开的独立系统,这里加一句澄清,
+  // 避免用户拿这里的数字去对自己的真实持仓算账。
+  const clarityNote=`⚠️ 本卡片是"推荐追踪"的纯观察记录——系统按模型建议的入场价自动模拟成交、自动结算,不是你的真实持仓。你在交易所实际成交了什么价,请到币种详情弹窗点【标记已入场】手动填写,系统会在"持仓论文追踪"卡片里单独跟踪,两套记录互不影响、不会互相覆盖。`;
   return`
     <div class="trk-detail-row"><span>推荐时间</span><span>${fmtTrkDateTime(r.createdAt)}</span></div>
     <div class="trk-detail-row"><span>限价入场</span><span>${fmtPrice(r.entry)}</span></div>
@@ -2810,7 +2980,8 @@ function renderTrkDetail(r,pnl){
     ${r.oppTypeLabel?`<div class="trk-detail-row"><span>机会类型</span><span>${esc(r.oppTypeLabel)} · ${esc(r.oppTypeHold||"")}</span></div>`:""}
     ${r.reasonName?`<div class="trk-detail-row"><span>主要理由</span><span>${esc(r.reasonName)}: ${esc(r.reasonDetail)}</span></div>`:""}
     ${drift?`<div class="trk-detail-row"><span>当前实时信号</span><span>${esc(drift.text)}</span></div>`:""}
-    <div class="trk-detail-pos">${posNote}</div>`;
+    <div class="trk-detail-pos">${posNote}</div>
+    <div class="sig-note" style="margin-top:6px;color:var(--amber);">${clarityNote}</div>`;
 }
 function trkBadge(r){
   const map={awaiting:["等待成交","awaiting"],filled:["持仓中","filled"],win:["✓ "+(r.resolvedLabel||"止盈"),"win"],
@@ -2965,7 +3136,7 @@ function renderTrackPanel(){
   el.innerHTML=`
     ${renderScanDiagnostics()}
     <div class="stat-mini-row">
-      <div class="stat-mini"><span class="k">预测胜率(实时价格结算)</span><span class="v ${s.winRate==null?"":(s.winRate>=0.5?"up":"down")}">${fmtTrkPct(s.winRate)}</span><span class="note">已分胜负 n=${s.resolved}(${s.wins}胜${s.losses}负,另有${s.timeout}笔到期未分胜负)</span></div>
+      <div class="stat-mini"><span class="k">预测胜率(实时价格结算)</span><span class="v ${s.winRate==null?"":(s.winRate>=0.5?"up":"down")}">${fmtTrkPct(s.winRate)}${s.resolved?ciLabel(s.wins,s.resolved):""}</span><span class="note">已分胜负 n=${s.resolved}(${s.wins}胜${s.losses}负,另有${s.timeout}笔到期未分胜负)</span></div>
       <div class="stat-mini"><span class="k">期望值(R,每笔平均)</span><span class="v ${s.expectancy==null?"":(s.expectancy>=0?"up":"down")}">${s.expectancy!=null?(s.expectancy>=0?"+":"")+s.expectancy.toFixed(2)+"R":"–"}</span><span class="note">盈亏比 Profit Factor ${s.profitFactor==null?"–":(s.profitFactor===Infinity?"∞":s.profitFactor.toFixed(2))}</span></div>
       <div class="stat-mini"><span class="k">限价单成交/撤单/过期</span><span class="v">${s.filledOpen+s.resolved+s.timeout}/${s.invalidated}/${s.expired}</span><span class="note">总推荐 ${s.totalSignals} 笔(≥${TRACK_CONVICTION_MIN}%把握才记)</span></div>
     </div>
@@ -3372,6 +3543,13 @@ async function loadGlobalCrypto(){
       parts.push(cardHTML("总市值","$"+fmtNum(d.total_market_cap.usd),(chg>=0?"+":"")+chg.toFixed(2)+"% 24h",chg>=0));
       parts.push(cardHTML("BTC 占比",d.market_cap_percentage.btc.toFixed(1)+"%","dominance",true));
       if(d.market_cap_percentage.eth!=null)parts.push(cardHTML("ETH 占比",d.market_cap_percentage.eth.toFixed(1)+"%","dominance",true));
+      pushDominanceHistory(d.market_cap_percentage.btc,d.total_market_cap.usd);
+      const trend=domTrendOverMs(60*60*1000);
+      if(trend&&trend.spanMin>=20){
+        const domDown=trend.domDelta<-0.15,domUp=trend.domDelta>0.15;
+        parts.push(cardHTML("轮动("+trend.spanMin+"分钟)",(trend.domDelta>=0?"+":"")+trend.domDelta.toFixed(2)+"pp",
+          domDown?"🟢山寨季迹象":domUp?"🔴资金回流BTC":"持平",domDown));
+      }
     }
     if(fng&&fng.data&&fng.data[0]){const f=fng.data[0];parts.push(cardHTML("恐惧贪婪",f.value,f.value_classification,+f.value>=50));}
     parts.push(cardHTML("Binance 清算(今日)","$"+fmtUsd(globalLiq.buyUsd+globalLiq.sellUsd),"多$"+fmtUsd(globalLiq.sellUsd)+" 空$"+fmtUsd(globalLiq.buyUsd),globalLiq.sellUsd<=globalLiq.buyUsd));
@@ -3386,6 +3564,26 @@ async function fetchCoinGeckoPrice(id){
     const d=j[id];if(!d||d.usd==null)return null;
     return{price:d.usd,vol:d.usd_24h_vol,mcap:d.usd_market_cap};
   }catch(e){return null;}
+}
+/* 2026-09-10新增: CoinGecko /search/trending —— 全网按24小时搜索量激增排出来的热点币种,
+   代表"注意力/叙事正在往哪转移",这类轮动往往先于价格反映在具体某个币种自己的K线上,是
+   单纯盯着已追踪的合约K线看不到的前瞻信息。只做展示,不接入方向投票(样本噪音大、
+   且很多热点币根本没有Binance永续合约、无法直接据此下单),纯粹给"市场现在在关注什么"
+   提供一个宏观视角的参考。5分钟刷新一次,避免消耗过多CoinGecko免费额度。 */
+const TRENDING_POLL_MS=300000;
+async function loadTrendingCoins(){
+  const el=document.getElementById("trendingCards");
+  if(!el)return;
+  try{
+    const j=await fetchJSONRaw(COINGECKO+"/search/trending");
+    const list=(j&&j.coins||[]).slice(0,7).map(c=>c.item);
+    if(!list.length){el.innerHTML='<span class="dim">暂无数据</span>';return;}
+    el.innerHTML=list.map((c,i)=>{
+      const chg=c.data&&c.data.price_change_percentage_24h&&c.data.price_change_percentage_24h.usd;
+      const chgTxt=chg!=null?(chg>=0?"+":"")+chg.toFixed(1)+"%":"";
+      return `<div class="macro-card" title="全网搜索热度排名 #${i+1}(24h)"><span class="n">#${i+1} ${esc(c.symbol.toUpperCase())}</span><span class="p">${esc(c.name)}</span>${chgTxt?`<span class="c ${chg>=0?'up':'down'}">${esc(chgTxt)}</span>`:""}</div>`;
+    }).join("");
+  }catch(e){el.innerHTML='<span class="down">加载失败</span>';}
 }
 
 /* ── DERIBIT OPTIONS ── */
@@ -4546,6 +4744,36 @@ function chartPatternVote(candles){
   const label=confirmed.map(c=>c.label).join(" + ");
   return{name,cat:"trend",dir:dirW,detail:`已确认突破: ${label}(平均强度${Math.round(wSum/confirmed.length)}/100)`};
 }
+/* 2026-09-10新增: 之前 tsDetectHarmonics/tsDetectElliott 只喂给"形态识别"展示区和历史回测,
+   实盘方向投票完全没用到——算出来的东西被浪费了,策略的"前瞻性"没有真正体现在决策上。
+   现在两者也接入投票池,分开成两票、各自标注该有的置信度:
+   ① 谐波XABCD只算"已在D点完成"的(status==="completed"),形成中的候选不计入方向——
+      这是经典的反转型态,分类为meanrev(均值回归类,震荡市加权更高)。
+   ② 艾略特0-5浪本质是"当前这段走势符合脉冲浪规则"的主观浪型识别,比其它硬指标更依赖拟合
+      优度,给0.7折算而非满权重,分类为trend(延续类,趋势市加权更高),避免一次不可靠的
+      数浪就把方向判断带偏。 */
+function harmonicPatternVote(candles){
+  const name="谐波形态 XABCD(已完成,反转信号)";
+  if(!candles||candles.length<40)return{name,cat:"meanrev",dir:0,detail:"K线数据不足"};
+  const bars=tsToBars(candles);
+  const completed=tsDetectHarmonics(bars).filter(h=>h.status==="completed");
+  if(!completed.length)return{name,cat:"meanrev",dir:0,detail:"当前未识别到已在D点完成的谐波形态(形成中的候选不计入方向判断,详见下方「形态识别」区)"};
+  const hSum=completed.reduce((a,c)=>a+c.score,0);
+  const hDirW=hSum>0?completed.reduce((a,c)=>a+(c.bull?1:-1)*c.score,0)/hSum:0;
+  const hLabel=completed.map(c=>`${c.pattern}(D点${c.bull?"看涨":"看跌"}反转区,强度${Math.round(c.score)})`).join(" + ");
+  return{name,cat:"meanrev",dir:tsClamp(hDirW,-1,1),detail:hLabel};
+}
+function elliottWaveVote(candles){
+  const name="艾略特0-5浪(前瞻浪型候选)";
+  if(!candles||candles.length<40)return{name,cat:"trend",dir:0,detail:"K线数据不足"};
+  const bars=tsToBars(candles);
+  const waves=tsDetectElliott(bars);
+  if(!waves.length)return{name,cat:"trend",dir:0,detail:"当前未识别到符合艾略特规则(浪3非最短且不越浪1起点、浪4不回撤入浪1价格区间)的0-5浪候选"};
+  const eSum=waves.reduce((a,c)=>a+c.score,0);
+  const eDirW=eSum>0?waves.reduce((a,c)=>a+(c.dir==="up"?1:-1)*c.score,0)/eSum:0;
+  const eLabel=waves.map(c=>`${c.dir==="up"?"上升":"下降"}浪(浪3/浪1=${c.w3w1}·浪5/浪3=${c.w5w3}·强度${Math.round(c.score)})`).join(" + ");
+  return{name,cat:"trend",dir:tsClamp(eDirW*0.7,-1,1),detail:eLabel+" · 数浪本身较主观,已按0.7折算权重"};
+}
 function tsClamp(n,a,b){return Math.max(a,Math.min(b,n));}
 function tsSmaSeries(arr,n,m){const out=new Array(arr.length);out[0]=arr[0];for(let i=1;i<arr.length;i++)out[i]=(m*arr[i]+(n-m)*out[i-1])/n;return out;}
 function tsComputeSKDJ(highs,lows,closes,N,M){
@@ -5096,16 +5324,32 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   const cycleOK=!cycleConflict;
   const reliabilityOK=isSwing?(reliability.tier==="reliable"||reliability.tier==="moderate"):(reliability.tier==="reliable");
   const regimeLabelTxt=(isTurning||isPulse)?`${regimeLabel} · 该类型不限市场状态`:regimeLabel;
-  const checks=[
+  /* 2026-09-11 结构性修复(交易员视角复盘): 之前 pass 要求六项闸门全部同时为true("全票制")。
+     三次调阈值(09-04/09-08/09-10)都只是把每一项单独放宽,但"全票"这个结构本身没变——
+     六项独立条件全部同时满足,概率是各项通过率的连乘积,就算每项单独放宽到60-70%通过率,
+     六项全过也只剩个位数百分比,这才是TRACK RECORD长期挂零的根本原因,不是任何一项具体
+     门槛还不够松。真实交易员的多因子确认系统不会要求"每个指标都同意才开仓"——那是过度
+     拟合的新手设计。做法应该分两层: ① 硬风控条件(方向已确认、盈亏比达标)没有商量余地,
+     必须100%满足,这两项关系到"这笔交易本身是否成立",不是"信心强不强"的问题;
+     ② 软确认条件(共振度/市场状态/周期锚定/可信度/MTF)是从不同角度对同一个方向做交叉验证,
+     允许其中1项不同意——多因子系统里少数指标暂时背离主流方向是常态,不是异常。
+     GATE_SOFT_MISS_ALLOWED 从0改为1,即软性五项里最多允许1项未通过,其余4项仍须全过。 */
+  const GATE_SOFT_MISS_ALLOWED=1;
+  const softChecks=[
     {key:"confluence",label:"信号共振度≥60%",pass:confluenceOK,detail:`当前 ${confluence}%`},
-    {key:"rr",label:`首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
     {key:"regime",label:(isTurning||isPulse)?"市场状态(该档不限过渡区)":"市场状态已明确(非过渡区)",pass:regimeOK,detail:regimeLabelTxt},
     {key:"cycle",label:"不与周期锚定冲突",pass:cycleOK,detail:cycleAnchor.label},
     {key:"reliability",label:isSwing?"机会可信度=中或高":"机会可信度=高",pass:reliabilityOK,detail:reliability.label},
     {key:"mtf",label:isWave?"更大周期(MTF)方向一致 · 排除短线噪音":isSwing?"更大周期不冲突":"未处于与本次方向相反的强趋势中(排除逆势摸顶摸底)",pass:mtfOK,detail:mtfDetail},
   ];
-  const pass=hasDirection&&confluenceOK&&rrOK&&regimeOK&&cycleOK&&reliabilityOK&&mtfOK;
-  return{pass,hasDirection,checks,rr1,oppType};
+  const softMissCount=softChecks.filter(c=>!c.pass).length;
+  const softOK=softMissCount<=GATE_SOFT_MISS_ALLOWED;
+  const checks=[
+    {key:"rr",label:`【硬性】首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
+    ...softChecks.map(c=>({...c,label:c.label+(GATE_SOFT_MISS_ALLOWED?` [软性,五项允许错${GATE_SOFT_MISS_ALLOWED}项]`:"")})),
+  ];
+  const pass=hasDirection&&rrOK&&softOK;
+  return{pass,hasDirection,checks,rr1,oppType,softMissCount,softMissAllowed:GATE_SOFT_MISS_ALLOWED};
 }
 
 /* 2026-09-10 P1新增: "信号静悄悄变化"——computeSignal 每次被调用(K线WS节流2秒、loadExtras
@@ -5113,24 +5357,45 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
    10:00看到SHORT下单,10:05刷新变成NEUTRAL或反转,页面此前没有任何机制告诉他"这和你下单时
    已经不是同一个东西了"。这里用两个模块级Map补上这层记忆(闭包内,不挂window):
    ① lastDirSignBySymbol: 只记"上一次"与"变化时间点",驱动P1-1的"⚠方向刚变"即时提示;
-   ② dirSignHistoryBySymbol: 记过去1小时的完整变化序列,驱动P1-2的"信号稳定性"统计
+   ② dirSignChangeLog: 记过去1小时"变化发生的时间戳"事件日志,驱动P1-2的"信号稳定性"统计
    (过去1小时变了几次/当前方向已经稳定了多久),两者职责不同,故意分开存,不要合并成一个。 */
 const lastDirSignBySymbol=new Map();   // symbol -> {dirSign, previousDirSign, changedAt, stableSince}
-const dirSignHistoryBySymbol=new Map(); // symbol -> [{ts, dirSign}] · 只保留最近1小时
-function computeSignalStability(symbol){
-  const hist=dirSignHistoryBySymbol.get(symbol)||[];
-  if(hist.length<2)return{changesLastHour:0,currentStableMs:hist.length?Date.now()-hist[0].ts:0,avgStableMs:null};
-  let changes=0;const stableSpans=[];let spanStart=hist[0].ts;
-  for(let i=1;i<hist.length;i++){
-    if(hist[i].dirSign!==hist[i-1].dirSign){
-      changes++;
-      stableSpans.push(hist[i].ts-spanStart);
-      spanStart=hist[i].ts;
-    }
+// 2026-09-10 P1-2修复: 最初版本用 dirSignHistoryBySymbol:[{ts,dirSign}] 数组存变化历史,但数组
+// 只在"方向变化时"才push一条(避免同一方向每2秒重复调用把数组撑爆),这导致数组里相邻两条的
+// dirSign必然不同——于是"if(hist[i].dirSign!==hist[i-1].dirSign)"这个条件永远为真,算出来的
+// changesLastHour实际恒等于hist.length-1,根本不是"过去1小时真的变了几次"。更严重的是:数组
+// 只保留最近1小时,如果第一次变化恰好落在1小时窗口边界附近被shift掉,会系统性低估真实变化
+// 次数;avgStableMs的第一个时间跨度也会因为shift残留的起点失真而不可信。这里改成记录"每次
+// 变化发生的时间戳"独立事件日志——清理(只留最近1小时)和统计(数组长度即变化次数)天然一致,
+// 不再让"数组只在变化时push"这个存储优化污染统计口径。
+const dirSignChangeLog=new Map(); // symbol -> {changes:[ts,...] 最近1小时内的变化时间戳, stableSince, lastDir}
+function recordDirSignChange(symbol, dirSign){
+  const now=Date.now();
+  let rec=dirSignChangeLog.get(symbol);
+  if(!rec){rec={changes:[], stableSince:now, lastDir:dirSign};dirSignChangeLog.set(symbol,rec);return;}
+  if(rec.lastDir!==dirSign){
+    rec.changes.push(now);
+    rec.stableSince=now;
+    rec.lastDir=dirSign;
   }
-  const currentStableMs=Date.now()-spanStart;
-  const avgStableMs=stableSpans.length?stableSpans.reduce((a,b)=>a+b,0)/stableSpans.length:null;
-  return{changesLastHour:changes,currentStableMs,avgStableMs};
+  const cutoff=now-3600000;
+  while(rec.changes.length&&rec.changes[0]<cutoff)rec.changes.shift();
+}
+function computeSignalStability(symbol){
+  const rec=dirSignChangeLog.get(symbol);
+  if(!rec)return{changesLastHour:0,currentStableMs:0,avgStableMs:null};
+  const changesLastHour=rec.changes.length;
+  const currentStableMs=Date.now()-rec.stableSince;
+  // 用相邻变化时间戳的差值算平均稳定时长;只有1次变化时,退化为"从初始稳定起点到那次变化"
+  let avgStableMs=null;
+  if(rec.changes.length>=2){
+    const spans=[];
+    for(let i=1;i<rec.changes.length;i++)spans.push(rec.changes[i]-rec.changes[i-1]);
+    avgStableMs=spans.reduce((a,b)=>a+b,0)/spans.length;
+  }else if(rec.changes.length===1){
+    avgStableMs=rec.changes[0]-rec.stableSince;
+  }
+  return{changesLastHour,currentStableMs,avgStableMs};
 }
 function computeSignal(candles,intervalLabel,symbol,ctx){
   if(!candles||candles.length<30)return null;
@@ -5245,7 +5510,14 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
     structDetail=`高点${hh?"抬升↑":"下移↓"} / 低点${hl?"抬升↑":"下移↓"} → ${structDir>0?"多头结构":structDir<0?"空头结构":"震荡结构"}`;
   }
   votes.push({name:"缠论 · 笔结构分析",cat:"trend",dir:structDir,detail:structDetail});
-  votes.push(chartPatternVote(candles));
+  /* 2026-09-10新增: 之前 tsDetectHarmonics/tsDetectElliott 只喂给"形态识别"展示区和历史回测,
+   实盘方向投票完全没用到——等于算出来的东西被浪费,策略的"前瞻性"没有真正体现在决策上。
+   现在把两者也接入投票池,但分开成两票、各自标注该有的置信度(定义见下方 harmonicPatternVote/
+   elliottWaveVote,与 chartPatternVote 一样是顶层函数,不在每次 computeSignal 调用时重新声明)。 */
+votes.push(chartPatternVote(candles));
+votes.push(harmonicPatternVote(candles));
+votes.push(elliottWaveVote(candles));
+votes.push(macroDominanceVote(symbol));
   // 三通: 批量扫描路径用 ctx.santong(见fetchSignalContext,已用该symbol自己的日线+周线算好);
   // 单symbol深度视图没有ctx,退回原有的全局 cycleAnchorForSymbol/weeklyAnchorForSymbol 路径,
   // 只有当前modal打开的正是这个symbol、且日线+周线锚定数据都已就绪时才算,否则显示"未就绪"
@@ -5348,8 +5620,8 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   // Update table badge
   if(m)m.signalDir=dirSign;
 
-  // 2026-09-10 P1-1/P1-2: 方向刚变检测 + 1小时变化历史,见上方 lastDirSignBySymbol/
-  // dirSignHistoryBySymbol 定义处的说明。这里只做记录与判断,不改变dirSign本身,也不影响
+  // 2026-09-10 P1-1/P1-2: 方向刚变检测 + 1小时变化事件日志,见上方 lastDirSignBySymbol/
+  // dirSignChangeLog 定义处的说明。这里只做记录与判断,不改变dirSign本身,也不影响
   // 下面任何投票/指标/交易计划逻辑。
   const __dsNow=Date.now();
   const __dsPrev=lastDirSignBySymbol.get(symbol);
@@ -5358,15 +5630,7 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   const dirStableSince=dirChanged?__dsNow:(__dsPrev&&__dsPrev.dirSign===dirSign?__dsPrev.stableSince:__dsNow);
   const previousDirSign=__dsPrev?__dsPrev.dirSign:0;
   lastDirSignBySymbol.set(symbol,{dirSign,previousDirSign:dirChanged?__dsPrev.dirSign:previousDirSign,changedAt:dirChangedAt,stableSince:dirStableSince});
-  {
-    const __hist=dirSignHistoryBySymbol.get(symbol)||[];
-    // 只在方向真的变化、或历史为空时push一条,避免同一方向每2秒的重复调用把数组撑爆——
-    // "稳定了多久"用stableSince算即可,历史数组只需要记住"变化发生在哪些时间点"。
-    if(!__hist.length||__hist[__hist.length-1].dirSign!==dirSign)__hist.push({ts:__dsNow,dirSign});
-    const __cutoff=__dsNow-3600000;
-    while(__hist.length&&__hist[0].ts<__cutoff)__hist.shift();
-    dirSignHistoryBySymbol.set(symbol,__hist);
-  }
+  recordDirSignChange(symbol, dirSign);
 
   // 突破确认分档: 参考位取"最近一个摆动高点(LONG)/摆动低点(SHORT)"——如果价格还没越过它,
   // 诚实标为"跟踪中·未突破"(此时不该被算作突破延续机会);越过了则进一步核验是否连续2根收盘+放量,
@@ -6134,20 +6398,23 @@ function timelineHTML(plan,hasPosition){
   const prices=nodes.map(n=>n.price);
   const lo=Math.min(...prices),hi=Math.max(...prices),span=(hi-lo)||1;
   const pad=8;
-  nodes.forEach(n=>{n.leftPct=pad+((n.price-lo)/span)*(100-2*pad);});
+  const usable=100-2*pad;
+  nodes.forEach(n=>{n.leftPct=pad+((n.price-lo)/span)*usable;});
   const ordered=[...nodes].sort((a,b)=>a.price-b.price);
-  // 最小间距校正: 只影响标签在轴上"挤不挤",不改变真实价格数字本身
-  const minGap=15;
+  // 修复: minGap 不再是写死的15,而是按节点数动态收窄为 usable/(n-1) 与15取较小值。
+  // ordered[0](价格最低的节点)天然落在 leftPct===pad,之后每一步最多前进 minGap,
+  // 因此最后一个节点数学上必然 <= pad + (n-1)*minGap <= pad+usable = 100-pad ——
+  // 恒不越界,不再需要"算完再整体左移"这种会把最左侧节点推出容器的事后修正。
+  const minGap=ordered.length>1?Math.min(15,usable/(ordered.length-1)):usable;
   for(let i=1;i<ordered.length;i++){
     if(ordered[i].leftPct-ordered[i-1].leftPct<minGap)ordered[i].leftPct=ordered[i-1].leftPct+minGap;
   }
-  const overflow=ordered[ordered.length-1].leftPct-(100-pad);
-  if(overflow>0)ordered.forEach(n=>n.leftPct-=overflow);
-
+  // 呈现方式: 按排序后的顺序上下交错(zig-zag),让相邻节点分居轴上/轴下,
+  // 同一行内两个节点的实际间距因此变成 minGap 的2倍,文字更不容易互相覆盖。
   return `<div class="timeline-axis">
     <div class="axis-rail"></div>
-    ${ordered.map(n=>`
-    <div class="axis-item ${n.kind}" style="left:${n.leftPct}%">
+    ${ordered.map((n,i)=>`
+    <div class="axis-item ${n.kind} ${i%2===0?"pos-below":"pos-above"}" style="left:${n.leftPct}%">
       <div class="dot2" style="background:${n.color};color:${n.color}"></div>
       <div class="lbl">${esc(n.lbl)}</div><div class="px">${n.px}</div><div class="meta">${n.meta}</div>
     </div>`).join("")}
@@ -6886,7 +7153,9 @@ function renderStrategySummary(sig){
 
   // ── 执行闸门(EXECUTION GATE) ── 直接读 sig.gate(computeSignal里统一算好的),与追踪记录
   // 用的是同一份计算结果,不会再出现"UI显示达标、但追踪日志用另一套更宽松标准偷偷记了一笔"
-  // 这种两套尺子对不上的情况。六条硬性条件(含新增的MTF更大周期一致性)全过才判"达标·可执行"。
+  // 这种两套尺子对不上的情况。2026-09-11起改为分层判定: 方向确认+盈亏比达标是硬性条件,
+  // 必须100%满足;共振度/市场状态/周期锚定/可信度/MTF这五项软确认允许最多1项不通过
+  // (见computeExecutionGate里的GATE_SOFT_MISS_ALLOWED),不再要求六项全票通过。
   const gateChecks=sig.gate.checks;
   const hasDirection=sig.gate.hasDirection;
   const gatePass=sig.gate.pass;
@@ -7161,7 +7430,7 @@ function renderBacktestStatBlock(label,st){
   const calibCls=gapAbs==null?"":(gapAbs<=10?"good":gapAbs<=25?"":"bad");
   return `
     <div class="stat-mini-row">
-      <div class="stat-mini"><span class="k">实际胜率(先摸TP1 vs 先摸SL)</span><span class="v ${s.winRate==null?'':(s.winRate>=0.5?'up':'down')}">${fmtBtPct(s.winRate)}</span><span class="note">已分胜负 n=${s.resolved}</span></div>
+      <div class="stat-mini"><span class="k">实际胜率(先摸TP1 vs 先摸SL)</span><span class="v ${s.winRate==null?'':(s.winRate>=0.5?'up':'down')}">${fmtBtPct(s.winRate)}${s.resolved?ciLabel(s.wins,s.resolved):""}</span><span class="note">已分胜负 n=${s.resolved}</span></div>
       <div class="stat-mini"><span class="k">期望值(R,每笔平均)</span><span class="v ${s.expectancy==null?'':(s.expectancy>=0?'up':'down')}">${s.expectancy!=null?(s.expectancy>=0?'+':'')+s.expectancy.toFixed(2)+'R':'–'}</span><span class="note">盈亏比 Profit Factor ${s.profitFactor==null?'–':(s.profitFactor===Infinity?'∞':s.profitFactor.toFixed(2))}</span></div>
       <div class="stat-mini"><span class="k">限价单成交率</span><span class="v">${s.totalSignals?Math.round(s.filled/s.totalSignals*100):0}%</span><span class="note">信号${s.totalSignals} · 成交${s.filled} · 撤单${s.cancelled} · 到期未分胜负${s.timeout}</span></div>
     </div>
@@ -7289,7 +7558,7 @@ function renderPatternBody(sig){
       return`<tr>
         <td>${esc(a.type)}${lowN?' <span class="dim" style="font-size:10px;">(样本量小,参考价值有限)</span>':""}</td>
         <td>${a.n}</td>
-        <td class="${wr==null?"":(wr>=50?"up":"down")}">${wr!=null?wr.toFixed(0)+"%":"–"}</td>
+        <td class="${wr==null?"":(wr>=50?"up":"down")}">${wr!=null?wr.toFixed(0)+"%":"–"}${wr!=null&&h10.n?ciLabel(Math.round(wr/100*h10.n),h10.n):""}</td>
         <td>${h5&&h5.n?(h5.mean>=0?"+":"")+h5.mean.toFixed(1)+"%":"–"}</td>
         <td>${h10&&h10.n?(h10.mean>=0?"+":"")+h10.mean.toFixed(1)+"%":"–"}</td>
         <td>${h20&&h20.n?(h20.mean>=0?"+":"")+h20.mean.toFixed(1)+"%":"–"}</td>
