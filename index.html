@@ -2428,7 +2428,9 @@ function oppTriggerState(sig,type){
   const gate=sig.gate;
   const extra=typeGateExtra(sig,type);
   if(!gate||!gate.pass||!extra.pass){
-    return{cls:"fail",badge:"⛔ 仅供参考",detail:!extra.pass?extra.reason:"未过执行闸门(方向/盈亏比为硬性条件,其余五项软确认最多容错1项,见下方明细)"};
+    const gateFailed=!gate||!gate.pass;
+    return{cls:"fail",badge:"⛔ 仅供参考",layer:gateFailed?"gate":"typeGate",
+      detail:gateFailed?"未过执行闸门(方向共识/盈亏比为硬性条件;共振度/市场状态/周期/可信度/MTF五项软性最多容错1项,见下方明细)":extra.reason};
   }
   const pend=gatePendingConfirm.get((sig.symbol||"")+"|"+sig.dirSign);
   const elapsed=pend?Date.now()-pend.firstPassAt:0;
@@ -2661,7 +2663,8 @@ function renderOpportunityRadar(){
       const sig=x.r.sig;
       const failed=(sig.gate&&sig.gate.checks)?sig.gate.checks.filter(c=>!c.pass).map(c=>c.label):[];
       const reason=failed.length?failed.join(" · "):(typeGateExtra(sig,x.type.key).reason||"该类型专属确认条件未满足");
-      return`<div class="opp-nearmiss-row"><span class="opp-row-sym">${esc(x.symbol.replace("USDT",""))}</span><span class="opp-row-dir ${sig.dirSign>0?"up":"down"}">${sig.dirSign>0?"LONG":"SHORT"}</span><span class="opp-nearmiss-detail">未过: ${esc(reason)}</span></div>`;
+      const layerTxt=x.trig.layer==="typeGate"?"类型专属确认未过":"执行闸门未过";
+      return`<div class="opp-nearmiss-row"><span class="opp-row-sym">${esc(x.symbol.replace("USDT",""))}</span><span class="opp-row-dir ${sig.dirSign>0?"up":"down"}">${sig.dirSign>0?"LONG":"SHORT"}</span><span class="opp-nearmiss-detail">${esc(layerTxt)}: ${esc(reason)}</span></div>`;
     }).join("");
     nearMissEl.innerHTML=ref.length?`<div class="opp-future-title">🔍 最接近触发的候选 · 具体差在哪一项</div>${nearCands}`:"";
   }
@@ -5345,6 +5348,7 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   const softMissCount=softChecks.filter(c=>!c.pass).length;
   const softOK=softMissCount<=GATE_SOFT_MISS_ALLOWED;
   const checks=[
+    {key:"direction",label:"【硬性】已形成方向共识(非中性 NEUTRAL)",pass:hasDirection,detail:hasDirection?"方向已确认":"当前徽章为中性 NEUTRAL,尚未形成方向共识"},
     {key:"rr",label:`【硬性】首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
     ...softChecks.map(c=>({...c,label:c.label+(GATE_SOFT_MISS_ALLOWED?` [软性,五项允许错${GATE_SOFT_MISS_ALLOWED}项]`:"")})),
   ];
@@ -7169,10 +7173,19 @@ function renderStrategySummary(sig){
     const posMid=((st.posMin+st.posMax)/2).toFixed(1),levMid=Math.round((st.levMin+st.levMax)/2);
     const sideLabel=outlook.leanDir>0?"LONG 多":"SHORT 空";
     const ticket=`${selectedSymbol} · ${sideLabel} · 挂单 ${fmtPrice(plan.entry)} · 仓位 ${posMid}% 净值 · ${levMid}x · SL ${fmtPrice(plan.sl)} · TP1 ${fmtPrice(plan.tps[0].price)}(R:R ${rr1}) · 失效撤单 ${fmtPrice(plan.entryInfo.invalidatePrice)}`;
+    // 2026-09-11 修复: softMissCount此前只算出来存在sig.gate里,没渲染——达标卡片不显示
+    // "软性五项里到底有几项没过、是哪几项",用户只看到"达标",看不出这笔是六项全票的最强档,
+    // 还是靠容错1项才放行的边缘档,两者风险不一样,不该被同一句"✅ 达标"盖住。
+    const softFailed=gateChecks.filter(g=>!g.pass&&g.key!=="direction"&&g.key!=="rr");
+    const softPassCount=5-softFailed.length;
+    const softNote=softFailed.length
+      ?`<div class="gate-reasons" style="color:var(--amber);margin-top:6px;">软性五项中 ${softFailed.length} 项未通过(已在允许范围内放行,不影响本次触发): ${softFailed.map(g=>esc(g.label.replace(/ \[软性.*\]/,""))).join(" · ")}</div>`
+      :`<div class="sig-note" style="margin-top:6px;color:var(--up);">软性五项全部通过,六项全票达标(最强档)</div>`;
     gateHTML=`
       <div class="gate-box gate-pass">
-        <div class="gate-head">✅ 达标 · 可执行${btChecked?(btGapOK?" · 回测校准通过":" · 回测校准偏差较大,降级参考"):" · 尚未运行本周期回测,建议先验证"}</div>
+        <div class="gate-head">✅ 达标 · 可执行(软性确认 ${softPassCount}/5 通过)${btChecked?(btGapOK?" · 回测校准通过":" · 回测校准偏差较大,降级参考"):" · 尚未运行本周期回测,建议先验证"}</div>
         <div class="gate-ticket">${esc(ticket)}<button class="ticket-copy-btn" data-ticket="${esc(ticket)}">📋 复制下单单据</button></div>
+        ${softNote}
       </div>`;
   }else{
     const failed=gateChecks.filter(g=>!g.pass);
