@@ -233,6 +233,8 @@
   td.flash-down{animation:flashDown .7s;}
   @keyframes flashUp{0%{background:rgba(90,155,120,.38);box-shadow:inset 0 0 0 1px rgba(90,155,120,.5);}100%{background:transparent;box-shadow:none;}}
   @keyframes flashDown{0%{background:rgba(184,85,95,.38);box-shadow:inset 0 0 0 1px rgba(184,85,95,.5);}100%{background:transparent;box-shadow:none;}}
+  /* 2026-09-10 P1-1新增: "方向刚变"警示专用,提醒用户模型自己已经推翻了刚才的方向判断 */
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:.35;}}
   .sym{font-weight:700;font-size:14px;letter-spacing:.3px;}
   .sym .tag{font-size:11px;color:var(--amber);border:1px solid rgba(240,177,50,.4);border-radius:2px;padding:0 3px;margin-left:5px;vertical-align:1px;font-weight:400;}
   .sub{font-size:12px;color:var(--dim2);display:block;margin-top:1px;}
@@ -1250,7 +1252,7 @@ const SIGNAL_THROTTLE_MS = 2000;
    runBacktest,即可看到"这个参数如果不是现在这个值,回测结果会变多少"。
    ══════════════════════════════════════════════════════════════════════════ */
 const PARAM_CONFIG = {
-  tp1RRMin:{baseline:1.3,label:"TP1风险回报下限(×止损距离)",group:"RR下限",
+  tp1RRMin:{baseline:1.1,label:"TP1风险回报下限(×止损距离)",group:"RR下限",  // 2026-09-10 P0-2: 原1.3
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
   breakoutVolMult:{baseline:1.2,label:"突破放量确认倍数(×前20根均量)",group:"放量确认",
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
@@ -1559,6 +1561,12 @@ function init(){
       }
       return;
     }
+    const scanDiagHead=e.target.closest(".scan-diag-head");
+    if(scanDiagHead){
+      scanDiagOpen=!scanDiagOpen;
+      renderTrackPanel();
+      return;
+    }
     const trkDayHead=e.target.closest(".trk-day-head");
     if(trkDayHead&&trkDayHead.dataset.day){
       const day=trkDayHead.dataset.day,todayKey=trkDayKey(Date.now());
@@ -1645,6 +1653,28 @@ function init(){
       setupOpportunityScan();
     }
   },60000);
+  // 2026-09-10 P0-3新增: 上面60秒看门狗只覆盖"trackedSet已就绪但引擎从未启动"这一种情况,
+  // 覆盖不了"引擎已经启动过、但中途卡死"(理论上P0-1的try/finally式复位已经堵死这个失效
+  // 模式,但看门狗作为独立防御层不应该依赖那份修复本身不出新的问题)、以及"trackedSet从头
+  // 到尾一直是空"这两种情况。这里每30秒跑一次,分两种情况处理:
+  // 情况A: 引擎从未启动,但trackedSet已就绪 → 立刻启动(比60秒看门狗响应更快)
+  // 情况B: 引擎已启动、当前不在扫描中,但超过4分钟没有一次成功扫描过(lastOpportunityScanAt
+  //         长期不再前进)→ 疑似卡死,强制清掉旧定时器、复位opportunityScanning标志位、重启
+  setInterval(()=>{
+    if(!opportunityScanTimer&&trackedSet.size>0){
+      console.log("[ORBIT] 看门狗A(30秒): trackedSet已就绪但引擎未启动,启动");
+      setupOpportunityScan();
+      return;
+    }
+    if(opportunityScanTimer&&!opportunityScanning&&lastOpportunityScanAt>0
+       &&Date.now()-lastOpportunityScanAt>4*60*1000){
+      console.warn("[ORBIT] 看门狗B(30秒): 超过4分钟无成功扫描,强制复位扫描引擎");
+      clearInterval(opportunityScanTimer);
+      opportunityScanTimer=null;
+      opportunityScanning=false;  // 强制复位卡死的标志位,即使它确实卡在true
+      setupOpportunityScan();
+    }
+  },30000);
 }
 function tickClock(){
   const d=new Date();
@@ -1773,7 +1803,13 @@ const OPP_TOP_N = 5;
    ① 同一币种任何方向只要还"开着"就不再叠加/反向开新的一笔(旧逻辑只挡同方向重复,没挡反方向,
    这是"ADA/ENA同一天先LONG又SHORT反复咬"的直接原因); ② 执行闸门必须连续 GATE_CONFIRM_SCANS
    次扫描都通过才记录(约3分钟内信号方向保持稳定),避免单次噪音tick触发一笔"推荐"。 */
-const TRACK_CONVICTION_MIN = 65;           // 次要保底门槛,主要门槛已改为下方 gate.pass(见recordTrackSignals)
+// 2026-09-10 P0-2修复: 65%conviction + 六项执行闸门 + 类型专属确认 + 150秒连续确认,四重
+// 过滤叠加后在真实市场里几乎没有信号能穿透,TRACK RECORD长期是0笔——不是"市场没机会",
+// 是漏斗设计过严导致样本永远积累不起来,校准差永远没有统计意义。这里只降这一个数字,
+// 六项执行闸门本身(confluenceOK/rrOK/regimeOK/cycleOK/reliabilityOK/mtfOK)、类型专属确认、
+// MTF方向条件、周期锚定冲突判定、regime分类——这些真正防噪音的逻辑一律不动。宁可先让
+// 20-30笔样本进来,校准差有统计意义后再收紧,也不要现在一笔都进不来。
+const TRACK_CONVICTION_MIN = 55;           // 次要保底门槛(原65),主要门槛已改为下方 gate.pass(见recordTrackSignals)
 const TRACK_LOG_KEY = "orbit_tracklog";
 const TRACK_LOG_MAX = 1000;                // 存储上限,超出按创建时间滚动淘汰最旧的
 const TRACK_FILL_WINDOW_MS = 24*3600*1000; // 挂单超过24小时仍未成交且未撤单触发 → 记为"过期未成交"
@@ -1790,8 +1826,11 @@ const TRACK_FLIP_COOLDOWN_MS = 12*3600*1000;   // 同一币种但方向反转(�
    ② 状态写入 localStorage,页面刷新/短暂切走不再清零 ③ 只有同一 symbol+方向的"最近一次
    通过"距现在超过 GATE_STALE_GAP_MS 才视为真的断过(标签页关了很久/网络断很久),重新计时
    ④ 标签页重新变为前台时,若已错过一个扫描周期,立刻补扫一次,而不是干等下一个定时器。*/
-const GATE_CONFIRM_MIN_MS = 150000;        // 同一 symbol+方向需连续通过执行闸门至少这么久(≈2.5分钟,
-                                            // 对齐原设计"约2次90秒扫描"的意图),才算稳定信号,防止噪音瞬间闪烁被记成推荐
+// 2026-09-10 P0-2修复: 150秒(≈2.5分钟)连续确认,叠加六项执行闸门+类型专属确认+conviction
+// 门槛后,过滤强度远超预期,是TRACK RECORD长期0笔的第二个主因。降到60秒(≈1次90秒扫描的
+// 时间量级),仍然能挡掉单次噪音瞬间闪烁,但不再要求近3分钟内每一次扫描都稳定不变。
+const GATE_CONFIRM_MIN_MS = 60000;         // 同一 symbol+方向需连续通过执行闸门至少这么久(原150000,≈1分钟)
+                                            // 才算稳定信号,防止噪音瞬间闪烁被记成推荐
 const GATE_STALE_GAP_MS = 5*60*1000;       // 距上次确认通过已超过这个值,视为中途真的断了,重新从头计时;
                                             // 短暂刷新页面/切走几十秒不受影响,不会丢掉已经攒的确认进度
 const GATE_CONFIRM_KEY = "orbit_gate_confirm_v2";
@@ -1867,24 +1906,57 @@ function scanEngineDiagnostics(){
     history:scanHistory.slice()
   };
 }
+// 2026-09-10 P0-4新增: 之前诊断信息只是面板里几行小字,混在其它统计数字之间,用户点开
+// TRACK RECORD看到空白根本不知道"为什么是空的"——是引擎没跑,还是跑了但闸门太严。
+// 现在把它做成面板顶部一个始终存在、标题行always可见3个关键状态、点击才展开详情的折叠块,
+// 用户点开就能一眼判断,不用F12开控制台。折叠状态是会话内的UI偏好,不是追踪数据本身,
+// 用一个模块级变量记住(不写localStorage,刷新页面恢复默认收起,与其它opp-collapse-*的
+// 展开状态处理方式一致)。
+let scanDiagOpen=false;
+function scanEngineStateDot(d){
+  const stuck=d.everStarted&&!d.scanning&&d.lastScanAt>0&&Date.now()-d.lastScanAt>4*60*1000;
+  if(!d.everStarted)return{dot:"🟡",cls:"amb",label:"从未启动"};
+  if(d.lastError||stuck)return{dot:"🔴",cls:"down",label:stuck?"疑似卡死(>4分钟无成功扫描)":"上一轮报错"};
+  return{dot:"🟢",cls:"up",label:"运行中"};
+}
 function renderScanDiagnostics(){
   const d=scanEngineDiagnostics();
-  const engineLine=!d.everStarted
-    ?`<span class="dim2">⚪ 扫描引擎从未启动过(initCrypto尚未成功完成,15秒后会自动重试setupOpportunityScan)</span>`
-    :d.lastError
-      ?`<span class="down">⚠ 上一轮扫描抛出异常并已被捕获: ${esc(d.lastError.message||String(d.lastError))} · 已自动复位,下一轮90秒后继续</span>`
-      :d.scanning?`<span class="amb">🔄 扫描进行中…</span>`
-      :d.lastScanAt?`<span class="up">● 扫描引擎运行中</span> · 上次扫描 ${new Date(d.lastScanAt).toLocaleTimeString("zh-CN",{hour12:false})}(距今${Math.round(d.msSinceLastScan/1000)}秒)`
-      :`<span class="dim2">⚪ 引擎已启动,等待第一轮扫描…</span>`;
-  const pendTop=d.pending.slice(0,5).map(p=>`${esc(p.symbol.replace("USDT",""))}${p.dir>0?"多":"空"}(还需${Math.ceil(p.remainMs/1000)}秒确认)`).join(" · ");
+  const state=scanEngineStateDot(d);
+  const totalLogged=getTrackLog().length;
+  const secAgo=d.lastScanAt?Math.round(d.msSinceLastScan/1000):null;
+  // 标题行 —— 折叠/展开都必须始终可见,是用户判断"引擎有没有在跑"最快的入口
+  const headLine=`<span class="${state.cls}">${state.dot} ${esc(state.label)}</span>
+    <span class="dim2" style="margin-left:10px;">上次扫描: ${secAgo!=null?secAgo+"秒前":"从未成功过"}</span>
+    <span class="dim2" style="margin-left:10px;">已记录推荐: ${totalLogged}笔 · 待确认: ${d.pending.length}笔</span>`;
+  if(!scanDiagOpen){
+    return`<div class="opp-collapse-head scan-diag-head" id="scanDiagToggle" style="margin-bottom:8px;">
+      <span class="opp-collapse-arrow">▸</span>
+      <span style="font-weight:600;">🔍 扫描引擎诊断</span>
+      <span style="margin-left:8px;">${headLine}</span>
+    </div>`;
+  }
+  const errLine=d.lastError
+    ?`⚠ 最近一次错误(已捕获并自动复位): ${esc(d.lastError.message||String(d.lastError))} · ${new Date(d.lastError.at).toLocaleTimeString("zh-CN",{hour12:false})}`
+    :`最近没有报错`;
+  const pendTop=d.pending.slice(0,8).map(p=>`${esc(p.symbol.replace("USDT",""))}${p.dir>0?"多":"空"}(还需${Math.ceil(p.remainMs/1000)}秒确认)`).join(" · ");
   const pendLine=d.pending.length?`闸门确认倒计时中: ${d.pending.length}个候选 · ${pendTop}`:`当前没有候选处于闸门确认倒计时中`;
-  const histCounts=d.history.map(h=>h.qualifying).join(",");
-  const histLine=d.history.length?`最近${d.history.length}次扫描每轮新增推荐数: [${esc(histCounts)}] · 每轮候选池 ${d.history[d.history.length-1].universeSize}个主流币 · 已过方向确认 ${d.history[d.history.length-1].confirmedRows}个`:"尚无扫描历史";
-  return`<div class="opp-status-line" style="margin-bottom:8px;">
-    <div>${engineLine}</div>
-    <div style="margin-top:4px;">${pendLine}</div>
-    <div style="margin-top:4px;" class="dim2">${histLine}</div>
-  </div>`;
+  const histRows=d.history.slice(-5).reverse().map(h=>
+    `<tr><td>${new Date(h.ts).toLocaleTimeString("zh-CN",{hour12:false})}</td><td>${h.universeSize}</td><td>${h.confirmedRows}</td><td>${h.qualifying}</td><td>${h.pending}</td><td class="${h.error?'down':''}">${h.error?"⚠":"–"}</td></tr>`
+  ).join("");
+  const histTable=d.history.length?`<table class="trk-calib-table" style="margin-top:6px;">
+    <thead><tr><th>时间</th><th>候选池</th><th>方向确认</th><th>本轮新增</th><th>待确认</th><th>错误</th></tr></thead>
+    <tbody>${histRows}</tbody></table>`:`<div class="dim2" style="margin-top:6px;">尚无扫描历史</div>`;
+  return`<div class="opp-collapse-head scan-diag-head open" id="scanDiagToggle" style="margin-bottom:4px;">
+      <span class="opp-collapse-arrow">▸</span>
+      <span style="font-weight:600;">🔍 扫描引擎诊断</span>
+      <span style="margin-left:8px;">${headLine}</span>
+    </div>
+    <div class="opp-collapse-body open scan-diag-body" style="border:1px solid var(--line2);border-radius:6px;padding:8px 10px;margin-bottom:8px;">
+      <div class="dim2">候选池(主流币universe): ${d.universeSize}个 · 当前有结果的symbol: ${d.resultCount}个</div>
+      <div class="dim2" style="margin-top:4px;">${esc(errLine)}</div>
+      <div class="dim2" style="margin-top:4px;">${pendLine}</div>
+      ${histTable}
+    </div>`;
 }
 
 function mainstreamUniverse(){
@@ -2056,22 +2128,33 @@ async function runOpportunityScan(){
     scanErr=scanErr||e;
     console.error("renderOpportunityRadar failed",e);
   }
-  lastScanError=scanErr?{message:scanErr.message||String(scanErr),at:Date.now()}:null;
-  pushScanHistory({
-    ts:Date.now(),
-    universeSize:universe.length,
-    resultCount:opportunityResults.size,
-    confirmedRows:recordTrackSignals.lastStats?recordTrackSignals.lastStats.confirmedRows:0,
-    qualifying:recordTrackSignals.lastStats?recordTrackSignals.lastStats.qualifying:0,
-    pending:recordTrackSignals.lastStats?recordTrackSignals.lastStats.pending:gatePendingConfirm.size,
-    error:scanErr?(scanErr.message||String(scanErr)):null
-  });
-  setOppStatus(scanErr?`⚠ 本轮出错(已记录,自动重试): ${scanErr.message||scanErr}`:`已更新 · ${new Date().toLocaleTimeString("zh-CN",{hour12:false})}`);
+  // 2026-09-10 P0-1补强: 上面的 opportunityScanning=false 已经在任何情况下都会先复位(见上方
+  // 2026-09-09记录),但下面这几步(写扫描历史/更新状态文案/重绘面板)本身也可能意外抛出
+  // (例如 localStorage 配额满导致 pushScanHistory 相关逻辑抛错、或 renderTrackPanel 内部因为
+  // 某个 symbol 的字段缺失访问 undefined),各自单独 try/catch,互不连带——某一步失败最多丢失
+  // 那一步的效果(比如这一轮没写进历史表),绝不能因此影响其它步骤或波及下一轮扫描。
+  try{
+    lastScanError=scanErr?{message:scanErr.message||String(scanErr),at:Date.now()}:null;
+    pushScanHistory({
+      ts:Date.now(),
+      universeSize:universe.length,
+      resultCount:opportunityResults.size,
+      confirmedRows:recordTrackSignals.lastStats?recordTrackSignals.lastStats.confirmedRows:0,
+      qualifying:recordTrackSignals.lastStats?recordTrackSignals.lastStats.qualifying:0,
+      pending:recordTrackSignals.lastStats?recordTrackSignals.lastStats.pending:gatePendingConfirm.size,
+      error:scanErr?(scanErr.message||String(scanErr)):null
+    });
+  }catch(e){ console.error("[ORBIT] pushScanHistory 异常:",e); }
+  try{
+    setOppStatus(scanErr?`⚠ 本轮出错(已记录,自动重试): ${scanErr.message||scanErr}`:`已更新 · ${new Date().toLocaleTimeString("zh-CN",{hour12:false})}`);
+  }catch(e){ console.error("[ORBIT] setOppStatus 异常:",e); }
   // 2026再修: 之前这一轮扫描完全没有"跑完了"的console输出——只有开始时的[ORBIT]启动日志,
   // 和"真出异常"才会有的console.error。正常跑完但没信号,跟卡住/中途死掉,从控制台上完全看
   // 不出区别,上一次排查就是卡在这里。现在每轮扫描完,不论有没有信号,都打一行汇总,肉眼可辨。
   console.log(`[ORBIT] runOpportunityScan 完成 · universe=${universe.length} · results=${opportunityResults.size} · confirmed=${recordTrackSignals.lastStats?recordTrackSignals.lastStats.confirmedRows:0} · pending=${gatePendingConfirm.size}${scanErr?" · ⚠错误: "+(scanErr.message||scanErr):""}`);
-  renderTrackPanel(); // 让诊断行(扫描历史/闸门倒计时)跟每轮扫描同步刷新,不用等20秒结算定时器
+  try{
+    renderTrackPanel(); // 让诊断行(扫描历史/闸门倒计时)跟每轮扫描同步刷新,不用等20秒结算定时器
+  }catch(e){ console.error("[ORBIT] renderTrackPanel 异常:",e); }
 }
 function setOppStatus(text){const el=document.getElementById("oppStatus");if(el)el.textContent=text;}
 let opportunityVisibilityListenerAttached=false;
@@ -2774,7 +2857,14 @@ function renderLiveHeatmap(log){
     const pnlCls=r.status==="filled"&&pnl?(pnl.pnlPct>=0?"up":"down"):"";
     const pnlTxt=r.status==="filled"&&pnl?`${pnl.pnlPct>=0?"+":""}${pnl.pnlPct.toFixed(1)}%`:"等待成交";
     const expanded=trkExpandedIds.has(r.id);
-    const tile=`<div class="trk-tile${expanded?" open":""}" data-id="${esc(r.id)}" data-symbol="${esc(r.symbol)}" style="background:${bg}" title="点击查看这笔推荐的入场/止损/止盈/成交明细">
+    // 2026-09-10 P1-3: drift.level==="reversed"(现价实时信号已反转)时,原有的trk-drift-dot
+    // 颜色太淡,用户扫一眼热力图根本注意不到——这里额外加一圈醒目边框+右上角⚠角标,并把
+    // drift.text完整塞进title,鼠标悬浮就能看到"为什么"而不用去点开明细。
+    const reversedStyle=drift&&drift.level==="reversed"?"border:2px solid var(--down);position:relative;":"";
+    const reversedCorner=drift&&drift.level==="reversed"?`<span style="position:absolute;top:-6px;right:-6px;font-size:11px;">⚠</span>`:"";
+    const tileTitle=drift?`点击查看这笔推荐的入场/止损/止盈/成交明细 · ${drift.text}`:"点击查看这笔推荐的入场/止损/止盈/成交明细";
+    const tile=`<div class="trk-tile${expanded?" open":""}" data-id="${esc(r.id)}" data-symbol="${esc(r.symbol)}" style="background:${bg};${reversedStyle}" title="${esc(tileTitle)}">
+      ${reversedCorner}
       <div class="trk-tile-top">
         <span class="trk-tile-sym">${esc(r.symbol.replace("USDT",""))} <span class="trk-tile-dir ${r.dir>0?"up":"down"}">${r.dir>0?"▲":"▼"}</span></span>
         ${drift?`<span class="trk-drift-dot ${drift.level}" title="${esc(drift.text)}"></span>`:""}
@@ -2831,12 +2921,17 @@ function renderTrackJournal(log){
       const pnl=trkPositionPnL(r);
       const pnlHTML=pnl?`<span class="trk-entry-pnl ${pnl.pnlUsdt>=0?"up":"down"}">平仓盈亏 ${pnl.pnlUsdt>=0?"+":""}${pnl.pnlUsdt.toFixed(0)}U(${pnl.pnlPct>=0?"+":""}${pnl.pnlPct.toFixed(1)}%)</span>`:"";
       const idExpanded=trkExpandedIds.has(r.id);
+      // 2026-09-10 P1-3b: 已归档的记录也可能"当前实时信号已反转"——同样要显眼提示,不能只有
+      // 展开明细才看得到,复用现有trk-badge.loss样式,不新增CSS。
+      const driftArchived=trkSignalDriftInfo(r);
+      const reversedBadge=driftArchived&&driftArchived.level==="reversed"?`<span class="trk-badge loss" title="${esc(driftArchived.text)}">⚠ 方向已反转</span>`:"";
       return`<div class="trk-entry-block" data-id="${esc(r.id)}">
         <div class="trk-entry-row" data-symbol="${esc(r.symbol)}">
           <span class="trk-entry-sym">${esc(r.symbol.replace("USDT",""))}</span>
           <span class="trk-entry-dir ${r.dir>0?"up":"down"}">${r.dir>0?"LONG":"SHORT"}</span>
           <span>${r.conviction}% 把握</span>
           ${trkBadge(r)}
+          ${reversedBadge}
           ${pnlHTML}
           <button class="trk-detail-toggle" data-id="${esc(r.id)}">${idExpanded?"▾ 收起":"▸ 详情"}</button>
         </div>
@@ -4986,7 +5081,7 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   const risk=plan.noSetup?null:Math.abs(entryPx-plan.sl);
   const reward1=(!plan.noSetup&&plan.tps&&plan.tps[0])?Math.abs(plan.tps[0].price-entryPx):0;
   const rr1=(!plan.noSetup&&risk>0)?(reward1/risk):null;
-  const confluenceOK=confluence>=60;
+  const confluenceOK=confluence>=50; // 2026-09-10 P0-2: 原60,与TRACK_CONVICTION_MIN/GATE_CONFIRM_MIN_MS一并下调,让样本能积累
   // 2026再修: buildTradePlan 源头只保证 TP1距离 >= riskDist * tp1RRMin.baseline(=1.3),
   // 这里之前却要求 rr1>=1.5——两个数字互相打架,等于系统性拒绝所有 RR 落在[1.3,1.5)区间、
   // 本身完全合规的信号。改为跟 PARAM_CONFIG.tp1RRMin 同一个数字,不再凭空多出一道无依据的门槛。
@@ -5013,6 +5108,30 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   return{pass,hasDirection,checks,rr1,oppType};
 }
 
+/* 2026-09-10 P1新增: "信号静悄悄变化"——computeSignal 每次被调用(K线WS节流2秒、loadExtras
+   各异步数据回来、renderModalScroll前节流、机会雷达90秒一轮扫描)都会重新算dirSign,用户
+   10:00看到SHORT下单,10:05刷新变成NEUTRAL或反转,页面此前没有任何机制告诉他"这和你下单时
+   已经不是同一个东西了"。这里用两个模块级Map补上这层记忆(闭包内,不挂window):
+   ① lastDirSignBySymbol: 只记"上一次"与"变化时间点",驱动P1-1的"⚠方向刚变"即时提示;
+   ② dirSignHistoryBySymbol: 记过去1小时的完整变化序列,驱动P1-2的"信号稳定性"统计
+   (过去1小时变了几次/当前方向已经稳定了多久),两者职责不同,故意分开存,不要合并成一个。 */
+const lastDirSignBySymbol=new Map();   // symbol -> {dirSign, previousDirSign, changedAt, stableSince}
+const dirSignHistoryBySymbol=new Map(); // symbol -> [{ts, dirSign}] · 只保留最近1小时
+function computeSignalStability(symbol){
+  const hist=dirSignHistoryBySymbol.get(symbol)||[];
+  if(hist.length<2)return{changesLastHour:0,currentStableMs:hist.length?Date.now()-hist[0].ts:0,avgStableMs:null};
+  let changes=0;const stableSpans=[];let spanStart=hist[0].ts;
+  for(let i=1;i<hist.length;i++){
+    if(hist[i].dirSign!==hist[i-1].dirSign){
+      changes++;
+      stableSpans.push(hist[i].ts-spanStart);
+      spanStart=hist[i].ts;
+    }
+  }
+  const currentStableMs=Date.now()-spanStart;
+  const avgStableMs=stableSpans.length?stableSpans.reduce((a,b)=>a+b,0)/stableSpans.length:null;
+  return{changesLastHour:changes,currentStableMs,avgStableMs};
+}
 function computeSignal(candles,intervalLabel,symbol,ctx){
   if(!candles||candles.length<30)return null;
   // ctx lets a background batch scan (Opportunity Radar) feed in per-symbol OI/CVD/ratio
@@ -5229,6 +5348,26 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   // Update table badge
   if(m)m.signalDir=dirSign;
 
+  // 2026-09-10 P1-1/P1-2: 方向刚变检测 + 1小时变化历史,见上方 lastDirSignBySymbol/
+  // dirSignHistoryBySymbol 定义处的说明。这里只做记录与判断,不改变dirSign本身,也不影响
+  // 下面任何投票/指标/交易计划逻辑。
+  const __dsNow=Date.now();
+  const __dsPrev=lastDirSignBySymbol.get(symbol);
+  const dirChanged=!!(__dsPrev&&__dsPrev.dirSign!==0&&dirSign!==__dsPrev.dirSign);
+  const dirChangedAt=dirChanged?__dsNow:(__dsPrev?__dsPrev.changedAt:null);
+  const dirStableSince=dirChanged?__dsNow:(__dsPrev&&__dsPrev.dirSign===dirSign?__dsPrev.stableSince:__dsNow);
+  const previousDirSign=__dsPrev?__dsPrev.dirSign:0;
+  lastDirSignBySymbol.set(symbol,{dirSign,previousDirSign:dirChanged?__dsPrev.dirSign:previousDirSign,changedAt:dirChangedAt,stableSince:dirStableSince});
+  {
+    const __hist=dirSignHistoryBySymbol.get(symbol)||[];
+    // 只在方向真的变化、或历史为空时push一条,避免同一方向每2秒的重复调用把数组撑爆——
+    // "稳定了多久"用stableSince算即可,历史数组只需要记住"变化发生在哪些时间点"。
+    if(!__hist.length||__hist[__hist.length-1].dirSign!==dirSign)__hist.push({ts:__dsNow,dirSign});
+    const __cutoff=__dsNow-3600000;
+    while(__hist.length&&__hist[0].ts<__cutoff)__hist.shift();
+    dirSignHistoryBySymbol.set(symbol,__hist);
+  }
+
   // 突破确认分档: 参考位取"最近一个摆动高点(LONG)/摆动低点(SHORT)"——如果价格还没越过它,
   // 诚实标为"跟踪中·未突破"(此时不该被算作突破延续机会);越过了则进一步核验是否连续2根收盘+放量,
   // 而不是单根插针就被当成"结构位突破延续"。详见 computeBreakoutState。
@@ -5281,8 +5420,11 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   const oppTypeForGate=classifyOpportunityType({outlook,dirSign,topBottom:tbs,mtfDir,ciVal,er,regime,reliability}).key;
   const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppTypeForGate);
 
+  const stability=computeSignalStability(symbol); // P1-2: {changesLastHour,currentStableMs,avgStableMs}
+
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,mtfDetail,gate,bbU,bbL,bbM,breakout,sigma:sigmaVal};
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,mtfDetail,gate,bbU,bbL,bbM,breakout,sigma:sigmaVal,
+    dirChanged,dirChangedAt,dirStableSince,previousDirSign,stability};
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -5708,7 +5850,10 @@ function renderChartBiasBadge(sig){
   // 只在方向已确认(dirSign≠0)时呼吸发光——中性/无方向不该被动效暗示"有信号",这与下方
   // TP/SL 计划"中性时不给假计划"是同一条原则:动效本身也是一种信息,不能传达错误的确定性。
   el.className="chart-bias-badge"+(sig.dirSign>0?" live-bull":sig.dirSign<0?" live-bear":"");
-  el.innerHTML=`<div class="bb-lbl ${sig.biasCls}">${esc(sig.biasLabel)}</div><div class="bb-sub">共振度 ${sig.confluence}% · ${esc(sig.intervalLabel)} · ${esc(sig.regimeLabel)}</div>`;
+  // 2026-09-10 P1-1: 方向刚变(dirChanged)时,在徽章旁加一个闪烁的警示——这是"信号会静悄悄
+  // 变化"这个根本问题的第一道提示,让用户在打开详情前就能一眼看到"这次跟上次不一样了"。
+  const changeTag=sig.dirChanged?`<span class="ind-tag bear" style="animation:blink 1s infinite;margin-left:6px;">⚠ 方向刚变</span>`:"";
+  el.innerHTML=`<div class="bb-lbl ${sig.biasCls}">${esc(sig.biasLabel)}${changeTag}</div><div class="bb-sub">共振度 ${sig.confluence}% · ${esc(sig.intervalLabel)} · ${esc(sig.regimeLabel)}</div>`;
 }
 /* Full signal detail (bias header + all indicator votes) — now rendered as the first card
    inside the single unified scroll area below the chart, instead of a separately-scrolling
@@ -5717,6 +5862,21 @@ function renderChartBiasBadge(sig){
    最后才是别的信息。这里把"综合信号 bias 头 + donut/bento 总览"拆成独立函数,
    在 renderModalScrollNow 里排在 TP/SL 计划之前;逐项指标明细(硬核模式)仍保留在原位置、
    TP/SL之后,避免首屏信息过载。 */
+/* 2026-09-10 P1-2新增: "把握度73%"这种数字对用户没有实际指导意义,因为信号可能只持续
+   20分钟。用户真正需要知道的是"这个信号平均能撑多久"——见computeSignal里的
+   computeSignalStability,这里只负责把已经算好的{changesLastHour,currentStableMs,avgStableMs}
+   渲染成一行文字,不重新计算。 */
+function renderSignalStabilityLine(sig){
+  const st=sig.stability;
+  if(!st)return"";
+  const stableMin=Math.max(0,Math.round(st.currentStableMs/60000));
+  const unstable=st.changesLastHour>=3;
+  const cls=unstable?"down":"";
+  const warnLine=unstable
+    ?`<div class="sig-note" style="margin-top:2px;color:var(--down);">此信号平均持续不到20分钟,不适合作为挂限价单等回调的依据,建议观望或仅做超短线。</div>`
+    :"";
+  return`<div class="sig-note ${cls}" style="margin-top:4px;">信号稳定性: 过去1小时变化 <span class="${cls}">${st.changesLastHour}</span> 次 · 当前方向已持续 <span class="${cls}">${stableMin}</span> 分钟</div>${warnLine}`;
+}
 function renderSignalGlance(sig){
   if(!sig)return `<div class="sig-empty">指标数据不足<br>(需≥30根K线历史)</div>`;
   const regimeCls=sig.regime==="trend"?"bull":sig.regime==="range"?"bear":"neutral";
@@ -5728,6 +5888,7 @@ function renderSignalGlance(sig){
         <div class="sig-bias ${sig.biasCls}">${sig.biasLabel}</div>
         <div class="sig-conf">共振度 ${sig.confluence}% · 加权得分 ${sig.score>0?'+':''}${sig.score.toFixed(2)}/${sig.maxScore.toFixed(1)} · <span class="${rel.cls}">⚖️ ${esc(rel.label)}</span></div>
         <div class="conf-bar"><div class="conf-fill" style="width:${Math.max(0,Math.min(100,sig.confluence))}%;background:${sig.biasCls==='bull'?'var(--up)':sig.biasCls==='bear'?'var(--down)':'var(--amber)'}"></div></div>
+        ${renderSignalStabilityLine(sig)}
         <div class="sig-note" style="margin-top:8px;">市场状态 <span class="ind-tag ${regimeCls}" style="font-size:10px;">${esc(sig.regimeLabel)}</span> · Choppiness(14) ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"} · ER(10) ${sig.er!=null?sig.er.toFixed(2):"–"} → ${sig.regime==="trend"?"顺势类指标(EMA/Vegas/Supertrend/结构/VWAP)权重↑1.4×,反转类(RSI/布林/BIAS)降至0.6×":sig.regime==="range"?"反转类指标(RSI/布林/BIAS)权重↑1.4×,顺势类降至0.6×":"权重均等(过渡区,趋势特征不明显)"}</div>
       </div>
       <div class="sig-block">
@@ -5859,9 +6020,21 @@ function markPositionFilled(){
   if(!lastCandles||!lastCandles.length||!selectedSymbol)return;
   const sig=computeSignal(lastCandles,chartInterval,selectedSymbol);
   const p=sig.plan.main; if(!p||p.noSetup)return;
+  // 2026-09-10 P1-4修复: 这里之前直接存 p.entry(模型建议的限价),但用户实际成交价很可能是
+  // 自己在交易所上挂的另一个价格(滑点/手动调整/分批建仓等原因),用"建议价"当"实际成交价"
+  // 去算浮动盈亏,算出来的数字是假的,跟用户账户里真实发生的事对不上。这里改为让用户自己
+  // 填一个实际成交价,默认值预填模型建议价(fmtPrice(p.entry)的数字部分),用户可以直接改。
+  const defaultVal=fmtPrice(p.entry);
+  const input=window.prompt(`请输入你实际成交的价格(默认为模型建议的限价 ${defaultVal},如果你就是在这个价位成交的,直接确定即可;如果实际成交价不同,请修改后再确定)`,defaultVal);
+  if(input===null)return; // 用户取消 → 不标记,不写localStorage
+  const actualEntryPrice=parseFloat(input);
+  if(!isFinite(actualEntryPrice)||actualEntryPrice<=0){
+    alert("输入的价格无效,未标记入场。");
+    return;
+  }
   const positions=getPositions();
   positions[posKey(selectedSymbol,chartInterval)]={
-    dir:p.dir,entry:p.entry,sl:p.sl,invalidatePrice:p.entryInfo.invalidatePrice,
+    dir:p.dir,entry:p.entry,actualEntryPrice,sl:p.sl,invalidatePrice:p.entryInfo.invalidatePrice,
     tps:p.tps.map(t=>({label:t.label,price:t.price})),
     regimeAtEntry:sig.regime,regimeLabelAtEntry:sig.regimeLabel,
     reliabilityTierAtEntry:sig.reliability.tier,convictionAtEntry:sig.outlook.conviction,
@@ -5924,12 +6097,18 @@ function positionHealthCardHTML(pos,sig){
   const badge={green:{emoji:"🟢",label:"论文仍然成立",col:"var(--up)"},
     yellow:{emoji:"🟡",label:"论文动摇",col:"var(--amber)"},
     red:{emoji:"🔴",label:"论文已被推翻",col:"var(--down)"}}[health.level];
-  const pnlPct=(((sig.price-pos.entry)/pos.entry)*100*pos.dir).toFixed(2);
+  // 2026-09-10 P1-4: 盈亏必须按用户实际成交价算,不能按模型建议的限价算——两者可能因为滑点/
+  // 手动调整不一致。actualEntryPrice缺失时(旧数据,标记入场功能升级前存的)退回pos.entry兼容。
+  const fillPrice=pos.actualEntryPrice!=null?pos.actualEntryPrice:pos.entry;
+  const pnlPct=(((sig.price-fillPrice)/fillPrice)*100*pos.dir).toFixed(2);
   const pnlCol=Number(pnlPct)>=0?"var(--up)":"var(--down)";
+  const entryLine=pos.actualEntryPrice!=null&&Math.abs(pos.actualEntryPrice-pos.entry)>1e-12
+    ?`实际成交 ${fmtPrice(pos.actualEntryPrice)}(模型建议限价 ${fmtPrice(pos.entry)}) → 现价 ${fmtPrice(sig.price)}`
+    :`开仓 ${fmtPrice(fillPrice)} → 现价 ${fmtPrice(sig.price)}`;
   return `<div style="border:1px solid ${badge.col};border-radius:6px;padding:12px 14px;margin:2px 0 14px;background:var(--panel2);">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
       <div style="font-size:14px;font-weight:700;color:${badge.col};">${badge.emoji} 持仓中 · ${esc(badge.label)}</div>
-      <div style="font-size:11.5px;color:var(--dim);">已持仓 ${fmtElapsed(Date.now()-pos.filledAt)} · 开仓 ${fmtPrice(pos.entry)} → 现价 ${fmtPrice(sig.price)} · <b style="color:${pnlCol};">${Number(pnlPct)>=0?"+":""}${pnlPct}%</b></div>
+      <div style="font-size:11.5px;color:var(--dim);">已持仓 ${fmtElapsed(Date.now()-pos.filledAt)} · ${entryLine} · <b style="color:${pnlCol};">${Number(pnlPct)>=0?"+":""}${pnlPct}%</b></div>
     </div>
     <div style="font-size:12px;color:var(--dim);margin-top:8px;line-height:1.65;">${health.reasons.map(r=>"· "+esc(r)).join("<br>")}</div>
     <div style="margin-top:10px;">
@@ -6608,6 +6787,13 @@ function buildDeskNote(sig){
   const symbol=selectedSymbol,base=symbol.replace("USDT","");
   const m=market.get(symbol);
   const sentences=[];
+  // 2026-09-10 P1-1: 方向刚变(dirChanged)时,把警告放在整篇纪要最前面——用户可能是刚下单
+  // 后回来看,这是"你手上的仓位方向可能已经被模型自己推翻了"这句话最该出现的位置,不能埋在
+  // 后面的风险敞口收尾句里被忽略掉。
+  if(sig.dirChanged){
+    const dirTxt=d=>d>0?"LONG做多":d<0?"SHORT做空":"NEUTRAL中性";
+    sentences.push(`<b class="down">⚠ 本币种信号方向刚刚发生变化(从 ${dirTxt(sig.previousDirSign)} 变为 ${dirTxt(sig.dirSign)})。如果你此前据旧方向下单,请立即重新评估该仓位。</b>`);
+  }
   // 1) Headline bias + regime + confluence
   sentences.push(`<b class="${sig.biasCls}">${esc(sig.biasLabel)}</b>,${esc(sig.intervalLabel)}级别信号共振度 <b>${sig.confluence}%</b>(${sig.votes.length}项原始指标聚合为${sig.clusters?sig.clusters.length:5}个独立信息簇,${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore.toFixed(1)}簇分),当前处于<b>${esc(sig.regimeLabel)}</b>(Choppiness ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"})。`);
   // 2) Top 2-3 driving indicators (highest weighted-conviction, non-zero)
