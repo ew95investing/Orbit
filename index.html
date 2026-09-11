@@ -394,6 +394,17 @@
   .opp-empty{font-size:11.5px;color:var(--dim2);padding:10px 4px;}
   .opp-quality-note{font-size:11.5px;color:var(--dim2);padding:9px 14px 0;line-height:1.7;}
   .opp-status-line{font-size:11.5px;color:var(--dim);padding:7px 14px 0;line-height:1.6;}
+  .opp-watchlist{padding:8px 14px 2px;border-bottom:1px solid var(--line,#2a3038);}
+  .opp-watch-head{font-size:11.5px;color:var(--dim);margin-bottom:6px;}
+  .opp-watch-row{display:flex;align-items:center;gap:8px;padding:5px 8px;margin-bottom:4px;border-radius:6px;font-size:12px;background:rgba(255,255,255,0.02);}
+  .opp-watch-row.tier-a{border-left:3px solid var(--up,#2ecc71);}
+  .opp-watch-row.tier-b{border-left:3px solid var(--amber,#e8a33d);}
+  .opp-watch-row.tier-c{border-left:3px solid var(--dim2,#5a6270);opacity:0.75;}
+  .opp-watch-tier{font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,0.06);color:var(--dim);white-space:nowrap;}
+  .opp-watch-sym{font-weight:600;min-width:56px;}
+  .opp-watch-dir.up{color:var(--up,#2ecc71);}
+  .opp-watch-dir.down{color:var(--down,#e05c5c);}
+  .opp-watch-note{color:var(--dim);font-size:11px;margin-left:auto;text-align:right;}
   .opp-status-line b{color:var(--text);font-weight:700;}
   .opp-status-line .up{color:var(--up);font-weight:600;}
   .opp-status-line .amb{color:var(--amber);font-weight:600;}
@@ -428,6 +439,11 @@
   .opp-stat i{font-style:normal;color:var(--dim2);font-size:10.5px;margin-right:5px;}
   .opp-stat.sl{color:var(--down);}
   .opp-stat.tp{color:var(--up);}
+  .opp-row-confidence{display:flex;gap:16px;flex-wrap:wrap;padding:0 12px 10px;font-family:var(--mono);border-top:1px dashed var(--line);margin-top:2px;padding-top:8px;}
+  .opp-conf-item{font-size:12px;color:var(--text);white-space:nowrap;}
+  .opp-conf-item i{font-style:normal;color:var(--dim2);font-size:10.5px;margin-right:5px;}
+  .opp-conf-item.up{color:var(--up);}
+  .opp-conf-item.down{color:var(--down);}
   .opp-row-detail{display:none;padding:10px 12px 12px;border-top:1px solid var(--line);font-size:12px;line-height:1.65;}
   .opp-row.open .opp-row-detail{display:block;}
   .opp-detail-sec{margin-bottom:9px;}
@@ -483,6 +499,8 @@
   /* 持仓热力图: 卡片式而非文字行,一眼看清方向/浮盈亏,颜色深浅=盈亏幅度 */
   .trk-heatmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:8px;}
   .trk-tile{border:1px solid var(--line2);border-radius:7px;padding:10px 11px;cursor:pointer;transition:border-color .15s,transform .1s;}
+  .trk-tile-watch{border-style:dashed;opacity:0.72;cursor:default;background:rgba(255,255,255,0.02);}
+  .trk-watch-divider{font-size:11.5px;color:var(--dim2);margin:10px 0 6px;padding-top:8px;border-top:1px dashed var(--line2);}
   .trk-tile:hover{border-color:var(--amber);transform:translateY(-1px);}
   .trk-tile-top{display:flex;align-items:center;justify-content:space-between;gap:6px;}
   .trk-tile-sym{font-weight:700;font-size:14px;}
@@ -513,6 +531,13 @@
   .trk-day-pnl{margin-left:auto;font-weight:700;font-size:12.5px;}
   .trk-day-pnl.up{color:var(--up);}
   .trk-day-pnl.down{color:var(--down);}
+  .trk-block-summary{padding:8px 12px 4px;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);background:rgba(255,255,255,.015);}
+  .trk-block-summary-head{font-size:11.5px;color:var(--dim2);margin-bottom:6px;}
+  .trk-block-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;padding:3px 0;color:var(--dim);}
+  .trk-block-label{color:var(--amber);font-weight:600;width:52px;flex-shrink:0;}
+  .trk-block-stat b{color:var(--fg);font-weight:600;}
+  .trk-block-stat.amb{color:var(--amber);}
+  .trk-block-stat.dim{color:var(--dim2);}
   .trk-entry-block{border-top:1px solid var(--line2);padding:2px 0;}
   .trk-entry-row{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:13px;cursor:pointer;flex-wrap:wrap;}
   .trk-entry-row:hover{background:rgba(255,255,255,.02);}
@@ -1123,6 +1148,7 @@
       <span class="opp-status" id="oppStatus">等待首次扫描…</span>
     </div>
     <div class="opp-quality-note">⚡日内脉冲 = 数十分钟~数小时的短线均值回归 · 📈波段趋势 = 1~4日的顺势回调入场 · 🚀主升主跌浪 = 数日~数周的延伸趋势(五重确认,最苛刻) · 🔮结构性拐点 = OI/费率/价格三因子共振的反转机会。四档判定逻辑与止损/仓位/持仓纪律完全独立,不混用。总览按机会质量排序,点击任一行展开该类型专属的入场/止损止盈/仓位/纪律。</div>
+    <div class="opp-watchlist" id="oppWatchlist"></div>
     <div class="opp-status-line" id="oppStatusLine">–</div>
     <div id="oppNearMiss"></div>
     <div class="opp-table" id="oppOverviewTable"><div class="opp-empty">扫描中…</div></div>
@@ -1330,6 +1356,8 @@ const PARAM_CONFIG = {
   ciTrendEnter:{baseline:28,label:"Choppiness≤该值→判定为趋势市",group:"regime分类阈值",
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
   ciRangeEnter:{baseline:65,label:"Choppiness≥该值→判定为震荡市",group:"regime分类阈值",
+    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+  extensionGuardAtr:{baseline:4.5,label:"追高护栏:价格偏离EMA50超过该ATR倍数→强制降级为观测档",group:"风险护栏",
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
 };
 // 取某个参数当前有效值(测试期间会被 __paramOverride 临时顶替,平时等于 baseline)
@@ -1547,6 +1575,17 @@ function ciLabel(wins,n){
   const[lo,hi]=wilsonCI(wins,n);
   const wide=(hi-lo)>=40; // 区间跨度≥40个百分点 → 样本太小,数字还谈不上可信
   return`<span class="ci-tag${wide?" ci-wide":""}" title="Wilson 95%置信区间: 样本量为n=${n}时,真实胜率有95%概率落在这个区间内,区间越宽代表样本越小、这个胜率数字越不可信">95%CI ${lo.toFixed(0)}–${hi.toFixed(0)}%</span>`;
+}
+/* 2026-09-11 新增: 该"机会时间维度分类"(主升主跌浪/波段趋势/日内脉冲/结构性拐点)各自历史上
+   到底被验证过多少笔——对应 tradingscan.ai 截图里"历史不足23"那类漏斗统计。之前 conviction 分数
+   (比如"78/100")直接摆在策略卡片上,用户完全不知道这个数字背后有没有真实结果支撑。现在复用
+   已有的 wilsonCI/ciLabel(与校准页同一套算法,不另造一套),在策略卡片上就近提示"这个类型的
+   历史样本够不够、这个胜率数字该有多少可信度",而不是等用户自己翻到追踪日志页才发现样本是0。*/
+function typeSampleStats(oppTypeKey){
+  const log=getTrackLog();
+  const resolved=log.filter(r=>r.oppTypeKey===oppTypeKey&&(r.status==="win"||r.status==="loss"));
+  const wins=resolved.filter(r=>r.status==="win").length;
+  return{n:resolved.length,wins,winRate:resolved.length?wins/resolved.length:null};
 }
 
 /* ==================== 移植自 trading-scan: CSV导出(追踪日志) ====================
@@ -1946,9 +1985,52 @@ function refreshTopN(force){
    Not a market-wide scanner by design — the point is depth+focus
    on coins worth actually trading, not breadth across everything.
 ============================================================ */
-const OPP_SCAN_INTERVAL_MS = 90000;
+// 2026-09-11 重构(用户要求"更自动化/更有前瞻性/别再5分钟前LONG5分钟后SHORT"): 把"数据刷新"
+// 和"决策变化"彻底拆成两档速度,不再用同一个数字兼两个完全不同的职责——这正是过去反复调
+// GATE_CONFIRM_MIN_MS(60秒→150秒→60秒来回改)却始终两头不讨好的根因: 调快了继续闪烁,
+// 调慢了追踪日志又长期挂零。① 数据层(价格/OI/CVD/清算)照样高频轮询,行情该多实时就多实时,
+// 不受本次改动影响;② 决策层(方向/机会是否列入正式清单)重新锚定在4小时K线上——这是币安
+// 现货/合约图表本身最常用的swing周期,也是本文件其余地方(HORIZONS/TP窗口/回测锚点)早就在用
+// 的基准周期,不是凭空发明一个新参数。DECISION_TF_MS 定义"一根决策K线"的长度;一个方向必须
+// 至少经历一次4小时收盘(即跨越一个整点0/4/8/12/16/20点 SGT 的边界)才可能被视为"已确认",
+// 单根K线内部无论怎么抖动都不算数——见下方 barBoundaryKeyOf()/computeBarConfirm()。
+const DECISION_TF_MS = 4*3600*1000;
+const OPP_SCAN_INTERVAL_MS = 300000; // 数据/展示每5分钟刷新一次(原90秒)——足够快到不会错过突发行情,
+                                      // 又不会快到把每一次tick级抖动都当成"新状态"展示给用户。
 const OPP_CONCURRENCY = 4;
 const OPP_TOP_N = 5;
+// 一个方向要被列入"✅已识别机会"正式清单,必须同时满足: ①连续通过执行闸门的挂钟时长
+// ≥ CONFIRM_MIN_ELAPSED_MS ②期间跨越过至少一次4小时K线收盘边界(见barBoundaryKeyOf)。
+// 45分钟是刻意选的下限——纯粹时长门槛无法防止"卡在3:55分刚好压线"这种边界巧合,必须
+// 和"跨越收盘边界"这个结构性条件同时满足,两者缺一都不算真正确认。
+const CONFIRM_MIN_ELAPSED_MS = 45*60*1000;
+function barBoundaryKeyOf(ts){return Math.floor(ts/DECISION_TF_MS);} // 4小时K线序号,ts所在的那一根
+function fmtScanIntervalLabel(){const m=Math.round(OPP_SCAN_INTERVAL_MS/60000);return m>=1?`${m}分钟`:`${Math.round(OPP_SCAN_INTERVAL_MS/1000)}秒`;}
+// 真正的"已确认": 挂钟时长够(CONFIRM_MIN_ELAPSED_MS)且期间跨越过至少一根4小时K线的收盘边界
+// (firstPassBarKey 与"当前所在的这根4小时K线序号"不相等,说明中途真的经历过一次整点收盘,
+// 不是恰好在同一根K线内部凑够了45分钟)。两个条件都是硬性的,任一不满足都只能算"确认中"。
+function isBarConfirmed(pend,now){
+  if(!pend)return false;
+  const elapsed=now-pend.firstPassAt;
+  if(elapsed<CONFIRM_MIN_ELAPSED_MS)return false;
+  const startBar=pend.firstPassBarKey!=null?pend.firstPassBarKey:barBoundaryKeyOf(pend.firstPassAt);
+  return barBoundaryKeyOf(now)>startBar;
+}
+function barConfirmRemainingLabel(pend,now){
+  if(!pend)return{elapsedOK:false,barOK:false,text:"尚未开始计时"};
+  const elapsed=now-pend.firstPassAt;
+  const elapsedOK=elapsed>=CONFIRM_MIN_ELAPSED_MS;
+  const startBar=pend.firstPassBarKey!=null?pend.firstPassBarKey:barBoundaryKeyOf(pend.firstPassAt);
+  const barOK=barBoundaryKeyOf(now)>startBar;
+  if(elapsedOK&&barOK)return{elapsedOK,barOK,text:"已确认"};
+  const remainMin=Math.max(0,Math.ceil((CONFIRM_MIN_ELAPSED_MS-elapsed)/60000));
+  const nextBoundaryMs=(startBar+1)*DECISION_TF_MS-now;
+  const remainBarMin=Math.max(0,Math.ceil(nextBoundaryMs/60000));
+  const parts=[];
+  if(!elapsedOK)parts.push(`还需持续${remainMin}分钟`);
+  if(!barOK)parts.push(`还需等待本根4H K线收盘(约${remainBarMin}分钟)`);
+  return{elapsedOK,barOK,text:parts.join(" · ")};
+}
 
 /* ── 推荐追踪(FORWARD TRACKING)常量 ──
    与走步式回测互补而非替代: 回测用现在的代码测过去(in-sample,且Binance不提供历史OI/CVD/
@@ -1988,11 +2070,14 @@ const TRACK_FLIP_COOLDOWN_MS = 12*3600*1000;   // 同一币种但方向反转(�
 // 2026-09-10 P0-2修复: 150秒(≈2.5分钟)连续确认,叠加六项执行闸门+类型专属确认+conviction
 // 门槛后,过滤强度远超预期,是TRACK RECORD长期0笔的第二个主因。降到60秒(≈1次90秒扫描的
 // 时间量级),仍然能挡掉单次噪音瞬间闪烁,但不再要求近3分钟内每一次扫描都稳定不变。
-const GATE_CONFIRM_MIN_MS = 60000;         // 同一 symbol+方向需连续通过执行闸门至少这么久(原150000,≈1分钟)
-                                            // 才算稳定信号,防止噪音瞬间闪烁被记成推荐
+// 2026-09-11 重构: 不再单独用这一个数字定"确认"——见上方 CONFIRM_MIN_ELAPSED_MS/DECISION_TF_MS
+// 与下方 isBarConfirmed()。GATE_CONFIRM_MIN_MS 保留仅作为"多久没见到就算断线重来"的旧兼容读数,
+// 真正决定"能不能进正式清单"的判定已经改为 isBarConfirmed()。
+const GATE_CONFIRM_MIN_MS = CONFIRM_MIN_ELAPSED_MS;
 const GATE_STALE_GAP_MS = 5*60*1000;       // 距上次确认通过已超过这个值,视为中途真的断了,重新从头计时;
                                             // 短暂刷新页面/切走几十秒不受影响,不会丢掉已经攒的确认进度
 const GATE_CONFIRM_KEY = "orbit_gate_confirm_v2";
+const PLAN_PIN_KEY = "orbit_plan_pins_v1";
 const TRACK_SETTLE_INTERVAL_MS = 20000;    // 用已有的实时WS价格做结算判定,不额外发请求,可以跑得很勤
 const TRACK_POSITION_MARGIN_USDT = 10000;  // 仅用于把"胜负"翻译成有感的盈亏数字,假设每笔用1万U保证金
 const TRACK_POSITION_LEVERAGE = 5;         // 假设5倍杠杆(名义仓位5万U),不代表真实建议仓位/杠杆
@@ -2004,6 +2089,48 @@ function saveGateConfirm(m){
   try{localStorage.setItem(GATE_CONFIRM_KEY,JSON.stringify([...m.entries()]));}catch(e){}
 }
 const gatePendingConfirm = loadGateConfirm(); // symbol|dir -> {firstPassAt,lastAt},持久化,页面刷新/短暂后台不清零
+
+/* 2026-09-11 新增: 交易计划"钉住"缓存 — 解决一个真实的用户反馈问题: 之前 buildTradePlan 每次
+   computeSignal 被调用(WS推价2秒一次)都用"当下最新current price"重新算一遍限价回调入场位,而附近
+   无结构确认位时,入场价的算法是"当前价 - 0.65×ATR"这种相对当前价的偏移量——这意味着价格每往
+   建议入场价靠近一点,下一次重算时"当前价"也跟着变了,新算出来的入场价又会是"新的当前价-0.65×ATR",
+   相当于在追一个永远后退的目标(用户举的XRP例子: 现价1.41建议1.40,等价格摸到1.40时,新一轮计算
+   又会建议1.395)。用户已经根据某一刻的建议挂了单,模型不该在他等成交的过程中,不停地把地基抽走重铺。
+   解决方式不是"少算几次"或"降低刷新频率"(治标),而是把"生成一份计划"和"这份计划是否还有效"
+   拆成两件事: 计划一旦生成就钉住(entry/sl/tp三个价位不再随后续scan变化),只有在下面任一条件成立时
+   才允许重新生成新计划——① 价格已跌破/涨破该计划自带的invalidatePrice(说明这不是健康回调,原计划
+   本来就该作废,重算合理);② 计划存在超过其自身最长目标时间窗(HORIZONS里最长3天=4320分钟),视为
+   过期,该关注下一个机会而不是死等;③ 方向反转(dirSign变了,原多单计划在空头场景下已经没有意义)。
+   除此之外,即使新一轮计算出的"理论最优入场"和钉住的旧计划不一样,也不采用新的——展示给用户的
+   永远是"你当初可能已经据此挂单的那个价位",current price 会继续跟着最新行情动,但 entry/sl/tp 本身不动。*/
+const PLAN_PIN_MAX_AGE_MS = 4320*60*1000; // 3天,对齐 HORIZONS 里最长的那一档目标时间窗
+function loadPlanPins(){
+  try{return new Map(JSON.parse(localStorage.getItem(PLAN_PIN_KEY)||"[]"));}catch(e){return new Map();}
+}
+function savePlanPins(m){
+  try{localStorage.setItem(PLAN_PIN_KEY,JSON.stringify([...m.entries()]));}catch(e){}
+}
+const planPins = loadPlanPins(); // "symbol|interval|dirSign" -> {plan:<buildTradePlan返回对象>,pinnedAt}
+function pinnedOrFreshPlan(symbol,intervalLabel,dirSign,freshPlan,price){
+  const key=symbol+"|"+intervalLabel+"|"+dirSign;
+  const prev=planPins.get(key);
+  const now=Date.now();
+  let invalidated=false;
+  if(prev){
+    const ip=prev.plan.entryInfo&&prev.plan.entryInfo.invalidatePrice;
+    if(ip!=null)invalidated=dirSign>0?price<ip:price>ip; // 跌破/涨破失效位 → 原计划判定失效,不是"更便宜/更贵了继续等"
+    const expired=(now-prev.pinnedAt)>PLAN_PIN_MAX_AGE_MS;
+    if(!invalidated&&!expired){
+      return{...prev.plan,marketPrice:price,entryInfo:{...prev.plan.entryInfo,marketPrice:price,dist:Math.abs(prev.plan.entryInfo.price-price),
+        pctFromPrice:(prev.plan.entryInfo.price-price)/price*100},pinned:true,pinnedAt:prev.pinnedAt};
+    }
+  }
+  planPins.set(key,{plan:freshPlan,pinnedAt:now});
+  // 同一symbol+周期,方向反转的那一侧钉住计划应当清掉(不再展示已经没有方向意义的旧计划残留)
+  planPins.delete(symbol+"|"+intervalLabel+"|"+(-dirSign));
+  savePlanPins(planPins);
+  return{...freshPlan,pinned:false,pinnedAt:now};
+}
 let opportunityResults = new Map(); // symbol -> {sig, ts}
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
 let lastOpportunityScanAt = 0;      // 标签页恢复前台时,用于判断该不该立刻补扫一次
@@ -2025,6 +2152,7 @@ const oppExpandedSymbols = new Set(); // 会话内记录总览表里哪些币种
 // "已识别机会"分组(live)。会话内记住用户手动展开过的状态,重绘(每次扫描刷新)不会把它们弹回去。
 let oppFutureOpen = false;
 let oppRefOpen = false;
+let oppPendOpen = false; // "确认中"折叠区默认收起——酝酿中的方向不该和已确认的机会抢注意力
 
 /* ── 扫描诊断(SCAN DIAGNOSTICS) ──
    2026-09-09 新增: 之前两次"根因修复"(见上方2026-09-04/09-08记录)都是在看不到扫描引擎实际
@@ -2427,16 +2555,17 @@ function typeGateExtra(sig,type){
 function oppTriggerState(sig,type){
   const gate=sig.gate;
   const extra=typeGateExtra(sig,type);
+  const tier=gate?gate.tier:"N";
   if(!gate||!gate.pass||!extra.pass){
     const gateFailed=!gate||!gate.pass;
-    return{cls:"fail",badge:"⛔ 仅供参考",layer:gateFailed?"gate":"typeGate",
+    return{cls:"fail",tier,badge:tier==="C"?"👁 观测中 · 非交易信号":"⛔ 仅供参考",layer:gateFailed?"gate":"typeGate",
       detail:gateFailed?"未过执行闸门(方向共识/盈亏比为硬性条件;共振度/市场状态/周期/可信度/MTF五项软性最多容错1项,见下方明细)":extra.reason};
   }
   const pend=gatePendingConfirm.get((sig.symbol||"")+"|"+sig.dirSign);
-  const elapsed=pend?Date.now()-pend.firstPassAt:0;
-  if(pend&&elapsed>=GATE_CONFIRM_MIN_MS)return{cls:"pass",badge:"✅ 已触发 · 计入追踪",detail:"已连续通过执行闸门与该类型专属确认条件"};
-  const remainSec=Math.max(0,Math.round((GATE_CONFIRM_MIN_MS-elapsed)/1000));
-  return{cls:"pending",badge:`⏳ 确认中 · 还需${remainSec}秒`,detail:"执行闸门与类型专属条件已过,等待持续一段时间稳定后才计入追踪(刷新页面不会重置这个进度)"};
+  const now=Date.now();
+  const confirm=barConfirmRemainingLabel(pend,now);
+  if(confirm.elapsedOK&&confirm.barOK)return{cls:"pass",tier,badge:"✅ 已确认 · 计入正式清单",detail:`已连续通过执行闸门与该类型专属确认条件,且已跨越至少一次4小时K线收盘,方向足够稳定,不会因单次tick抖动而反复`};
+  return{cls:"pending",tier,badge:`⏳ 确认中 · ${confirm.text}`,detail:"执行闸门与类型专属条件已过,但尚未同时满足①持续45分钟以上②跨越一次4小时K线收盘——在此之前不计入正式清单,只作为候选展示,避免把还在噪音里的方向当成确定结论"};
 }
 function oppQualityScore(sig,type,trig){
   let s=sig.outlook.conviction;
@@ -2512,6 +2641,22 @@ function buildOppTimelineDetail(symbol,sig,type){
   const rrNote=`止损距入场 ${riskPct}%。${tpLines||"–"}。TP1 距离已强制≥止损距离的${PARAM_CONFIG.tp1RRMin.baseline.toFixed(2)}倍(源头计算时已加入这条下限,不会再出现"止损百分比反而比TP1还宽"这种不成正比的组合);若你看到这一行数字仍显得不合理,大概率是市场刚发生跳空或极端波动,建议以图表实时价位为准并考虑跳过这笔。`;
   return{cyclePhase,confirmChecks,breakoutNote,rrNote};
 }
+// 置信度徽章: 把 computeSignalStability(此前只在内部记账、从未在任何一行机会上直接展示过)
+// 直接摊在每一条机会前面——用户要的"能扛住行情波动的confidence level"不该只是一个conviction
+// 百分比数字(那只是模型这一刻的自评),而应该同时看得到"这个方向已经保持了多久、过去24小时
+// 抖了几次"这两个事实证据,两者合在一起才是真正的稳定性证明。
+function oppConfidenceHTML(sig){
+  const st=computeSignalStability(sig.symbol);
+  const stableH=(st.currentStableMs/3600000);
+  const stableTxt=stableH>=1?`${stableH.toFixed(1)}小时`:`${Math.round(st.currentStableMs/60000)}分钟`;
+  const volLabel=st.changesLastHour===0?"低":st.changesLastHour<=2?"中":"高";
+  const volCls=st.changesLastHour===0?"up":st.changesLastHour<=2?"":"down";
+  return`<div class="opp-row-confidence">
+    <span class="opp-conf-item"><i>把握度</i>${sig.outlook.conviction}%</span>
+    <span class="opp-conf-item"><i>方向已稳定</i>${stableTxt}</span>
+    <span class="opp-conf-item ${volCls}"><i>近1小时抖动</i>${st.changesLastHour}次 · 波动性${volLabel}</span>
+  </div>`;
+}
 function oppStatsBarHTML(sig){
   const p=sig.plan.main;
   const tp1=p.tps&&p.tps[0]?p.tps[0]:null,tp2=p.tps&&p.tps[1]?p.tps[1]:null,tp3=p.tps&&p.tps[2]?p.tps[2]:null;
@@ -2524,7 +2669,7 @@ function oppStatsBarHTML(sig){
     <span class="opp-stat tp"><i>TP3</i>${tp3?fmtPrice(tp3.price):"–"}${tp3&&tp3.rr?` (R:R ${tp3.rr})`:""}</span>
     <span class="opp-stat"><i>先达胜率</i>${tp1&&tp1.raceWinProb!=null?tp1.raceWinProb+"%":"–"}</span>
     <span class="opp-stat"><i>把握度</i>${sig.outlook.conviction}%</span>
-  </div>`;
+  </div>${oppConfidenceHTML(sig)}`;
 }
 function oppRowHTML(symbol,r){
   const sig=r.sig;sig.symbol=sig.symbol||symbol;
@@ -2633,11 +2778,13 @@ function applyOppCollapseState(){
   if(head&&body){head.classList.toggle("open",oppFutureOpen);body.classList.toggle("open",oppFutureOpen);}
   const rhead=document.getElementById("oppRefToggle"),rbody=document.getElementById("oppRefBody");
   if(rhead&&rbody){rhead.classList.toggle("open",oppRefOpen);rbody.classList.toggle("open",oppRefOpen);}
+  const phead=document.getElementById("oppPendToggle"),pbody=document.getElementById("oppPendBody");
+  if(phead&&pbody){phead.classList.toggle("open",oppPendOpen);pbody.classList.toggle("open",oppPendOpen);}
 }
 function renderOpportunityRadar(){
   const noteEl=document.getElementById("oppUniverseNote");
   const universe=mainstreamUniverse();
-  if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 每${Math.round(OPP_SCAN_INTERVAL_MS/1000)}秒滚动刷新`;
+  if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 数据每${fmtScanIntervalLabel()}刷新 · 决策以4小时K线为基准,需持续45分钟以上且跨越一次4H收盘才计入正式清单`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
   recordTrackSignals(rows); // 记录追踪日志用完整候选集(未截断的rows),不只是下面展示的总览表
@@ -2646,14 +2793,43 @@ function renderOpportunityRadar(){
     const trig=oppTriggerState(x.r.sig,type.key);
     return{...x,type,trig,quality:oppQualityScore(x.r.sig,type.key,trig)};
   }).sort((a,b)=>b.quality-a.quality);
-  const live=withMeta.filter(x=>x.trig.cls!=="fail").slice(0,OPP_TOP_N*2);
+  // 2026-09-11 三分展示(用户明确要求"分析/机会必须在确定后才显示"): 之前"已识别机会"把
+  // pass(已确认)和pending(确认中)混在一起显示,用户看到的是"现在的方向",却不知道这个方向
+  // 有没有真正稳定住——这正是"5分钟前LONG、5分钟后又变SHORT"体感的直接来源,因为pending项
+  // 随时可能在下一轮扫描翻回fail甚至反向pending。现在拆成三档,只有bar-confirmed的pass才进
+  // headline"已识别机会",pending单独放进"确认中"折叠区(默认收起,想看模型正在酝酿什么可以点开,
+  // 但不会被当成已经可以行动的结论),fail仍是"观察中·仅供参考"。
+  const live=withMeta.filter(x=>x.trig.cls==="pass").slice(0,OPP_TOP_N*2);
+  const pending=withMeta.filter(x=>x.trig.cls==="pending").slice(0,OPP_TOP_N*2);
   const ref=withMeta.filter(x=>x.trig.cls==="fail").slice(0,OPP_TOP_N*2);
+  // 2026-09-11 新增: 🎯今日关注 — 用户反馈"不知道模型现在到底在盯哪些币,也没有通知,容易错过"。
+  // 不接Telegram也能解决大半:把当前所有 tier A/B/C(即方向已确认、不管是否已达执行闸门)的候选
+  // 常驻摆在面板最上方,每次扫描(90秒)自动刷新——只要页面开着,不需要主动点开任何折叠区就能看到
+  // "现在模型在关注什么"。C档(观测)和A/B档(可执行)视觉上明确分开,不会让人把"仅供观察"误当成
+  // "可以下单"。这不是营销页宣传的"每小时/每日摘要"那种定时推送(那个还没做,需要另外设计),
+  // 是"只要在盯着,永远看得到当下全貌"这一层最基础的可见性。
+  const watchEl=document.getElementById("oppWatchlist");
+  if(watchEl){
+    const watchable=withMeta.filter(x=>x.r.sig.gate&&(x.r.sig.gate.tier==="A"||x.r.sig.gate.tier==="B"||x.r.sig.gate.tier==="C")).slice(0,8);
+    if(!watchable.length){
+      watchEl.innerHTML=`<div class="opp-watch-head">🎯 今日关注 · 0个候选</div><div class="opp-empty">暂无方向已确认的候选,持续扫描中…</div>`;
+    }else{
+      const rowsHtml=watchable.map(x=>{
+        const sig=x.r.sig,tier=sig.gate.tier;
+        const tierMeta=tier==="A"?{cls:"tier-a",label:"A · 全票"}:tier==="B"?{cls:"tier-b",label:"B · 容错1项"}:{cls:"tier-c",label:"C · 仅观测"};
+        const dirTxt=sig.dirSign>0?"LONG 多":"SHORT 空";
+        const noteTxt=tier==="C"?"观测事实·非交易信号,不构成仓位建议":`把握度 ${sig.outlook.conviction}/100`;
+        return`<div class="opp-watch-row ${tierMeta.cls}"><span class="opp-watch-tier">${tierMeta.label}</span><span class="opp-watch-sym">${esc(x.symbol.replace("USDT",""))}</span><span class="opp-watch-dir ${sig.dirSign>0?"up":"down"}">${dirTxt}</span><span class="opp-watch-note">${esc(noteTxt)}</span></div>`;
+      }).join("");
+      watchEl.innerHTML=`<div class="opp-watch-head">🎯 今日关注 · ${watchable.length}个候选(每${fmtScanIntervalLabel()}刷新,C档仅观测不建议下场,A/B档仍需看下方是"已确认"还是"确认中")</div>${rowsHtml}`;
+    }
+  }
   const statusEl=document.getElementById("oppStatusLine");
   if(statusEl){
     const passN=withMeta.filter(x=>x.trig.cls==="pass").length;
     const pendN=withMeta.filter(x=>x.trig.cls==="pending").length;
     const failN=withMeta.filter(x=>x.trig.cls==="fail").length;
-    statusEl.innerHTML=`<b>${withMeta.length}</b> 个方向已确认的候选 · <span class="up">✅ ${passN} 笔已触发计入追踪</span> · <span class="amb">⏳ ${pendN} 笔确认中</span> · <span class="dim2">⛔ ${failN} 笔仅供参考</span>(方向/盈亏比未达标,或五项软确认里错了2项以上,或该类型专属确认条件未过,不计入追踪)。想要更多✅是靠行情本身出现更强共振,不是靠继续放宽闸门——闸门放太松会让追踪校准的胜率数字失去意义。`;
+    statusEl.innerHTML=`<b>${withMeta.length}</b> 个方向已确认的候选 · <span class="up">✅ ${passN} 笔已确认,计入正式清单</span> · <span class="amb">⏳ ${pendN} 笔确认中(尚未展示为机会)</span> · <span class="dim2">⛔ ${failN} 笔仅供参考</span>(方向/盈亏比未达标,或触发追高护栏,或五项软确认里错了2项以上,或该类型专属确认条件未过,不计入追踪)。"已确认"要求持续通过执行闸门45分钟以上且跨越至少一次4小时K线收盘,想要更多✅是靠行情本身出现更强共振并真正稳定住,不是靠放宽闸门或缩短确认时长——那样只会让方向看起来常换常新,追踪校准的胜率数字也会失去意义。`;
   }
   const nearMissEl=document.getElementById("oppNearMiss");
   if(nearMissEl){
@@ -2673,19 +2849,27 @@ function renderOpportunityRadar(){
     // "已识别机会"= 真正该常显的核心内容: 已触发/确认中,附带时间线/几率/价格策略(见 oppRowHTML 内的
     // buildOppTimelineDetail)。"观察中·仅供参考"改为默认收起的可折叠区块——那些是没过执行闸门的候选,
     // 常驻显示只会挤占"已识别机会"的注意力,想核实模型有没有在装死才需要点开看。
-    const liveHTML=live.length?`<div class="opp-group-head">✅ 已识别机会 · 时间线 / 几率 / 价格策略</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
-      :`<div class="opp-group-head">✅ 已识别机会 · 时间线 / 几率 / 价格策略</div><div class="opp-empty">当前没有已触发或确认中的机会,可展开下方"观察中"查看候选具体差在哪一项</div>`;
+    const liveHTML=live.length?`<div class="opp-group-head">✅ 已识别机会 · 已确认(45分钟以上+跨越一次4H收盘) · 时间线 / 几率 / 价格策略</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
+      :`<div class="opp-group-head">✅ 已识别机会 · 已确认(45分钟以上+跨越一次4H收盘) · 时间线 / 几率 / 价格策略</div><div class="opp-empty">当前没有已完成确认的机会——展开下方"确认中"可看正在酝酿但尚未稳定的候选,展开"观察中"可看未过执行闸门的候选具体差在哪一项。这里保持空白是设计如此: 宁可不显示,也不把还在噪音里的方向当成确定结论摆出来。</div>`;
+    const pendHTML=`<div class="opp-collapse-head" id="oppPendToggle">
+        <span class="opp-collapse-arrow">▶</span>
+        <span class="opp-group-head dim" style="padding:0;">⏳ 确认中 · 方向已过执行闸门,但尚未稳定够久,暂不计入正式清单</span>
+        <span class="opp-collapse-count">${pending.length} 项</span>
+      </div>
+      <div class="opp-collapse-body" id="oppPendBody">${pending.length?pending.map(x=>oppRowHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">暂无确认中的候选</div>'}</div>`;
     const refHTML=`<div class="opp-collapse-head" id="oppRefToggle">
         <span class="opp-collapse-arrow">▶</span>
         <span class="opp-group-head dim" style="padding:0;">⚪ 观察中 · 仅供参考(未过执行闸门,不计入追踪)</span>
         <span class="opp-collapse-count">${ref.length} 项</span>
       </div>
       <div class="opp-collapse-body" id="oppRefBody">${ref.length?ref.map(x=>oppRowHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">暂无观察中的候选</div>'}</div>`;
-    tableEl.innerHTML=withMeta.length?(liveHTML+refHTML):'<div class="opp-empty">当前主流币里暂无达到方向确认门槛的机会,继续观察</div>';
+    tableEl.innerHTML=withMeta.length?(liveHTML+pendHTML+refHTML):'<div class="opp-empty">当前主流币里暂无达到方向确认门槛的机会,继续观察</div>';
   }
   renderFutureScanSection();
   const refToggle=document.getElementById("oppRefToggle");
   if(refToggle)refToggle.addEventListener("click",()=>{oppRefOpen=!oppRefOpen;applyOppCollapseState();});
+  const pendToggle=document.getElementById("oppPendToggle");
+  if(pendToggle)pendToggle.addEventListener("click",()=>{oppPendOpen=!oppPendOpen;applyOppCollapseState();});
   applyOppCollapseState();
   document.querySelectorAll(".opp-row-head").forEach(el=>{
     el.addEventListener("click",()=>{
@@ -2754,7 +2938,9 @@ function recordTrackSignals(rows){
     if(sig.gate.pass&&extraOK){
       const prev=gatePendingConfirm.get(key);
       const broke=!prev||(now-prev.lastAt)>GATE_STALE_GAP_MS; // 中途真的断过(长时间未见)才重新计时,短暂刷新/后台不受影响
-      gatePendingConfirm.set(key,{firstPassAt:broke?now:prev.firstPassAt,lastAt:now,missStreak:0});
+      gatePendingConfirm.set(key,{firstPassAt:broke?now:prev.firstPassAt,
+        firstPassBarKey:broke?barBoundaryKeyOf(now):(prev.firstPassBarKey!=null?prev.firstPassBarKey:barBoundaryKeyOf(prev.firstPassAt)),
+        lastAt:now,missStreak:0});
     }else{
       const prev=gatePendingConfirm.get(key);
       const withinGap=prev&&(now-prev.lastAt)<=GATE_STALE_GAP_MS;
@@ -2783,7 +2969,7 @@ function recordTrackSignals(rows){
     const type=classifyOpportunityType(sig);
     if(!typeGateExtra(sig,type.key).pass)return false;
     const pend=gatePendingConfirm.get(x.symbol+"|"+sig.dirSign);
-    return pend&&(now-pend.firstPassAt)>=GATE_CONFIRM_MIN_MS;
+    return isBarConfirmed(pend,now);
   });
   // 供 runOpportunityScan 写入 scanHistory 诊断用,不影响任何判定逻辑本身。
   recordTrackSignals.lastStats={confirmedRows:rows.length,qualifying:qualifying.length,pending:gatePendingConfirm.size};
@@ -2993,6 +3179,71 @@ function trkBadge(r){
   return`<span class="trk-badge ${cls}">${esc(label)}</span>`;
 }
 function fmtTrkPct(x){return x==null?"–":(x*100).toFixed(1)+"%";}
+// 2026-09-11 新增(用户要求"一天下来的journal,按4小时时间框说这段时间建议了多少币/多少match/
+// 多久close/多少还在持续"): 在原有的"按天"归档之上,再按SGT 0/4/8/12/16/20点切成6个4小时区块,
+// 与上面 DECISION_TF_MS 用的是同一个4小时周期,口径统一——一天的复盘不再只是一个总胜率数字,
+// 而是能看清"这一天里模型在哪几个时间段活跃、给了多少建议、有多少真的成交、成交后多久分出胜负、
+// 现在还有几笔没了结",这是"更有前瞻性/更自动化"落到可核对数字上的地方。
+const TRK_4H_BLOCK_LABELS=["00–04","04–08","08–12","12–16","16–20","20–24"];
+function trkFourHourBlockIdx(ts){
+  const p=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Singapore",hour:"2-digit",hour12:false}).formatToParts(new Date(ts));
+  const hour=parseInt(p.find(x=>x.type==="hour").value,10)%24;
+  return Math.floor(hour/4);
+}
+function fmtTrkDurationMs(ms){
+  if(ms==null||ms<0)return"–";
+  const h=ms/3600000;
+  if(h<1)return`${Math.round(ms/60000)}分钟`;
+  if(h<48)return`${h.toFixed(1)}小时`;
+  return`${(h/24).toFixed(1)}天`;
+}
+/* 按"推荐产生时间"(createdAt)分区块,不是按结算时间——这样"这个时间段建议了多少"和"这个时间段
+   现在还有多少没了结"才对得上同一批分母,而不是让一笔凌晨2点建议、下午3点才平仓的记录,同时被
+   算进两个不同区块的分子分母,统计口径会自相矛盾。 */
+function computeDayBlockStats(dayEntries){
+  const blocks=TRK_4H_BLOCK_LABELS.map((label,idx)=>({label,idx,recommended:[],matched:[],closed:[],closedDurationsMs:[],stillOpenOrPending:0}));
+  dayEntries.forEach(r=>{
+    const idx=trkFourHourBlockIdx(r.createdAt);
+    const b=blocks[idx];
+    b.recommended.push(r);
+    const matched=r.status!=="awaiting"&&r.status!=="expired"&&r.status!=="invalidated"; // 真正成交过(含仍持仓/已了结)
+    if(matched)b.matched.push(r);
+    const closed=r.status==="win"||r.status==="loss"||r.status==="timeout";
+    if(closed){
+      b.closed.push(r);
+      if(r.filledAt!=null&&r.resolvedAt!=null)b.closedDurationsMs.push(r.resolvedAt-r.filledAt);
+    }
+    if(r.status==="awaiting"||r.status==="filled")b.stillOpenOrPending++;
+  });
+  return blocks.filter(b=>b.recommended.length>0).map(b=>{
+    const win=b.closed.filter(r=>r.status==="win").length,loss=b.closed.filter(r=>r.status==="loss").length;
+    const avgCloseMs=b.closedDurationsMs.length?b.closedDurationsMs.reduce((a,c)=>a+c,0)/b.closedDurationsMs.length:null;
+    const winTps=b.closed.filter(r=>r.status==="win"&&r.filledAt!=null&&r.resolvedAt!=null).map(r=>r.resolvedAt-r.filledAt);
+    const avgTpMs=winTps.length?winTps.reduce((a,c)=>a+c,0)/winTps.length:null;
+    const lossTps=b.closed.filter(r=>r.status==="loss"&&r.filledAt!=null&&r.resolvedAt!=null).map(r=>r.resolvedAt-r.filledAt);
+    const avgSlMs=lossTps.length?lossTps.reduce((a,c)=>a+c,0)/lossTps.length:null;
+    return{label:b.label,recommendedN:b.recommended.length,matchedN:b.matched.length,closedN:b.closed.length,
+      winN:win,lossN:loss,avgCloseMs,avgTpMs,avgSlMs,stillOpen:b.stillOpenOrPending};
+  });
+}
+function renderDayBlockSummaryHTML(dayEntries){
+  const blocks=computeDayBlockStats(dayEntries);
+  if(!blocks.length)return"";
+  const rows=blocks.map(b=>{
+    const closeTxt=b.avgTpMs!=null||b.avgSlMs!=null
+      ?`止盈均耗时${fmtTrkDurationMs(b.avgTpMs)}${b.avgSlMs!=null?` · 止损均耗时${fmtTrkDurationMs(b.avgSlMs)}`:""}`
+      :(b.closedN?`均耗时${fmtTrkDurationMs(b.avgCloseMs)}`:"尚无已平仓");
+    return`<div class="trk-block-row">
+      <span class="trk-block-label">${esc(b.label)}</span>
+      <span class="trk-block-stat">建议 <b>${b.recommendedN}</b></span>
+      <span class="trk-block-stat">成交 <b>${b.matchedN}</b></span>
+      <span class="trk-block-stat">已平仓 <b>${b.closedN}</b>${b.closedN?`(${b.winN}胜${b.lossN}负)`:""}</span>
+      <span class="trk-block-stat dim">${esc(closeTxt)}</span>
+      <span class="trk-block-stat ${b.stillOpen?"amb":"dim"}">持续中 <b>${b.stillOpen}</b></span>
+    </div>`;
+  }).join("");
+  return`<div class="trk-block-summary"><div class="trk-block-summary-head">📊 按4小时时段拆分(依建议产生时间归档,SGT)</div>${rows}</div>`;
+}
 function trkDayKey(ts){
   const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(ts));
   const o={};p.forEach(x=>o[x.type]=x.value);return`${o.year}-${o.month}-${o.day}`;
@@ -3012,10 +3263,27 @@ function trkSignalDriftInfo(r){
 }
 /* ── 持仓热力图(LIVE HEATMAP) ── 只放当前"开着"的记录(等待成交/持仓中),
    一眼看清现在手上有哪些、浮盈亏多少,不用在密密麻麻的文字行里逐条找。
-   已分胜负/已撤单/已过期的一律归档进下面的每日日志,不再占这里的位置。*/
+   已分胜负/已撤单/已过期的一律归档进下面的每日日志,不再占这里的位置。
+   2026-09-11新增: 用户反馈"热力图还是感觉没什么,观察中/确定的也不显示"——之前这里只画
+   已经走完"闸门通过+连续确认150秒+conviction≥55%+冷却期"整条流水线、正式写进TRACK LOG
+   的记录,这条流水线本来就设计得很严格(是为了不污染校准样本),导致这里长期看起来空荡荡。
+   现在额外拼一层"观察层"tile,直接读实时 opportunityResults(今日关注同一份数据源),把
+   还没走完正式流水线、但方向已确认的A/B/C档候选也摆出来(样式明显区分:虚线边框+半透明,
+   不会让人误以为这些已经是正式追踪的持仓)。已经在正式列表里的symbol不重复出现在观察层。 */
+function getLiveWatchTiles(openSymbols){
+  const items=[...opportunityResults.entries()]
+    .filter(([symbol,r])=>r.sig&&r.sig.dirSign!==0&&r.sig.outlook&&r.sig.outlook.confirmed&&r.sig.gate&&!openSymbols.has(symbol));
+  return items.map(([symbol,r])=>{
+    const sig=r.sig,tier=sig.gate.tier;
+    return{symbol,dir:sig.dirSign,tier,conviction:sig.outlook.conviction};
+  }).filter(x=>x.tier==="A"||x.tier==="B"||x.tier==="C")
+    .sort((a,b)=>b.conviction-a.conviction).slice(0,12);
+}
 function renderLiveHeatmap(log){
   const open=log.filter(r=>r.status==="awaiting"||r.status==="filled");
-  if(!open.length)return'<div class="trk-empty">当前没有追踪中的挂单或持仓。</div>';
+  const openSymbols=new Set(open.map(r=>r.symbol));
+  const watchTiles=getLiveWatchTiles(openSymbols);
+  if(!open.length&&!watchTiles.length)return'<div class="trk-empty">当前没有追踪中的挂单或持仓,也没有方向已确认的观察候选。</div>';
   open.sort((a,b)=>{
     const pa=trkPositionPnL(a),pb=trkPositionPnL(b);
     return(pb&&pb.pnlPct||0)-(pa&&pa.pnlPct||0);
@@ -3053,7 +3321,16 @@ function renderLiveHeatmap(log){
     </div>`:"";
     return tile+detail;
   }).join("");
-  return`<div class="trk-heatmap">${tiles}</div>`;
+  const watchHtml=watchTiles.length?`<div class="trk-watch-divider">👁 观察中 · 方向已确认但尚未进入正式追踪(样本不计入上方校准统计)</div>
+    <div class="trk-heatmap">${watchTiles.map(x=>{
+      const tierMeta=x.tier==="A"?"A·全票":x.tier==="B"?"B·容错1项":"C·仅观测";
+      return`<div class="trk-tile trk-tile-watch" title="观察层候选,尚未走完正式追踪流水线,不构成仓位建议">
+        <div class="trk-tile-top"><span class="trk-tile-sym">${esc(x.symbol.replace("USDT",""))} <span class="trk-tile-dir ${x.dir>0?"up":"down"}">${x.dir>0?"▲":"▼"}</span></span></div>
+        <div class="trk-tile-pnl" style="color:var(--dim);font-size:12px;">${esc(tierMeta)}</div>
+        <div class="trk-tile-meta">${x.conviction}% 把握 · 观察中</div>
+      </div>`;
+    }).join("")}</div>`:"";
+  return`<div class="trk-heatmap">${tiles}</div>${watchHtml}`;
 }
 function trkHeatColor(pnlPct){
   if(pnlPct==null)return"rgba(255,255,255,.03)";
@@ -3071,7 +3348,16 @@ function trkDayExpanded(day,todayKey){
 const TRK_JOURNAL_MAX_DAYS=30;
 function renderTrackJournal(log){
   const archived=log.filter(r=>r.status!=="awaiting"&&r.status!=="filled");
-  if(!archived.length)return'<div class="trk-empty">尚无已结算的追踪记录。</div>';
+  // 2026-09-11新增: byDayAll 按"建议产生的那一天"(createdAt)对**全部**记录分组(不只是已结算的),
+  // 供下面每天的"按4小时时段拆分"区块用——否则"今天建议了几笔/还有几笔挂着没成交或没分胜负"
+  // 这类问题永远答不出来,因为原来的 archived 天生就把还在跑的记录排除在外了。
+  const byDayAll=new Map();
+  log.forEach(r=>{
+    const k=trkDayKey(r.createdAt);
+    if(!byDayAll.has(k))byDayAll.set(k,[]);
+    byDayAll.get(k).push(r);
+  });
+  if(!archived.length&&!byDayAll.size)return'<div class="trk-empty">尚无已结算的追踪记录。</div>';
   const byDay=new Map();
   archived.forEach(r=>{
     const k=trkDayKey(r.resolvedAt||r.createdAt);
@@ -3079,10 +3365,11 @@ function renderTrackJournal(log){
     byDay.get(k).push(r);
   });
   const todayKey=trkDayKey(Date.now());
-  const allDays=[...byDay.keys()].sort((a,b)=>b.localeCompare(a));
+  const allDays=[...new Set([...byDay.keys(),...byDayAll.keys()])].sort((a,b)=>b.localeCompare(a));
   const days=allDays.slice(0,TRK_JOURNAL_MAX_DAYS);
   const html=days.map(day=>{
-    const entries=byDay.get(day).sort((a,b)=>(b.resolvedAt||b.createdAt)-(a.resolvedAt||a.createdAt));
+    const entries=(byDay.get(day)||[]).sort((a,b)=>(b.resolvedAt||b.createdAt)-(a.resolvedAt||a.createdAt));
+    const blockSummaryHTML=renderDayBlockSummaryHTML(byDayAll.get(day)||[]);
     const win=entries.filter(r=>r.status==="win").length,loss=entries.filter(r=>r.status==="loss").length;
     const timeout=entries.filter(r=>r.status==="timeout").length;
     const other=entries.length-win-loss-timeout; // invalidated/expired
@@ -3090,6 +3377,8 @@ function renderTrackJournal(log){
     const dayPnl=entries.reduce((s,r)=>{const p=trkPositionPnL(r);return s+(p?p.pnlUsdt:0);},0);
     const expanded=trkDayExpanded(day,todayKey);
     const rateTxt=decisive?`胜率 ${Math.round(win/decisive*100)}%(${win}胜${loss}负)`:"暂无已分胜负记录";
+    const recommendedThatDay=(byDayAll.get(day)||[]).length;
+    const stillOpenThatDay=(byDayAll.get(day)||[]).filter(r=>r.status==="awaiting"||r.status==="filled").length;
     const rows=expanded?entries.map(r=>{
       const note=trkLossHeuristic(r);
       const pnl=trkPositionPnL(r);
@@ -3117,9 +3406,10 @@ function renderTrackJournal(log){
       <div class="trk-day-head" data-day="${esc(day)}">
         <span class="trk-day-toggle">${expanded?"▾":"▸"}</span>
         <b>${day===todayKey?"今天 "+day:day}</b>
-        <span>${entries.length}笔 · ${rateTxt}${timeout?` · 超时${timeout}`:""}${other?` · 撤单/过期${other}`:""}</span>
+        <span>建议${recommendedThatDay}笔 · 已平仓${entries.length}笔 · ${rateTxt}${timeout?` · 超时${timeout}`:""}${other?` · 撤单/过期${other}`:""}${stillOpenThatDay?` · 持续中${stillOpenThatDay}`:""}</span>
         <span class="trk-day-pnl ${dayPnl>=0?"up":"down"}">${dayPnl>=0?"+":""}${dayPnl.toFixed(0)}U</span>
       </div>
+      ${expanded?blockSummaryHTML:""}
       ${rows}
     </div>`;
   }).join("");
@@ -3204,7 +3494,7 @@ function startRestFallbackPoller(){
     renderCryptoTable();
   };
   poll();
-  restFallbackTimer=setInterval(poll,8000);
+  restFallbackTimer=setInterval(poll,5000); // 2026-09-11: 8000→5000,对齐用户要求的"5秒一tick"
 }
 function handleAggTrade(t){
   const m=market.get(t.s);if(!m)return;
@@ -5306,7 +5596,7 @@ function computeCycleAnchor(candles){
      (不在教科书式主升浪半山腰硬猜顶/猜底),不要求MTF已经同向。
    · pulse(日内脉冲): 不限制 regime(mixed本来就是它的定义域);MTF 同样只要求"不在相反
      方向的强趋势里逆势摸顶摸底",不要求跟随更大周期。 */
-function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppType){
+function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppType,extensionATR){
   const hasDirection=outlook.confirmed;
   const entryPx=plan.entry;
   const risk=plan.noSetup?null:Math.abs(entryPx-plan.sl);
@@ -5347,13 +5637,32 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   ];
   const softMissCount=softChecks.filter(c=>!c.pass).length;
   const softOK=softMissCount<=GATE_SOFT_MISS_ALLOWED;
+  /* 2026-09-11 补充(交易员视角复盘第二轮): 用户问得对——"六项全票"太严是错的,但"錯误答案的反面
+     不是另一个錯误答案(把闸门改松就完了)"。真正顶级交易员的做法从来不是一道二元判定(过/不过),
+     而是分档:证据越充分,给的仓位/确定性越高;证据不够充分,不是直接毙掉不显示,而是降级为
+     "观察仓位"或"纯观测,不建议下场"——这正是借鉴 tradingscan.ai 截图里"观测事实·非交易信号"
+     的思路。所以在 pass(是否计入TRACK RECORD追踪) 之外,再给一个三档 tier,分别对应三种展示/仓位
+     建议,而不是只有"算/不算"两种状态: A=六项全票(最强,正常仓位) · B=软性容错1项(仍可执行,
+     但仓位建议打折) · C=方向已确认但盈亏比不达标或软性错2项以上(不建议执行,仅作为观测/值得
+     关注的候选,不给出仓位建议) · N=方向未确认(连观测都算不上,连噪音方向都没有)。
+     pass 的判定口径: hasDirection && rrOK && softOK && !overExtended(=A或B档且未触发追高护栏),
+     tier 则多给一层三档展示信息,给"今日关注"榜单和近似候选列表用。 */
+  const tierRaw=!hasDirection?"N":!rrOK?"C":softMissCount===0?"A":softMissCount===1?"B":"C";
+  // 追高护栏: 同方向拉伸超过阈值(多单且价格远高于EMA50 / 空单且远低于) → 无论其余各项打分多好,
+  // 强制降级为C档(仅观测)。这是硬性护栏,不是投票项——不进softChecks去被1项容错稀释掉,
+  // 因为"这波已经涨/跌过头"这件事一旦成立,不应该被其他四项确认"投票"盖过去。
+  const extGuardAtr=P('extensionGuardAtr');
+  const overExtended=extensionATR!=null&&hasDirection&&(dirSign>0?extensionATR>=extGuardAtr:extensionATR<=-extGuardAtr);
+  const tier=(overExtended&&tierRaw!=="N")?"C":tierRaw;
   const checks=[
     {key:"direction",label:"【硬性】已形成方向共识(非中性 NEUTRAL)",pass:hasDirection,detail:hasDirection?"方向已确认":"当前徽章为中性 NEUTRAL,尚未形成方向共识"},
     {key:"rr",label:`【硬性】首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
+    {key:"extension",label:`【硬性护栏】未追高(偏离EMA50<${extGuardAtr.toFixed(1)}×ATR)`,pass:!overExtended,
+      detail:extensionATR!=null?`当前偏离 ${extensionATR>=0?"+":""}${extensionATR.toFixed(2)}×ATR${overExtended?" · 已触发追高护栏,降级为仅观测":""}`:"数据不足,暂不评估"},
     ...softChecks.map(c=>({...c,label:c.label+(GATE_SOFT_MISS_ALLOWED?` [软性,五项允许错${GATE_SOFT_MISS_ALLOWED}项]`:"")})),
   ];
-  const pass=hasDirection&&rrOK&&softOK;
-  return{pass,hasDirection,checks,rr1,oppType,softMissCount,softMissAllowed:GATE_SOFT_MISS_ALLOWED};
+  const pass=hasDirection&&rrOK&&softOK&&!overExtended;
+  return{pass,tier,overExtended,extensionATR,hasDirection,checks,rr1,oppType,softMissCount,softMissAllowed:GATE_SOFT_MISS_ALLOWED};
 }
 
 /* 2026-09-10 P1新增: "信号静悄悄变化"——computeSignal 每次被调用(K线WS节流2秒、loadExtras
@@ -5659,7 +5968,7 @@ votes.push(macroDominanceVote(symbol));
   // 没有方向依据的判断硬点一个假装有依据的价位)。改为返回 noSetup 占位对象,渲染层据此
   // 显示"无方向·不构成交易机会"而不是一整套看似煞有介事的交易计划。
   const plan={mode:"trend",main:dirSign!==0
-    ?buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability,regime)
+    ?pinnedOrFreshPlan(symbol,intervalLabel,dirSign,buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability,regime),price)
     :{dir:0,noSetup:true,reliability,entry:null,entryInfo:null,sl:null,slSources:[],tps:[],rr:"–",sigma:sigmaVal}};
 
   const moon=moonPhaseLabel(new Date());
@@ -5686,7 +5995,13 @@ votes.push(macroDominanceVote(symbol));
   // sig.gate.oppType 与之后 classifyOpportunityType(sig) 用的是完全相同的输入字段,
   // 两处分类结果必然一致,不会出现"闸门按A档判定、显示按B档分类"的口径分裂。
   const oppTypeForGate=classifyOpportunityType({outlook,dirSign,topBottom:tbs,mtfDir,ciVal,er,regime,reliability}).key;
-  const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppTypeForGate);
+  // 2026-09-11 新增: 追高护栏(移植自 tradingscan.ai 截图里的"抛物线护栏") — 之前的闸门只回答
+  // "趋势够不够强/效率够不够高",完全没回答"这段趋势是不是已经偏离均值太远,现在才进场是不是在接盘"。
+  // 用价格偏离EMA50的ATR倍数衡量拉伸程度:同方向追(多单在价格已远高于EMA50时/空单在已远低于时)
+  // 达到 extensionGuardAtr(默认4.5×ATR,可在参数面板调)这个量级,即便五重确认都成立,也强制把该
+  // 候选降级为C档(仅观测,不给仓位建议)——真实动量交易员看到这种拉伸不会无脑追,而是等回调。
+  const extensionATR=(e50!=null&&a)?(price-e50)/a:null;
+  const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppTypeForGate,extensionATR);
 
   const stability=computeSignalStability(symbol); // P1-2: {changesLastHour,currentStableMs,avgStableMs}
 
@@ -7176,7 +7491,7 @@ function renderStrategySummary(sig){
     // 2026-09-11 修复: softMissCount此前只算出来存在sig.gate里,没渲染——达标卡片不显示
     // "软性五项里到底有几项没过、是哪几项",用户只看到"达标",看不出这笔是六项全票的最强档,
     // 还是靠容错1项才放行的边缘档,两者风险不一样,不该被同一句"✅ 达标"盖住。
-    const softFailed=gateChecks.filter(g=>!g.pass&&g.key!=="direction"&&g.key!=="rr");
+    const softFailed=gateChecks.filter(g=>!g.pass&&g.key!=="direction"&&g.key!=="rr"&&g.key!=="extension");
     const softPassCount=5-softFailed.length;
     const softNote=softFailed.length
       ?`<div class="gate-reasons" style="color:var(--amber);margin-top:6px;">软性五项中 ${softFailed.length} 项未通过(已在允许范围内放行,不影响本次触发): ${softFailed.map(g=>esc(g.label.replace(/ \[软性.*\]/,""))).join(" · ")}</div>`
@@ -7211,7 +7526,7 @@ function renderStrategySummary(sig){
       </div>
       ${oppTypeSummary?`<div class="strat-row">
         <span class="strat-label">时间维度分类</span>
-        <span class="strat-val">${oppTypeSummary.icon} <b>${esc(oppTypeSummary.label)}</b> · 持有 ${esc(oppTypeSummary.hold)}<br><span class="dim" style="font-size:11px;">${esc(oppTypeSummary.logicNote)}</span></span>
+        <span class="strat-val">${oppTypeSummary.icon} <b>${esc(oppTypeSummary.label)}</b> · 持有 ${esc(oppTypeSummary.hold)}<br><span class="dim" style="font-size:11px;">${esc(oppTypeSummary.logicNote)}</span><br><span style="font-size:11px;">${(()=>{const ts=typeSampleStats(oppTypeSummary.key);return ts.n<10?`<span style="color:var(--dim2,#8a94a6);">📊 该分类历史样本仅 ${ts.n} 笔,样本不足,当前把握度分数暂不构成统计意义上的胜率依据</span>`:`📊 该分类历史 ${ts.n} 笔(${ts.wins}胜) · ${ciLabel(ts.wins,ts.n)}`;})()}</span></span>
       </div>`:""}
       <div class="strat-row">
         <span class="strat-label">💰 建议仓位 / 杠杆</span>
@@ -7231,7 +7546,7 @@ function renderStrategySummary(sig){
       </div>
       <div class="strat-row">
         <span class="strat-label">限价挂单价位</span>
-        <span class="strat-val">${plan.noSetup?'<span class="neutral">未形成方向共识,不给出挂单价位——见下方⚖机会可信度依据</span>':`<b style="color:var(--amber);">${fmtPrice(plan.entry)}</b> · 现价 ${fmtPrice(price)} · <span class="prob-tag">成交概率 ~${plan.entryInfo.prob}%</span> · <span class="eta-live">预计 ${esc(fmtEtaFull(plan.entryInfo.eta))}打到</span> · <span style="color:var(--down);">⛔失效撤单 ${fmtPrice(plan.entryInfo.invalidatePrice)}</span>`}</span>
+        <span class="strat-val">${plan.noSetup?'<span class="neutral">未形成方向共识,不给出挂单价位——见下方⚖机会可信度依据</span>':`<b style="color:var(--amber);">${fmtPrice(plan.entry)}</b> · 现价 ${fmtPrice(price)} · <span class="prob-tag">成交概率 ~${plan.entryInfo.prob}%</span> · <span class="eta-live">预计 ${esc(fmtEtaFull(plan.entryInfo.eta))}打到</span> · <span style="color:var(--down);">⛔失效撤单 ${fmtPrice(plan.entryInfo.invalidatePrice)}</span><br><span style="font-size:11px;color:var(--dim2,#8a94a6);">🔒 ${plan.pinnedAt?`此价位已钉住 · 生成于 ${esc(fmtEtaFull((Date.now()-plan.pinnedAt)/60000))}前 · 在未触及失效价或过期(3天)前不会跟随现价重算`:"刚生成"}</span>`}</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">结构现状</span>
