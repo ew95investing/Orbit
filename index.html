@@ -492,6 +492,7 @@
   .trk-status{margin-left:auto;font-size:11px;color:var(--dim2);}
   .trk-body{padding:14px;}
   .trk-subhead{font-size:11.5px;letter-spacing:1px;color:var(--dim2);text-transform:uppercase;font-weight:700;margin:18px 0 10px;}
+  .trk-cycle-head{font-size:11.5px;color:var(--dim2);margin-bottom:8px;}
   .trk-calib-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}
   .trk-calib-table th{text-align:left;color:var(--dim2);font-weight:600;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line);}
   .trk-calib-table td{padding:7px 8px;border-bottom:1px solid var(--line2);}
@@ -1165,7 +1166,7 @@
   <div class="trk-panel" id="trkPanel">
     <div class="trk-head">
       <span class="trk-title">推荐追踪 · TRACK RECORD</span>
-      <span class="trk-sub">out-of-sample · 只记录不影响任何实盘决策的纯观察日志 · 需保持本页面在前台打开才会持续扫描,离开后再回来会自动补扫一次</span>
+      <span class="trk-sub">固定4小时周期策略 · 每期Top10按信号强度选出,固定止盈止损,到期强制结算 · 只是观察日志,不影响任何实盘决策</span>
       <span class="trk-status" id="trkStatus">–</span>
       <button class="trk-reset-btn" id="trkScanNowBtn" title="不等定时器,立刻手动跑一轮扫描(诊断/验证扫描引擎是否还在正常工作用)">▶ 立即扫描一次</button>
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
@@ -1622,6 +1623,31 @@ function exportTrackLogCSV(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
+function exportCycleLogCSV(){
+  const hist=loadCycleHistory();
+  const cur=loadCycleCurrent();
+  const all=cur?[...hist,cur]:hist;
+  if(!all.length){alert("还没有周期记录可导出。");return;}
+  const cols=["cycleStart","cycleEnd","symbol","dir","entry","tp","sl","status","exitPrice","exitAt","pnlPct","strength","conviction"];
+  const fmtTs=t=>t?new Date(t).toISOString():"";
+  const rows=[];
+  all.forEach(c=>{
+    c.positions.forEach(p=>{
+      const pnl=cyclePnlPct(p);
+      const cells={cycleStart:fmtTs(c.start),cycleEnd:fmtTs(c.end),symbol:p.symbol,dir:p.dir>0?"LONG":"SHORT",
+        entry:p.entry,tp:p.tp,sl:p.sl,status:p.status,exitPrice:p.exitPrice==null?"":p.exitPrice,exitAt:fmtTs(p.exitAt),
+        pnlPct:pnl.toFixed(2),strength:(p.strength*100).toFixed(0),conviction:p.conviction==null?"":p.conviction};
+      rows.push(cols.map(k=>{let v=cells[k];if(v==null)v="";v=String(v).replace(/"/g,'""');return/[",\n]/.test(v)?`"${v}"`:v;}).join(","));
+    });
+  });
+  const csv="\uFEFF"+cols.join(",")+"\n"+rows.join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`orbit_cyclelog_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
 
 /* ==================== 移植自 trading-scan: Telegram 推送 ==================== */
 const TG_CFG_KEY="orbit_tg_cfg";
@@ -1784,15 +1810,16 @@ function init(){
     }
     const trkReset=e.target.closest("#trkResetBtn");
     if(trkReset){
-      if(confirm("清空全部追踪记录并重新开始校准?此操作不可撤销,只影响本机浏览器存储的追踪日志,不影响任何实盘仓位。")){
-        try{localStorage.removeItem(TRACK_LOG_KEY);localStorage.removeItem(GATE_CONFIRM_KEY);}catch(err){}
+      if(confirm("清空全部周期记录并重新开始?此操作不可撤销,只影响本机浏览器存储的记录,不影响任何实盘仓位。")){
+        try{localStorage.removeItem(TRACK_LOG_KEY);localStorage.removeItem(GATE_CONFIRM_KEY);
+          localStorage.removeItem(CYCLE_LOG_KEY);localStorage.removeItem(CYCLE_HIST_KEY);}catch(err){}
         gatePendingConfirm.clear();trkExpandedIds.clear();trkDayOverride.clear();
         renderTrackPanel();
       }
       return;
     }
     const trkExport=e.target.closest("#trkExportBtn");
-    if(trkExport){exportTrackLogCSV();return;}
+    if(trkExport){exportCycleLogCSV();return;}
     const trkTg=e.target.closest("#trkTgBtn");
     if(trkTg){promptTelegramSetup();return;}
     const btn=e.target.closest(".bt-run-btn");
@@ -1839,7 +1866,7 @@ function init(){
   setInterval(pruneLiquidations,600000);
   loadETF(); setInterval(loadETF,120000);
   renderTrackPanel(); // 先用localStorage里已有的记录渲染一次,不用等第一次扫描/结算跑完
-  setInterval(settleTrackLog,TRACK_SETTLE_INTERVAL_MS);
+  setInterval(renderTrackPanel,TRACK_SETTLE_INTERVAL_MS); // 每20秒用实时WS价格重新判定止盈止损+刷新倒计时,不用等5分钟一次的扫描周期
   // 2026-09-09 看门狗(第二道保险,不是主路径): 主路径现在是 refreshTopN 在 trackedSet 首次
   // 填充时自己排定15秒后启动(见refreshTopN/initCrypto的2026-09-09修复记录),已经不再依赖
   // initCrypto那次性的固定延迟。这里的60秒轮询留着当兜底——万一 scannerWarmupScheduled 那次
@@ -2787,7 +2814,7 @@ function renderOpportunityRadar(){
   if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 数据每${fmtScanIntervalLabel()}刷新 · 决策以4小时K线为基准,需持续45分钟以上且跨越一次4H收盘才计入正式清单`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
-  recordTrackSignals(rows); // 记录追踪日志用完整候选集(未截断的rows),不只是下面展示的总览表
+  ensureCycle(); // 固定4H周期引擎: 用完整候选集(opportunityResults,未截断的rows)刷新/结算周期,替代旧的recordTrackSignals
   const withMeta=rows.map(x=>{
     const type=classifyOpportunityType(x.r.sig);
     const trig=oppTriggerState(x.r.sig,type.key);
@@ -2895,6 +2922,192 @@ function renderOpportunityRadar(){
    invalidated处理,不计入胜负——与走步式回测"保守判定"的规则完全一致) ③ 成交后先摸到SL还是
    TP1/TP2/TP3 ④ 超过最长持有期仍未分胜负记timeout。全部结算逻辑与回测引擎(simulateTradeOutcome)
    同源同规则,只是数据源从历史K线换成了实时价格,这样两条腿测出来的数字才能放在一起比。 */
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 固定周期策略引擎(FIXED 4H CYCLE ENGINE)· 2026-09-17 ──
+   替换掉上面这套"多轮扫描连续确认+45分钟以上+跨越一次4H收盘"的门槛式追踪流水线。旧版的根本问题:
+   一笔"推荐"要不要写进日志,取决于同一个信号有没有在*这一个浏览器标签页*里连续通过执行闸门够久——
+   这个"确认进度"本质上是单次会话状态,手机和电脑分别打开、各自标签页存活时长不同,算出来的确认
+   进度自然不一样,这正是"手机和电脑两边记录不一样"的根因,不是巧合。而且确认条件本身经常被刷新/
+   切标签页打断,这也是"推荐追踪一直空白"的根因。
+   新模式不再"等信号自己被确认",而是做确定性快照: 每4小时(UTC对齐: 0/4/8/12/16/20点)用当时
+   已经在跑的 confluence 扫描结果(opportunityResults,由上面的 runOpportunityScan 每5分钟刷新,
+   本身不受影响,继续保留)按信号强度选出Top10,按那一刻的实时价格直接"开仓",止盈止损用固定
+   百分比——整件事只在4小时边界发生一次决策,决策之后钉住不再变,到下一个边界不论中途有没有摸到
+   止盈止损,一律强制结算(到期平仓)并归档。任何设备只要用同一份实时行情在边界附近打开页面,
+   算出来的Top10和入场价都会高度一致(仍会有WS到达时间差导致的极小价格误差,但不再有"确认进度"
+   这种纯会话状态造成的根本性分歧)。"复盘"区永远能看到上一期每一笔的入场价与结果。 */
+const CYCLE_MS = 4*3600*1000;              // 4小时一期,UTC对齐
+const CYCLE_TOP_N = 10;
+const CYCLE_TP_PCT = 2.4;                  // 固定止盈 2.4%(现货/名义百分比,不随信号强度/行情调整——"必须firm certain")
+const CYCLE_SL_PCT = 1.2;                  // 固定止损 1.2%,盈亏比2:1
+const CYCLE_LOG_KEY = "orbit_cycle_current_v1";
+const CYCLE_HIST_KEY = "orbit_cycle_history_v1";
+const CYCLE_HIST_MAX = 60;                 // 60期≈10天,够看胜率趋势又不会让localStorage无限增长
+
+function cycleStartOf(t){return Math.floor(t/CYCLE_MS)*CYCLE_MS;}
+function loadCycleCurrent(){try{return JSON.parse(localStorage.getItem(CYCLE_LOG_KEY)||"null");}catch(e){return null;}}
+function saveCycleCurrent(rec){try{localStorage.setItem(CYCLE_LOG_KEY,JSON.stringify(rec));}catch(e){}}
+function loadCycleHistory(){try{return JSON.parse(localStorage.getItem(CYCLE_HIST_KEY)||"[]");}catch(e){return[];}}
+function saveCycleHistory(arr){
+  try{
+    if(arr.length>CYCLE_HIST_MAX)arr=arr.slice(arr.length-CYCLE_HIST_MAX);
+    localStorage.setItem(CYCLE_HIST_KEY,JSON.stringify(arr));
+  }catch(e){}
+}
+// 从当前 opportunityResults 里按信号强度选Top10方向币——门槛只剩"方向已过15%阈值"这一条
+// (即 sig.dirSign!==0,与UI其它地方同一套判定),不再叠加"连续确认多久"这层时间门槛,
+// 排序本身(取强度最高的10个)就是筛选,不需要额外的确认时间。
+function pickCycleTop10(){
+  const items=[...opportunityResults.entries()]
+    .filter(([symbol,r])=>r.sig&&r.sig.dirSign!==0&&market.get(symbol)&&market.get(symbol).price!=null)
+    .map(([symbol,r])=>({symbol,dir:r.sig.dirSign,strength:Math.abs(r.sig.score)/(r.sig.maxScore||1),
+      conviction:r.sig.outlook?r.sig.outlook.conviction:null}));
+  items.sort((a,b)=>b.strength-a.strength);
+  return items.slice(0,CYCLE_TOP_N);
+}
+function buildCyclePositions(top10){
+  return top10.map(x=>{
+    const m=market.get(x.symbol);
+    const entry=m.price;
+    const tp=x.dir>0?entry*(1+CYCLE_TP_PCT/100):entry*(1-CYCLE_TP_PCT/100);
+    const sl=x.dir>0?entry*(1-CYCLE_SL_PCT/100):entry*(1+CYCLE_SL_PCT/100);
+    return{symbol:x.symbol,dir:x.dir,entry,tp,sl,strength:x.strength,conviction:x.conviction,
+      status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
+  });
+}
+// 强制结算一期已经越过截止时间的记录(不论中途有没有摸到止盈止损),归档进历史
+function settleCycleIfDue(cur){
+  const now=Date.now();
+  if(!cur||now<cur.end)return false;
+  cur.positions.forEach(p=>{
+    if(p.status==="OPEN"){
+      const m=market.get(p.symbol);
+      const px=m&&m.price!=null?m.price:p.entry;
+      p.exitPrice=px;p.exitAt=cur.end;p.status="EOC"; // end-of-cycle,到期强制平仓,不是TP也不是SL
+      p.outcome=(p.dir>0?px>=p.entry:px<=p.entry)?"flat_win":"flat_loss";
+    }
+  });
+  cur.settledAt=now;
+  const hist=loadCycleHistory();
+  hist.push(cur);
+  saveCycleHistory(hist);
+  return true;
+}
+// 实时检查当前周期里所有OPEN仓位是否摸到止盈/止损——摸到就按TP/SL的价位锁定,不会中途改判/挪价
+function evaluateOpenPositions(cur){
+  if(!cur)return;
+  const now=Date.now();
+  cur.positions.forEach(p=>{
+    if(p.status!=="OPEN")return;
+    const m=market.get(p.symbol);
+    if(!m||m.price==null)return;
+    const px=m.price;
+    if(p.dir>0){
+      if(px>=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";}
+      else if(px<=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";}
+    }else{
+      if(px<=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";}
+      else if(px>=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";}
+    }
+  });
+}
+// 主入口: ①若当前周期已越过截止时间→强制结算归档+尝试开新一期 ②若从没开过一期→尝试开一期
+// ③实时评估所有OPEN仓位止盈止损 ④返回当前周期供渲染。每次扫描结果刷新(5分钟)和每20秒
+// 计时器都会调用,保证Top10在实时行情下持续更新、止盈止损判定不会因为标签页没刷新而错过。
+function ensureCycle(){
+  let cur=loadCycleCurrent();
+  const start=cycleStartOf(Date.now());
+  if(cur&&cur.start!==start){
+    settleCycleIfDue(cur);
+    cur=null;
+  }
+  if(!cur){
+    const top10=pickCycleTop10();
+    if(top10.length===0)return null; // 扫描引擎还没跑出第一轮结果(刚打开页面时的短暂状态)
+    cur={start,end:start+CYCLE_MS,builtAt:Date.now(),positions:buildCyclePositions(top10)};
+    saveCycleCurrent(cur);
+    return cur;
+  }
+  evaluateOpenPositions(cur);
+  saveCycleCurrent(cur);
+  return cur;
+}
+function cyclePnlPct(p){
+  const m=market.get(p.symbol);
+  const live=p.status==="OPEN"?(m&&m.price!=null?m.price:p.entry):p.exitPrice;
+  const raw=(live-p.entry)/p.entry*100;
+  return p.dir>0?raw:-raw;
+}
+function cycleStatusBadge(p){
+  if(p.status==="OPEN")return`<span class="trk-badge" style="color:var(--amber);background:var(--amber-bg);">持仓中</span>`;
+  if(p.status==="TP")return`<span class="trk-badge win">✅ 止盈 TP</span>`;
+  if(p.status==="SL")return`<span class="trk-badge loss">❌ 止损 SL</span>`;
+  const win=p.outcome==="flat_win";
+  return`<span class="trk-badge ${win?"win":"loss"}">⏱ 到期平仓(${win?"浮盈":"浮亏"})</span>`;
+}
+function cycleCountdownText(cur){
+  const rem=Math.max(0,cur.end-Date.now());
+  const h=Math.floor(rem/3600000),m2=Math.floor((rem%3600000)/60000);
+  return`${h}小时${m2}分钟后结算`;
+}
+function renderCycleHeatmap(cur){
+  if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟自动开始第一期(每4小时0/4/8/12/16/20点整开新一期)…</div>';
+  const tiles=cur.positions.slice().sort((a,b)=>cyclePnlPct(b)-cyclePnlPct(a)).map(p=>{
+    const pnl=cyclePnlPct(p);
+    const bg=trkHeatColor(p.status==="OPEN"?pnl:null);
+    const id=cur.start+"|"+p.symbol;
+    const expanded=trkExpandedIds.has(id);
+    const pnlCls=pnl>=0?"up":"down";
+    return`<div class="trk-tile${expanded?" open":""}" data-id="${esc(id)}" data-symbol="${esc(p.symbol)}" style="background:${bg};" title="点击查看这笔的入场/止盈/止损明细">
+      <div class="trk-tile-top">
+        <span class="trk-tile-sym">${esc(p.symbol.replace("USDT",""))} <span class="trk-tile-dir ${p.dir>0?"up":"down"}">${p.dir>0?"▲":"▼"}</span></span>
+      </div>
+      <div class="trk-tile-pnl ${pnlCls}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</div>
+      <div class="trk-tile-meta">${cycleStatusBadge(p)}</div>
+      <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 入场/止盈/止损"}</div>
+    </div>${expanded?`<div class="trk-tile-detail" data-id="${esc(id)}">
+      <div class="trk-detail-row"><span>方向</span><span>${p.dir>0?"LONG 多":"SHORT 空"}</span></div>
+      <div class="trk-detail-row"><span>入场价 Entry</span><span>${fmtPrice(p.entry)}</span></div>
+      <div class="trk-detail-row"><span>止盈 TP(固定${CYCLE_TP_PCT}%)</span><span>${fmtPrice(p.tp)}</span></div>
+      <div class="trk-detail-row"><span>止损 SL(固定${CYCLE_SL_PCT}%)</span><span>${fmtPrice(p.sl)}</span></div>
+      <div class="trk-detail-row"><span>现价/平仓价</span><span>${fmtPrice(p.status==="OPEN"?(market.get(p.symbol)?market.get(p.symbol).price:p.entry):p.exitPrice)}</span></div>
+      <div class="trk-detail-row"><span>信号强度</span><span>${(p.strength*100).toFixed(0)}%${p.conviction!=null?` · 把握度${p.conviction}%`:""}</span></div>
+      <button class="trk-tile-gotomodal" data-symbol="${esc(p.symbol)}">📈 打开${esc(p.symbol.replace("USDT",""))}行情图 →</button>
+    </div>`:""}`;
+  }).join("");
+  return`<div class="trk-cycle-head">本期开仓时间 ${fmtTrkDateTime(cur.start)} · ${cycleCountdownText(cur)} · 固定策略: TP+${CYCLE_TP_PCT}% / SL-${CYCLE_SL_PCT}%,按信号强度选出的Top${CYCLE_TOP_N},4小时内不改判</div>
+    <div class="trk-heatmap">${tiles}</div>`;
+}
+function renderCycleReview(){
+  const hist=loadCycleHistory();
+  if(!hist.length)return'<div class="trk-empty">还没有已结算的周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。</div>';
+  const last=hist[hist.length-1];
+  const rows=last.positions.map(p=>{
+    const pnl=cyclePnlPct(p);
+    return`<tr>
+      <td>${esc(p.symbol.replace("USDT",""))}</td>
+      <td class="${p.dir>0?"up":"down"}">${p.dir>0?"LONG":"SHORT"}</td>
+      <td>${fmtPrice(p.entry)}</td>
+      <td>${fmtPrice(p.exitPrice)}</td>
+      <td>${cycleStatusBadge(p)}</td>
+      <td class="${pnl>=0?"up":"down"}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</td>
+    </tr>`;
+  }).join("");
+  const wins=last.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length;
+  const losses=last.positions.filter(p=>p.status==="SL"||p.outcome==="flat_loss").length;
+  const avgPnl=last.positions.reduce((s,p)=>s+cyclePnlPct(p),0)/last.positions.length;
+  // 近30期趋势(有多少算多少),用于看这套固定策略长期是否稳定,而不是只看最近一期
+  const trend=hist.slice(-30);
+  const trendWins=trend.reduce((s,c)=>s+c.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length,0);
+  const trendTotal=trend.reduce((s,c)=>s+c.positions.length,0);
+  const trendWinRate=trendTotal?(trendWins/trendTotal*100).toFixed(1):"–";
+  return`<div class="trk-cycle-head">上一期 ${fmtTrkDateTime(last.start)} → ${fmtTrkDateTime(last.end)} · ${wins}胜${losses}负 · 本期平均${avgPnl>=0?"+":""}${avgPnl.toFixed(2)}% · 近${trend.length}期累计胜率 ${trendWinRate}%(n=${trendTotal})</div>
+    <table class="trk-calib-table">
+      <thead><tr><th>币种</th><th>方向</th><th>入场价</th><th>结算价</th><th>结果</th><th>盈亏%</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function trkPosKey(sym,dir){return sym+"|"+dir;}
 function getTrackLog(){try{return JSON.parse(localStorage.getItem(TRACK_LOG_KEY)||"[]");}catch(e){return[];}}
 function saveTrackLog(arr){
@@ -3419,32 +3632,16 @@ function renderTrackJournal(log){
 function renderTrackPanel(){
   const el=document.getElementById("trkBody");
   if(!el)return;
-  const log=getTrackLog();
-  const s=computeTrackStats(log);
-  const calib=computeCalibrationBuckets(log);
+  const cur=ensureCycle();
   const statusEl=document.getElementById("trkStatus");
-  if(statusEl)statusEl.textContent=`共 ${s.totalSignals} 笔 · 待成交 ${s.awaiting} · 持仓中 ${s.filledOpen} · 每${Math.round(TRACK_SETTLE_INTERVAL_MS/1000)}秒结算一次`;
-  const gapAbs=s.calibrationGap!=null?Math.abs(s.calibrationGap):null;
-  const calibCls=gapAbs==null?"":(gapAbs<=10?"good":gapAbs<=25?"":"bad");
+  if(statusEl)statusEl.textContent=cur?`本期${cur.positions.length}笔 · ${cycleCountdownText(cur)} · 每20秒刷新止盈止损判定`:"等待首轮扫描…";
   el.innerHTML=`
     ${renderScanDiagnostics()}
-    <div class="stat-mini-row">
-      <div class="stat-mini"><span class="k">预测胜率(实时价格结算)</span><span class="v ${s.winRate==null?"":(s.winRate>=0.5?"up":"down")}">${fmtTrkPct(s.winRate)}${s.resolved?ciLabel(s.wins,s.resolved):""}</span><span class="note">已分胜负 n=${s.resolved}(${s.wins}胜${s.losses}负,另有${s.timeout}笔到期未分胜负)</span></div>
-      <div class="stat-mini"><span class="k">期望值(R,每笔平均)</span><span class="v ${s.expectancy==null?"":(s.expectancy>=0?"up":"down")}">${s.expectancy!=null?(s.expectancy>=0?"+":"")+s.expectancy.toFixed(2)+"R":"–"}</span><span class="note">盈亏比 Profit Factor ${s.profitFactor==null?"–":(s.profitFactor===Infinity?"∞":s.profitFactor.toFixed(2))}</span></div>
-      <div class="stat-mini"><span class="k">限价单成交/撤单/过期</span><span class="v">${s.filledOpen+s.resolved+s.timeout}/${s.invalidated}/${s.expired}</span><span class="note">总推荐 ${s.totalSignals} 笔(≥${TRACK_CONVICTION_MIN}%把握才记)</span></div>
-    </div>
-    <div class="bt-calib ${calibCls}">
-      模型自报把握度均值 ${s.avgPredicted!=null?s.avgPredicted.toFixed(0)+"%":"–"} vs 实盘实际胜率 ${fmtTrkPct(s.winRate)} → 校准差 ${s.calibrationGap!=null?(s.calibrationGap>=0?"+":"")+s.calibrationGap.toFixed(1)+"个百分点":"–"}(正值=模型高估自己)。
-      ${gapAbs==null?"样本还太少,继续累积中。":(gapAbs<=10?"两者接近,说明模型给出的把握度数字总体可信。":gapAbs<=25?"存在一定偏差,建议把把握度当方向参考,不要照字面数值配仓位。":"偏差较大,当前把握度输出还不够可信,只用于方向判断,别依赖具体数字。")}
-    </div>
-    ${calib.length?`<table class="trk-calib-table"><thead><tr><th>把握度分档</th><th>样本数</th><th>该档实际胜率</th></tr></thead><tbody>
-      ${calib.map(b=>`<tr><td>${esc(b.label)}</td><td>${b.n}</td><td class="${b.winRate==null?"":(b.winRate>=0.5?"up":"down")}">${fmtTrkPct(b.winRate)}</td></tr>`).join("")}
-    </tbody></table>`:""}
-    <div class="trk-subhead">🔥 持仓热力图 · 当前追踪中(按浮动盈亏排序)</div>
-    ${renderLiveHeatmap(log)}
-    <div class="trk-subhead">📓 每日复盘日志 · 点击展开某一天</div>
-    ${renderTrackJournal(log)}
-    <div class="sig-note" style="margin-top:10px;">与走步式回测互补而非替代: 回测在历史K线上验证纯图形类指标(EMA/MACD/缠论/斐波那契等),这里用实时价格校验模型完整的把握度(含OI/CVD/清算/期权权重),两条腿都跑,才是对模型诚实的验证。方向圆点●绿=现价信号与推荐一致/黄=已转中性/红=已反转,但追踪记录本身永远按推荐当时的原始TP/SL跑完,不会中途改判。数据只存在本机浏览器localStorage,清空浏览器数据会丢失记录。</div>`;
+    <div class="trk-subhead">🔥 持仓热力图 · 本期Top${CYCLE_TOP_N}(固定4小时策略,按信号强度排序)</div>
+    ${renderCycleHeatmap(cur)}
+    <div class="trk-subhead">📓 复盘 · 上一期结算结果</div>
+    ${renderCycleReview()}
+    <div class="sig-note" style="margin-top:10px;">固定周期策略: 每4小时(0/4/8/12/16/20点)用当时的信号强度选出Top${CYCLE_TOP_N},按当时实时价开仓,止盈+${CYCLE_TP_PCT}%/止损-${CYCLE_SL_PCT}%全程固定不变,到期不论有没有摸到止盈止损一律强制结算。这样任何设备打开都是同一套确定性规则算出来的结果,不再依赖"这个标签页开了多久""上一次扫描确认到第几次"这类单次会话状态。数据存在本机浏览器localStorage,不会跨设备同步——多台设备各自独立按同一套规则计算,理应非常接近但不保证逐笔完全一致(取决于各自那一刻的实时行情快照)。</div>`;
 }
 
 /* ── WEBSOCKET ── */
