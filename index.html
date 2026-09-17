@@ -497,6 +497,20 @@
   .trk-calib-table th{text-align:left;color:var(--dim2);font-weight:600;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line);}
   .trk-calib-table td{padding:7px 8px;border-bottom:1px solid var(--line2);}
   .trk-calib-table tr:last-child td{border-bottom:none;}
+  .trk-hist-scroll{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:4px;margin-top:6px;}
+  .trk-hist-scroll table{margin-top:0;}
+  .trk-hist-scroll thead th{position:sticky;top:0;background:var(--panel);z-index:1;}
+  .trk-trend-wrap{margin-top:14px;}
+  .trk-trend-head{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--dim2);margin-bottom:4px;}
+  .trk-trend-canvas-wrap{height:110px;position:relative;}
+  .trk-trend-canvas-wrap canvas{width:100%;height:100%;display:block;}
+  .trk-trend-canvas-wrap .chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim2);font-size:12px;}
+  .trk-tf-tabs{display:flex;gap:6px;margin:4px 0 12px;}
+  .trk-tf-tab{background:var(--panel2);border:1px solid var(--line);color:var(--dim2);padding:6px 14px;border-radius:4px;font-family:var(--mono);font-size:12.5px;cursor:pointer;}
+  .trk-tf-tab:hover{color:var(--text);border-color:var(--amber);}
+  .trk-tf-tab.active{color:var(--amber);border-color:var(--amber);background:var(--amber-bg);}
+  .trk-tech-cell{font-size:11.5px;color:var(--dim2);max-width:260px;line-height:1.4;}
+  .trk-detail-tech span:last-child{max-width:60%;text-align:right;color:var(--dim2);font-size:12px;line-height:1.4;}
   /* 持仓热力图: 卡片式而非文字行,一眼看清方向/浮盈亏,颜色深浅=盈亏幅度 */
   .trk-heatmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:8px;}
   .trk-tile{border:1px solid var(--line2);border-radius:7px;padding:10px 11px;cursor:pointer;transition:border-color .15s,transform .1s;}
@@ -1624,22 +1638,26 @@ function exportTrackLogCSV(){
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 function exportCycleLogCSV(){
-  const hist=loadCycleHistory();
-  const cur=loadCycleCurrent();
-  const all=cur?[...hist,cur]:hist;
-  if(!all.length){alert("还没有周期记录可导出。");return;}
-  const cols=["cycleStart","cycleEnd","symbol","dir","entry","tp","sl","status","exitPrice","exitAt","pnlPct","strength","conviction"];
+  // 导出全部三个时间维度(4H/1D/1W)的完整留痕,加一列tf区分,而不是只导出当前正在看的那个tab。
+  const cols=["tf","cycleStart","cycleEnd","symbol","dir","entry","tp","sl","status","exitPrice","exitAt","pnlPct","strength","conviction","techNote"];
   const fmtTs=t=>t?new Date(t).toISOString():"";
   const rows=[];
-  all.forEach(c=>{
-    c.positions.forEach(p=>{
-      const pnl=cyclePnlPct(p);
-      const cells={cycleStart:fmtTs(c.start),cycleEnd:fmtTs(c.end),symbol:p.symbol,dir:p.dir>0?"LONG":"SHORT",
-        entry:p.entry,tp:p.tp,sl:p.sl,status:p.status,exitPrice:p.exitPrice==null?"":p.exitPrice,exitAt:fmtTs(p.exitAt),
-        pnlPct:pnl.toFixed(2),strength:(p.strength*100).toFixed(0),conviction:p.conviction==null?"":p.conviction};
-      rows.push(cols.map(k=>{let v=cells[k];if(v==null)v="";v=String(v).replace(/"/g,'""');return/[",\n]/.test(v)?`"${v}"`:v;}).join(","));
+  CYCLE_TFS.forEach(tf=>{
+    const hist=loadCycleHistory(tf);
+    const cur=loadCycleCurrent(tf);
+    const all=cur?[...hist,cur]:hist;
+    all.forEach(c=>{
+      c.positions.forEach(p=>{
+        const pnl=cyclePnlPct(p);
+        const cells={tf,cycleStart:fmtTs(c.start),cycleEnd:fmtTs(c.end),symbol:p.symbol,dir:p.dir>0?"LONG":"SHORT",
+          entry:p.entry,tp:p.tp,sl:p.sl,status:p.status,exitPrice:p.exitPrice==null?"":p.exitPrice,exitAt:fmtTs(p.exitAt),
+          pnlPct:pnl.toFixed(2),strength:(p.strength*100).toFixed(0),conviction:p.conviction==null?"":p.conviction,
+          techNote:p.techNote||""};
+        rows.push(cols.map(k=>{let v=cells[k];if(v==null)v="";v=String(v).replace(/"/g,'""');return/[",\n]/.test(v)?`"${v}"`:v;}).join(","));
+      });
     });
   });
+  if(!rows.length){alert("还没有周期记录可导出。");return;}
   const csv="\uFEFF"+cols.join(",")+"\n"+rows.join("\n");
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
   const url=URL.createObjectURL(blob);
@@ -1795,6 +1813,11 @@ function init(){
     }
     const trkGoto=e.target.closest(".trk-tile-gotomodal");
     if(trkGoto&&trkGoto.dataset.symbol){openCryptoModal(trkGoto.dataset.symbol);return;}
+    const trkTfTab=e.target.closest(".trk-tf-tab");
+    if(trkTfTab&&trkTfTab.dataset.tf){
+      if(trkTfTab.dataset.tf!==activeCycleTf){activeCycleTf=trkTfTab.dataset.tf;renderTrackPanel();}
+      return;
+    }
     const trkTile=e.target.closest(".trk-tile");
     if(trkTile&&trkTile.dataset.id){
       const id=trkTile.dataset.id;
@@ -1812,7 +1835,7 @@ function init(){
     if(trkReset){
       if(confirm("清空全部周期记录并重新开始?此操作不可撤销,只影响本机浏览器存储的记录,不影响任何实盘仓位。")){
         try{localStorage.removeItem(TRACK_LOG_KEY);localStorage.removeItem(GATE_CONFIRM_KEY);
-          localStorage.removeItem(CYCLE_LOG_KEY);localStorage.removeItem(CYCLE_HIST_KEY);}catch(err){}
+          CYCLE_TFS.forEach(tf=>{localStorage.removeItem(CYCLE_TF_CONFIG[tf].logKey);localStorage.removeItem(CYCLE_TF_CONFIG[tf].histKey);});}catch(err){}
         gatePendingConfirm.clear();trkExpandedIds.clear();trkDayOverride.clear();
         renderTrackPanel();
       }
@@ -2159,6 +2182,10 @@ function pinnedOrFreshPlan(symbol,intervalLabel,dirSign,freshPlan,price){
   return{...freshPlan,pinned:false,pinnedAt:now};
 }
 let opportunityResults = new Map(); // symbol -> {sig, ts}
+// 1D/1W固定周期复盘专用信号缓存——复用4H主扫描里已经拉到的日线/周线K线(见scanOneOpportunity
+// 末尾),不额外发请求。与opportunityResults同一套Map结构,只是键入的sig来自不同周期的K线。
+let opportunityResultsDaily = new Map();
+let opportunityResultsWeekly = new Map();
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
 let lastOpportunityScanAt = 0;      // 标签页恢复前台时,用于判断该不该立刻补扫一次
 // 2026-09-09 新增: 用户报告"持仓热力图/推荐追踪长期空白"根因复查——之前 setupOpportunityScan
@@ -2414,6 +2441,27 @@ async function scanOneOpportunity(symbol){
   const sig=computeSignal(candles,chartInterval,symbol,ctx);
   if(!sig)return;
   opportunityResults.set(symbol,{sig,ts:Date.now()});
+  /* 1D/1W固定周期复盘的信号来源: 复用上面 fetchSignalContext→fetchSantongForScan 这次请求
+     里已经拉到、缓存进 santongScanCache 的日线/周线K线(30分钟TTL,不为此额外发请求)。
+     ctx里的OI/CVD/资金费率/多空比字段留空——那些是4H实盘专属的高频数据,日线/周线级别的
+     判断本来就不依赖它们,computeSignal的相关投票函数会在传null/[]时诚实显示"数据不足"
+     而不是编造。失败(例如该symbol日线/周线K线还没就绪)不应该影响4H主路径,单独try/catch。*/
+  try{
+    const santongData=santongScanCache.get(symbol);
+    const emptyCtx=(hi,hl,st,ca)=>({oiHist:[],cvdHist:[],lsRatio:null,topLsRatio:null,topLsTrendSrc:[],
+      takerRatio:null,fundingHist:[],higherTfCandles:hi||null,higherTfLabel:hl||null,santong:st||null,cycleAnchorScan:ca});
+    if(santongData&&santongData.dailyCandles&&santongData.dailyCandles.length>=50){
+      const santongD=computeSantong(santongData.dailyCandles,santongData.weeklyCandles);
+      const anchorD=computeCycleAnchor(santongData.dailyCandles);
+      const sigD=computeSignal(santongData.dailyCandles,"1d",symbol,emptyCtx(santongData.weeklyCandles,"1w",santongD,anchorD));
+      if(sigD)opportunityResultsDaily.set(symbol,{sig:sigD,ts:Date.now()});
+    }
+    if(santongData&&santongData.weeklyCandles&&santongData.weeklyCandles.length>=50){
+      const anchorNeutral={state:"neutral_both",label:"周线自身即为最大周期,不叠加更高周期锚定",detail:"",slopePct:null};
+      const sigW=computeSignal(santongData.weeklyCandles,"1w",symbol,emptyCtx(null,null,null,anchorNeutral));
+      if(sigW)opportunityResultsWeekly.set(symbol,{sig:sigW,ts:Date.now()});
+    }
+  }catch(e){ /* 1D/1W是4H主扫描的附加产出,出错不影响4H路径 */ }
 }
 
 async function runOpportunityScan(){
@@ -2814,7 +2862,7 @@ function renderOpportunityRadar(){
   if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 数据每${fmtScanIntervalLabel()}刷新 · 决策以4小时K线为基准,需持续45分钟以上且跨越一次4H收盘才计入正式清单`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
-  ensureCycle(); // 固定4H周期引擎: 用完整候选集(opportunityResults,未截断的rows)刷新/结算周期,替代旧的recordTrackSignals
+  CYCLE_TFS.forEach(tf=>ensureCycle(tf)); // 三个时间维度(4H/1D/1W)的周期引擎都要在后台随扫描刷新/结算,不只是当前展示的那个tab
   const withMeta=rows.map(x=>{
     const type=classifyOpportunityType(x.r.sig);
     const trig=oppTriggerState(x.r.sig,type.key);
@@ -2936,47 +2984,79 @@ function renderOpportunityRadar(){
    止盈止损,一律强制结算(到期平仓)并归档。任何设备只要用同一份实时行情在边界附近打开页面,
    算出来的Top10和入场价都会高度一致(仍会有WS到达时间差导致的极小价格误差,但不再有"确认进度"
    这种纯会话状态造成的根本性分歧)。"复盘"区永远能看到上一期每一笔的入场价与结果。 */
-const CYCLE_MS = 4*3600*1000;              // 4小时一期,UTC对齐
 const CYCLE_TOP_N = 10;
-const CYCLE_TP_PCT = 2.4;                  // 固定止盈 2.4%(现货/名义百分比,不随信号强度/行情调整——"必须firm certain")
-const CYCLE_SL_PCT = 1.2;                  // 固定止损 1.2%,盈亏比2:1
-const CYCLE_LOG_KEY = "orbit_cycle_current_v1";
-const CYCLE_HIST_KEY = "orbit_cycle_history_v1";
-const CYCLE_HIST_MAX = 60;                 // 60期≈10天,够看胜率趋势又不会让localStorage无限增长
+/* 三个并行的固定周期复盘轨道——4H用实盘同频的主扫描信号(opportunityResults),1D/1W复用
+   上面scanOneOpportunity里已经拉到的日线/周线K线各算一份独立信号,互不干扰、互不影响4H主路径。
+   TP/SL百分比按波动率随时间大致 sqrt(t) 扩散的经验规律从4H的2.4%/1.2%粗略换算(sqrt(6)≈2.45×
+   给1D,sqrt(42)≈6.5×给1W,1W略微保守下调,因为加密主流币周线实际波动通常不到理论sqrt scaling
+   这么夸张)——这只是一个没有单独回测校准过的粗略经验值,不是拟合出来的"最优"参数,后续应该
+   随着1D/1W各自积累的追踪样本(见下方各自的Wilson CI)去检验、调整,而不是当作定论。 */
+const CYCLE_TF_CONFIG = {
+  "4h":{ms:4*3600*1000, tpPct:2.4, slPct:1.2, label:"4小时", logKey:"orbit_cycle_current_v1", histKey:"orbit_cycle_history_v1", histMax:60},
+  "1d":{ms:24*3600*1000, tpPct:6.0, slPct:3.0, label:"1天(日线)", logKey:"orbit_cycle_current_1d_v1", histKey:"orbit_cycle_history_1d_v1", histMax:60},
+  "1w":{ms:7*24*3600*1000, tpPct:14.0, slPct:7.0, label:"1周(周线)", logKey:"orbit_cycle_current_1w_v1", histKey:"orbit_cycle_history_1w_v1", histMax:52},
+};
+const CYCLE_TFS=["4h","1d","1w"];
+let activeCycleTf="4h"; // 面板tab状态,模块级变量、不写localStorage(与其它opp-collapse-*会话状态同一模式),刷新页面回到默认4H
 
-function cycleStartOf(t){return Math.floor(t/CYCLE_MS)*CYCLE_MS;}
-function loadCycleCurrent(){try{return JSON.parse(localStorage.getItem(CYCLE_LOG_KEY)||"null");}catch(e){return null;}}
-function saveCycleCurrent(rec){try{localStorage.setItem(CYCLE_LOG_KEY,JSON.stringify(rec));}catch(e){}}
-function loadCycleHistory(){try{return JSON.parse(localStorage.getItem(CYCLE_HIST_KEY)||"[]");}catch(e){return[];}}
-function saveCycleHistory(arr){
+function cycleResultsMapFor(tf){return tf==="1d"?opportunityResultsDaily:tf==="1w"?opportunityResultsWeekly:opportunityResults;}
+function cycleStartOf(t,tf){const ms=CYCLE_TF_CONFIG[tf].ms;return Math.floor(t/ms)*ms;}
+function loadCycleCurrent(tf){try{return JSON.parse(localStorage.getItem(CYCLE_TF_CONFIG[tf].logKey)||"null");}catch(e){return null;}}
+function saveCycleCurrent(tf,rec){try{localStorage.setItem(CYCLE_TF_CONFIG[tf].logKey,JSON.stringify(rec));}catch(e){}}
+function loadCycleHistory(tf){try{return JSON.parse(localStorage.getItem(CYCLE_TF_CONFIG[tf].histKey)||"[]");}catch(e){return[];}}
+function saveCycleHistory(tf,arr){
   try{
-    if(arr.length>CYCLE_HIST_MAX)arr=arr.slice(arr.length-CYCLE_HIST_MAX);
-    localStorage.setItem(CYCLE_HIST_KEY,JSON.stringify(arr));
+    const max=CYCLE_TF_CONFIG[tf].histMax;
+    if(arr.length>max)arr=arr.slice(arr.length-max);
+    localStorage.setItem(CYCLE_TF_CONFIG[tf].histKey,JSON.stringify(arr));
   }catch(e){}
 }
-// 从当前 opportunityResults 里按信号强度选Top10方向币——门槛只剩"方向已过15%阈值"这一条
-// (即 sig.dirSign!==0,与UI其它地方同一套判定),不再叠加"连续确认多久"这层时间门槛,
-// 排序本身(取强度最高的10个)就是筛选,不需要额外的确认时间。
-function pickCycleTop10(){
-  const items=[...opportunityResults.entries()]
+/* 每笔候选的"技术分析摘要"——直接从已经算好的sig里摘取,不重新计算、不编造新数字:
+   K线形态(votes里的"K线形态"投票项,来自detectCandlePattern) + 斐波那契最近位(votes里的
+   "斐波那契位置") + 距离最近的趋势线(来自sig.structure支撑/压力聚类里带"趋势线"来源的那一档,
+   回归拟合R²已经在生成时把不可信的线过滤掉了,见buildStructureLevels) + 月相(sig.moon,
+   已在UI"农历月相·情绪周期"区标注"情绪节律参考,需结合技术信号"——这里延续同样的措辞与
+   定位,不单独当作交易依据)。 */
+function cycleTechNote(sig){
+  if(!sig)return"";
+  const parts=[];
+  const patVote=(sig.votes||[]).find(v=>v.name==="K线形态");
+  if(patVote&&patVote.detail)parts.push(`K线形态:${String(patVote.detail).split(" — ")[0]}`);
+  const fibVote=(sig.votes||[]).find(v=>v.name==="斐波那契位置");
+  if(fibVote&&fibVote.detail)parts.push(fibVote.detail);
+  const levels=[...((sig.structure&&sig.structure.supports)||[]),...((sig.structure&&sig.structure.resistances)||[])];
+  const trendCands=levels.filter(l=>l.sources&&l.sources.some(s=>s.startsWith("趋势线")))
+    .sort((a,b)=>Math.abs(a.price-sig.price)-Math.abs(b.price-sig.price));
+  if(trendCands[0]){
+    const trSrc=trendCands[0].sources.find(s=>s.startsWith("趋势线"));
+    if(trSrc)parts.push(trSrc);
+  }
+  if(sig.moon&&sig.moon.signal)parts.push(`月相${sig.moon.name||""}:${sig.moon.signal}(情绪参考,非技术依据)`);
+  return parts.join(" · ");
+}
+// 门槛只剩"方向已过阈值"这一条(sig.dirSign!==0),排序本身(取强度最高的10个)就是筛选。
+function pickCycleTopN(tf){
+  const map=cycleResultsMapFor(tf);
+  const items=[...map.entries()]
     .filter(([symbol,r])=>r.sig&&r.sig.dirSign!==0&&market.get(symbol)&&market.get(symbol).price!=null)
     .map(([symbol,r])=>({symbol,dir:r.sig.dirSign,strength:Math.abs(r.sig.score)/(r.sig.maxScore||1),
-      conviction:r.sig.outlook?r.sig.outlook.conviction:null}));
+      conviction:r.sig.outlook?r.sig.outlook.conviction:null,techNote:cycleTechNote(r.sig)}));
   items.sort((a,b)=>b.strength-a.strength);
   return items.slice(0,CYCLE_TOP_N);
 }
-function buildCyclePositions(top10){
-  return top10.map(x=>{
+function buildCyclePositions(tf,topN){
+  const{tpPct,slPct}=CYCLE_TF_CONFIG[tf];
+  return topN.map(x=>{
     const m=market.get(x.symbol);
     const entry=m.price;
-    const tp=x.dir>0?entry*(1+CYCLE_TP_PCT/100):entry*(1-CYCLE_TP_PCT/100);
-    const sl=x.dir>0?entry*(1-CYCLE_SL_PCT/100):entry*(1+CYCLE_SL_PCT/100);
-    return{symbol:x.symbol,dir:x.dir,entry,tp,sl,strength:x.strength,conviction:x.conviction,
+    const tp=x.dir>0?entry*(1+tpPct/100):entry*(1-tpPct/100);
+    const sl=x.dir>0?entry*(1-slPct/100):entry*(1+slPct/100);
+    return{symbol:x.symbol,dir:x.dir,entry,tp,sl,strength:x.strength,conviction:x.conviction,techNote:x.techNote,
       status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
   });
 }
 // 强制结算一期已经越过截止时间的记录(不论中途有没有摸到止盈止损),归档进历史
-function settleCycleIfDue(cur){
+function settleCycleIfDue(tf,cur){
   const now=Date.now();
   if(!cur||now<cur.end)return false;
   cur.positions.forEach(p=>{
@@ -2988,9 +3068,9 @@ function settleCycleIfDue(cur){
     }
   });
   cur.settledAt=now;
-  const hist=loadCycleHistory();
+  const hist=loadCycleHistory(tf);
   hist.push(cur);
-  saveCycleHistory(hist);
+  saveCycleHistory(tf,hist);
   return true;
 }
 // 实时检查当前周期里所有OPEN仓位是否摸到止盈/止损——摸到就按TP/SL的价位锁定,不会中途改判/挪价
@@ -3011,25 +3091,25 @@ function evaluateOpenPositions(cur){
     }
   });
 }
-// 主入口: ①若当前周期已越过截止时间→强制结算归档+尝试开新一期 ②若从没开过一期→尝试开一期
-// ③实时评估所有OPEN仓位止盈止损 ④返回当前周期供渲染。每次扫描结果刷新(5分钟)和每20秒
-// 计时器都会调用,保证Top10在实时行情下持续更新、止盈止损判定不会因为标签页没刷新而错过。
-function ensureCycle(){
-  let cur=loadCycleCurrent();
-  const start=cycleStartOf(Date.now());
+// 主入口(按tf调用): ①若当前周期已越过截止时间→强制结算归档+尝试开新一期 ②若从没开过一期→
+// 尝试开一期 ③实时评估所有OPEN仓位止盈止损 ④返回当前周期供渲染。三个tf各自独立的localStorage键,
+// 互不覆盖、互不影响。
+function ensureCycle(tf){
+  let cur=loadCycleCurrent(tf);
+  const start=cycleStartOf(Date.now(),tf);
   if(cur&&cur.start!==start){
-    settleCycleIfDue(cur);
+    settleCycleIfDue(tf,cur);
     cur=null;
   }
   if(!cur){
-    const top10=pickCycleTop10();
-    if(top10.length===0)return null; // 扫描引擎还没跑出第一轮结果(刚打开页面时的短暂状态)
-    cur={start,end:start+CYCLE_MS,builtAt:Date.now(),positions:buildCyclePositions(top10)};
-    saveCycleCurrent(cur);
+    const topN=pickCycleTopN(tf);
+    if(topN.length===0)return null; // 扫描引擎还没跑出第一轮结果(刚打开页面时的短暂状态)
+    cur={start,end:start+CYCLE_TF_CONFIG[tf].ms,builtAt:Date.now(),positions:buildCyclePositions(tf,topN)};
+    saveCycleCurrent(tf,cur);
     return cur;
   }
   evaluateOpenPositions(cur);
-  saveCycleCurrent(cur);
+  saveCycleCurrent(tf,cur);
   return cur;
 }
 function cyclePnlPct(p){
@@ -3047,40 +3127,68 @@ function cycleStatusBadge(p){
 }
 function cycleCountdownText(cur){
   const rem=Math.max(0,cur.end-Date.now());
-  const h=Math.floor(rem/3600000),m2=Math.floor((rem%3600000)/60000);
-  return`${h}小时${m2}分钟后结算`;
+  const d=Math.floor(rem/86400000),h=Math.floor((rem%86400000)/3600000),m2=Math.floor((rem%3600000)/60000);
+  return d>0?`${d}天${h}小时后结算`:`${h}小时${m2}分钟后结算`;
 }
-function renderCycleHeatmap(cur){
-  if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟自动开始第一期(每4小时0/4/8/12/16/20点整开新一期)…</div>';
+function cycleTfTabsHtml(){
+  return`<div class="trk-tf-tabs">${CYCLE_TFS.map(tf=>`<button class="trk-tf-tab${tf===activeCycleTf?" active":""}" data-tf="${tf}">${CYCLE_TF_CONFIG[tf].label}</button>`).join("")}</div>`;
+}
+function renderCycleHeatmap(tf,cur){
+  const cfg=CYCLE_TF_CONFIG[tf];
+  if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟自动开始第一期…</div>';
   const tiles=cur.positions.slice().sort((a,b)=>cyclePnlPct(b)-cyclePnlPct(a)).map(p=>{
     const pnl=cyclePnlPct(p);
     const bg=trkHeatColor(p.status==="OPEN"?pnl:null);
-    const id=cur.start+"|"+p.symbol;
+    const id=tf+"|"+cur.start+"|"+p.symbol;
     const expanded=trkExpandedIds.has(id);
     const pnlCls=pnl>=0?"up":"down";
-    return`<div class="trk-tile${expanded?" open":""}" data-id="${esc(id)}" data-symbol="${esc(p.symbol)}" style="background:${bg};" title="点击查看这笔的入场/止盈/止损明细">
+    return`<div class="trk-tile${expanded?" open":""}" data-id="${esc(id)}" data-symbol="${esc(p.symbol)}" style="background:${bg};" title="点击查看这笔的入场/止盈/止损/技术分析明细">
       <div class="trk-tile-top">
         <span class="trk-tile-sym">${esc(p.symbol.replace("USDT",""))} <span class="trk-tile-dir ${p.dir>0?"up":"down"}">${p.dir>0?"▲":"▼"}</span></span>
       </div>
       <div class="trk-tile-pnl ${pnlCls}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</div>
       <div class="trk-tile-meta">${cycleStatusBadge(p)}</div>
-      <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 入场/止盈/止损"}</div>
+      <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 入场/止盈/止损/技术分析"}</div>
     </div>${expanded?`<div class="trk-tile-detail" data-id="${esc(id)}">
       <div class="trk-detail-row"><span>方向</span><span>${p.dir>0?"LONG 多":"SHORT 空"}</span></div>
       <div class="trk-detail-row"><span>入场价 Entry</span><span>${fmtPrice(p.entry)}</span></div>
-      <div class="trk-detail-row"><span>止盈 TP(固定${CYCLE_TP_PCT}%)</span><span>${fmtPrice(p.tp)}</span></div>
-      <div class="trk-detail-row"><span>止损 SL(固定${CYCLE_SL_PCT}%)</span><span>${fmtPrice(p.sl)}</span></div>
+      <div class="trk-detail-row"><span>止盈 TP(固定${cfg.tpPct}%)</span><span>${fmtPrice(p.tp)}</span></div>
+      <div class="trk-detail-row"><span>止损 SL(固定${cfg.slPct}%)</span><span>${fmtPrice(p.sl)}</span></div>
       <div class="trk-detail-row"><span>现价/平仓价</span><span>${fmtPrice(p.status==="OPEN"?(market.get(p.symbol)?market.get(p.symbol).price:p.entry):p.exitPrice)}</span></div>
       <div class="trk-detail-row"><span>信号强度</span><span>${(p.strength*100).toFixed(0)}%${p.conviction!=null?` · 把握度${p.conviction}%`:""}</span></div>
+      ${p.techNote?`<div class="trk-detail-row trk-detail-tech"><span>技术分析</span><span>${esc(p.techNote)}</span></div>`:""}
       <button class="trk-tile-gotomodal" data-symbol="${esc(p.symbol)}">📈 打开${esc(p.symbol.replace("USDT",""))}行情图 →</button>
     </div>`:""}`;
   }).join("");
-  return`<div class="trk-cycle-head">本期开仓时间 ${fmtTrkDateTime(cur.start)} · ${cycleCountdownText(cur)} · 固定策略: TP+${CYCLE_TP_PCT}% / SL-${CYCLE_SL_PCT}%,按信号强度选出的Top${CYCLE_TOP_N},4小时内不改判</div>
+  return`<div class="trk-cycle-head">本期开仓时间 ${fmtTrkDateTime(cur.start)} · ${cycleCountdownText(cur)} · 固定策略: TP+${cfg.tpPct}% / SL-${cfg.slPct}%,按${cfg.label}周期信号强度选出的Top${CYCLE_TOP_N},周期内不改判</div>
     <div class="trk-heatmap">${tiles}</div>`;
 }
-function renderCycleReview(){
-  const hist=loadCycleHistory();
-  if(!hist.length)return'<div class="trk-empty">还没有已结算的周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。</div>';
+/* 每期整体盈亏%(等权10笔平均),供趋势图/复利权益曲线/历史表共用同一口径,避免各处
+   各算各的导致数字对不上。 */
+function cycleAvgPnl(c){return c.positions.reduce((s,p)=>s+cyclePnlPct(p),0)/c.positions.length;}
+function cycleWinLoss(c){
+  const wins=c.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length;
+  const losses=c.positions.filter(p=>p.status==="SL"||p.outcome==="flat_loss").length;
+  return{wins,losses};
+}
+/* 等权复利权益曲线: 假设每期把上一期结束时的全部资金平均分给这期Top10,不加杠杆、不加仓、
+   不做资金管理优化——只是最朴素的"一直照这套规则做会怎样",用来看长期趋势而不是单期数字。
+   这不是对未来收益的预测,只是对已发生的追踪记录做的算术还原。 */
+function computeCycleEquityCurve(hist){
+  let equity=100;
+  return hist.map(c=>{equity*=(1+cycleAvgPnl(c)/100);return equity;});
+}
+/* 上一期结算结果 + 长期趋势可视化,按tf分别渲染: 光看一句"近N期胜率X%"容易把小样本波动误读成
+   "这个模型很差/很强",所以①胜率数字旁边挂Wilson 95%CI(与追踪日志页同一套算法,不另造口径)
+   ②每期胜率画成柱状图,柱子之间的CI阴影带标出"仅凭样本量,真实胜率大概率落在的范围"③假设等权
+   复利、不加杠杆跑完这些期数会是什么样的资金曲线④下面给一张可滚动的完整历史表,不是只挑一期
+   展示——要看"这个工具自己出过什么牌"的完整留痕,不需要用户另外去翻追踪日志页。1D/1W周期天然
+   积累samples慢(1D一天一期,1W一周一期),样本不足时CI区间会非常宽,这正是应该如实显示、
+   而不是隐藏或用更少的位数掩盖的信息。 */
+function renderCycleReview(tf){
+  const cfg=CYCLE_TF_CONFIG[tf];
+  const hist=loadCycleHistory(tf);
+  if(!hist.length)return`<div class="trk-empty">还没有已结算的${cfg.label}周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。${tf!=="4h"?`${cfg.label}周期较长,积累样本会比4H慢很多,请耐心等待。`:""}</div>`;
   const last=hist[hist.length-1];
   const rows=last.positions.map(p=>{
     const pnl=cyclePnlPct(p);
@@ -3091,21 +3199,50 @@ function renderCycleReview(){
       <td>${fmtPrice(p.exitPrice)}</td>
       <td>${cycleStatusBadge(p)}</td>
       <td class="${pnl>=0?"up":"down"}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</td>
+      <td class="trk-tech-cell">${p.techNote?esc(p.techNote):"–"}</td>
     </tr>`;
   }).join("");
-  const wins=last.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length;
-  const losses=last.positions.filter(p=>p.status==="SL"||p.outcome==="flat_loss").length;
-  const avgPnl=last.positions.reduce((s,p)=>s+cyclePnlPct(p),0)/last.positions.length;
+  const{wins,losses}=cycleWinLoss(last);
+  const avgPnl=cycleAvgPnl(last);
   // 近30期趋势(有多少算多少),用于看这套固定策略长期是否稳定,而不是只看最近一期
   const trend=hist.slice(-30);
-  const trendWins=trend.reduce((s,c)=>s+c.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length,0);
+  const trendWins=trend.reduce((s,c)=>s+cycleWinLoss(c).wins,0);
   const trendTotal=trend.reduce((s,c)=>s+c.positions.length,0);
   const trendWinRate=trendTotal?(trendWins/trendTotal*100).toFixed(1):"–";
-  return`<div class="trk-cycle-head">上一期 ${fmtTrkDateTime(last.start)} → ${fmtTrkDateTime(last.end)} · ${wins}胜${losses}负 · 本期平均${avgPnl>=0?"+":""}${avgPnl.toFixed(2)}% · 近${trend.length}期累计胜率 ${trendWinRate}%(n=${trendTotal})</div>
+  const equityCurve=computeCycleEquityCurve(hist);
+  const finalEquity=equityCurve.length?equityCurve[equityCurve.length-1]:100;
+  const histRows=hist.slice().reverse().map((c,ri)=>{
+    const{wins:w,losses:l}=cycleWinLoss(c);
+    const avg=cycleAvgPnl(c);
+    const eqIdx=hist.length-1-ri;
+    const eq=equityCurve[eqIdx];
+    return`<tr>
+      <td>${fmtTrkDateTime(c.start)}</td>
+      <td class="${w>=l?"up":"down"}">${w}胜${l}负</td>
+      <td class="${avg>=0?"up":"down"}">${avg>=0?"+":""}${avg.toFixed(2)}%</td>
+      <td>${eq.toFixed(1)}</td>
+    </tr>`;
+  }).join("");
+  return`<div class="trk-cycle-head">上一期 ${fmtTrkDateTime(last.start)} → ${fmtTrkDateTime(last.end)} · ${wins}胜${losses}负 · 本期平均${avgPnl>=0?"+":""}${avgPnl.toFixed(2)}% · 近${trend.length}期累计胜率 ${trendWinRate}%(n=${trendTotal}) ${ciLabel(trendWins,trendTotal)}</div>
     <table class="trk-calib-table">
-      <thead><tr><th>币种</th><th>方向</th><th>入场价</th><th>结算价</th><th>结果</th><th>盈亏%</th></tr></thead>
+      <thead><tr><th>币种</th><th>方向</th><th>入场价</th><th>结算价</th><th>结果</th><th>盈亏%</th><th>技术分析(斐波/趋势线/K线/月相)</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>
+    <div class="trk-trend-wrap">
+      <div class="trk-trend-head"><span>📈 每期胜率趋势(柱状,阴影=95%CI区间) · 共${hist.length}期</span></div>
+      <div class="trk-trend-canvas-wrap"><canvas id="cycleWinRateCanvas_${tf}"></canvas><div class="chart-empty" id="cycleWinRateEmpty_${tf}" style="display:none;">样本不足</div></div>
+    </div>
+    <div class="trk-trend-wrap">
+      <div class="trk-trend-head"><span>💰 等权复利权益曲线(假设不加杠杆,起始=100) · 当前${finalEquity.toFixed(1)}</span><span title="只是把已发生的记录按等权复利算术还原,不是收益预测">${finalEquity>=100?"▲":"▼"} ${(finalEquity-100).toFixed(1)}%</span></div>
+      <div class="trk-trend-canvas-wrap"><canvas id="cycleEquityCanvas_${tf}"></canvas><div class="chart-empty" id="cycleEquityEmpty_${tf}" style="display:none;">样本不足</div></div>
+    </div>
+    <div class="trk-trend-wrap">
+      <div class="trk-trend-head"><span>🗂 全部已结算${cfg.label}周期(完整留痕,非只看上一期)</span></div>
+      <div class="trk-hist-scroll"><table class="trk-calib-table">
+        <thead><tr><th>周期开始</th><th>胜负</th><th>本期平均</th><th>权益曲线</th></tr></thead>
+        <tbody>${histRows}</tbody>
+      </table></div>
+    </div>`;
 }
 
 function trkPosKey(sym,dir){return sym+"|"+dir;}
@@ -3632,16 +3769,20 @@ function renderTrackJournal(log){
 function renderTrackPanel(){
   const el=document.getElementById("trkBody");
   if(!el)return;
-  const cur=ensureCycle();
+  const tf=activeCycleTf;
+  const cfg=CYCLE_TF_CONFIG[tf];
+  const cur=ensureCycle(tf);
   const statusEl=document.getElementById("trkStatus");
   if(statusEl)statusEl.textContent=cur?`本期${cur.positions.length}笔 · ${cycleCountdownText(cur)} · 每20秒刷新止盈止损判定`:"等待首轮扫描…";
   el.innerHTML=`
     ${renderScanDiagnostics()}
-    <div class="trk-subhead">🔥 持仓热力图 · 本期Top${CYCLE_TOP_N}(固定4小时策略,按信号强度排序)</div>
-    ${renderCycleHeatmap(cur)}
-    <div class="trk-subhead">📓 复盘 · 上一期结算结果</div>
-    ${renderCycleReview()}
-    <div class="sig-note" style="margin-top:10px;">固定周期策略: 每4小时(0/4/8/12/16/20点)用当时的信号强度选出Top${CYCLE_TOP_N},按当时实时价开仓,止盈+${CYCLE_TP_PCT}%/止损-${CYCLE_SL_PCT}%全程固定不变,到期不论有没有摸到止盈止损一律强制结算。这样任何设备打开都是同一套确定性规则算出来的结果,不再依赖"这个标签页开了多久""上一次扫描确认到第几次"这类单次会话状态。数据存在本机浏览器localStorage,不会跨设备同步——多台设备各自独立按同一套规则计算,理应非常接近但不保证逐笔完全一致(取决于各自那一刻的实时行情快照)。</div>`;
+    ${cycleTfTabsHtml()}
+    <div class="trk-subhead">🔥 持仓热力图 · 本期Top${CYCLE_TOP_N}(固定${cfg.label}策略,按信号强度排序)</div>
+    ${renderCycleHeatmap(tf,cur)}
+    <div class="trk-subhead">📓 复盘 · 上一期结算结果(${cfg.label})</div>
+    ${renderCycleReview(tf)}
+    <div class="sig-note" style="margin-top:10px;">固定周期策略(${cfg.label}): 用当时的信号强度选出Top${CYCLE_TOP_N},按当时实时价开仓,止盈+${cfg.tpPct}%/止损-${cfg.slPct}%全程固定不变,到期不论有没有摸到止盈止损一律强制结算。1D/1W与4H是三条完全独立并行的轨道,各自的Top10、止盈止损、历史记录互不影响,只是共用同一套信号引擎按各自周期的K线重新计算(见斐波那契/趋势线/K线形态/月相技术分析)。这样任何设备打开都是同一套确定性规则算出来的结果,不再依赖"这个标签页开了多久""上一次扫描确认到第几次"这类单次会话状态。数据存在本机浏览器localStorage,不会跨设备同步——多台设备各自独立按同一套规则计算,理应非常接近但不保证逐笔完全一致(取决于各自那一刻的实时行情快照)。</div>`;
+  drawCycleTrendCharts(tf);
 }
 
 /* ── WEBSOCKET ── */
@@ -7540,6 +7681,52 @@ function drawSeries(canvasId,series,colorPos,colorNeg){
   const lx=w-pad,ly=h-pad-((last-min)/range)*(h-pad*2);
   ctx.beginPath();ctx.arc(lx,ly,3,0,Math.PI*2);ctx.fillStyle=lineColor;ctx.fill();
 }
+/* 每期胜率柱状图 + 整体Wilson 95%CI阴影带: 柱子本身回答"这一期赢了多少",阴影带回答
+   "仅凭目前攒到的样本量,真实胜率有95%概率落在这个区间里"——两者叠在一起看,才不会把
+   单期或近几期的波动误读成"模型突然变强/变差了"。与追踪日志页用的是同一个wilsonCI()。 */
+function drawCycleWinRateCanvas(tf){
+  const canvas=document.getElementById("cycleWinRateCanvas_"+tf);if(!canvas)return;
+  const hist=loadCycleHistory(tf);
+  const parent=canvas.parentElement;
+  const w=parent.clientWidth,h=parent.clientHeight;canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext("2d");ctx.clearRect(0,0,w,h);
+  const emptyEl=document.getElementById("cycleWinRateEmpty_"+tf);
+  if(!hist.length){if(emptyEl)emptyEl.style.display="flex";return;}
+  if(emptyEl)emptyEl.style.display="none";
+  const pad=6,n=hist.length,barW=(w-pad*2)/n;
+  let totalWins=0,totalN=0;
+  hist.forEach(c=>{const{wins}=cycleWinLoss(c);totalWins+=wins;totalN+=c.positions.length;});
+  const overallRate=totalN?totalWins/totalN*100:0;
+  const[ciLo,ciHi]=totalN?wilsonCI(totalWins,totalN):[0,100];
+  const yFor=v=>h-pad-(Math.max(0,Math.min(100,v))/100)*(h-pad*2);
+  ctx.fillStyle="rgba(198,165,101,0.12)";
+  ctx.fillRect(pad,yFor(ciHi),w-pad*2,Math.max(1,yFor(ciLo)-yFor(ciHi)));
+  ctx.beginPath();ctx.moveTo(pad,yFor(overallRate));ctx.lineTo(w-pad,yFor(overallRate));
+  ctx.strokeStyle="rgba(198,165,101,0.7)";ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
+  ctx.beginPath();ctx.moveTo(pad,yFor(50));ctx.lineTo(w-pad,yFor(50));
+  ctx.strokeStyle="rgba(255,255,255,0.08)";ctx.lineWidth=1;ctx.stroke();
+  hist.forEach((c,i)=>{
+    const{wins}=cycleWinLoss(c);
+    const rate=c.positions.length?wins/c.positions.length*100:0;
+    const x=pad+i*barW,y=yFor(rate);
+    ctx.fillStyle=rate>=50?"#5a9b78":"#b8555f";
+    ctx.fillRect(x+barW*0.15,y,Math.max(1,barW*0.7),(h-pad)-y);
+  });
+}
+function drawCycleEquityCanvas(tf){
+  const hist=loadCycleHistory(tf);
+  if(hist.length<2){
+    const canvas=document.getElementById("cycleEquityCanvas_"+tf);
+    const emptyEl=document.getElementById("cycleEquityEmpty_"+tf);
+    if(canvas){const ctx=canvas.getContext("2d");ctx.clearRect(0,0,canvas.width,canvas.height);}
+    if(emptyEl)emptyEl.style.display="flex";
+    return;
+  }
+  const curve=computeCycleEquityCurve(hist).map(v=>({value:v}));
+  drawSeries("cycleEquityCanvas_"+tf,curve,"#5a9b78","#b8555f");
+}
+function drawCycleTrendCharts(tf){drawCycleWinRateCanvas(tf);drawCycleEquityCanvas(tf);}
+window.addEventListener("resize",()=>drawCycleTrendCharts(activeCycleTf));
 function drawOiCanvas(){drawSeries("oiCanvas",oiHistory,"#5a9b78","#b8555f");}
 function drawCvdCanvas(){drawSeries("cvdCanvas",cvdHistory,"#5a9b78","#b8555f");}
 function drawFundingCanvas(){drawSeries("fundingCanvas",fundingHistory,"#5a9b78","#b8555f");}
