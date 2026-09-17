@@ -493,6 +493,9 @@
   .trk-body{padding:14px;}
   .trk-subhead{font-size:11.5px;letter-spacing:1px;color:var(--dim2);text-transform:uppercase;font-weight:700;margin:18px 0 10px;}
   .trk-cycle-head{font-size:11.5px;color:var(--dim2);margin-bottom:8px;}
+  .trk-conf-band{font-size:12px;color:var(--txt);background:var(--panel3);border:1px solid var(--line2);border-radius:5px;padding:7px 10px;margin-bottom:6px;}
+  .trk-conf-band.na{color:var(--dim2);border-color:rgba(240,79,87,.25);}
+  .trk-guide-note{font-size:11px;color:var(--dim2);line-height:1.6;background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:8px 10px;margin-bottom:10px;}
   .trk-calib-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}
   .trk-calib-table th{text-align:left;color:var(--dim2);font-weight:600;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line);}
   .trk-calib-table td{padding:7px 8px;border-bottom:1px solid var(--line2);}
@@ -530,6 +533,15 @@
   .trk-tile-pnl.up{color:var(--up);}
   .trk-tile-pnl.down{color:var(--down);}
   .trk-tile-meta{font-size:11px;color:var(--dim2);margin-top:4px;}
+  .trk-tile-time{font-size:10px;color:var(--dim2);margin-top:3px;font-family:var(--mono);opacity:.75;}
+  .trk-ev-chip{font-size:10px;padding:1px 5px;border-radius:3px;margin-left:5px;font-family:var(--mono);}
+  .trk-ev-chip.pos{color:var(--up);background:var(--up-bg);}
+  .trk-ev-chip.neg{color:var(--down);background:var(--down-bg);}
+  .trk-ev-chip.na{color:var(--dim2);background:#171d29;}
+  .trk-tile-hint{font-size:10px;line-height:1.4;margin-top:4px;padding:3px 5px;border-radius:3px;}
+  .trk-tile-hint.ok{color:var(--up);background:var(--up-bg);}
+  .trk-tile-hint.warn{color:var(--down);background:var(--down-bg);}
+  .trk-tile-hint.neutral{color:var(--dim2);background:#171d29;}
   .trk-tile-more{font-size:10px;color:var(--dim2);margin-top:6px;text-align:right;}
   .trk-tile.open{border-color:var(--amber);}
   .trk-tile-detail{grid-column:1/-1;border:1px solid var(--line2);border-radius:7px;padding:10px 12px;background:var(--panel2);font-size:12.5px;}
@@ -1639,7 +1651,7 @@ function exportTrackLogCSV(){
 }
 function exportCycleLogCSV(){
   // 导出全部三个时间维度(4H/1D/1W)的完整留痕,加一列tf区分,而不是只导出当前正在看的那个tab。
-  const cols=["tf","cycleStart","cycleEnd","symbol","dir","entry","tp","sl","status","exitPrice","exitAt","pnlPct","strength","conviction","techNote"];
+  const cols=["tf","cycleStart","cycleEnd","symbol","dir","entry","tp","tpPct","sl","slPct","rr","volRatio","cappedByLevel","status","exitPrice","exitAt","pnlPct","strength","conviction","techNote"];
   const fmtTs=t=>t?new Date(t).toISOString():"";
   const rows=[];
   CYCLE_TFS.forEach(tf=>{
@@ -1650,7 +1662,9 @@ function exportCycleLogCSV(){
       c.positions.forEach(p=>{
         const pnl=cyclePnlPct(p);
         const cells={tf,cycleStart:fmtTs(c.start),cycleEnd:fmtTs(c.end),symbol:p.symbol,dir:p.dir>0?"LONG":"SHORT",
-          entry:p.entry,tp:p.tp,sl:p.sl,status:p.status,exitPrice:p.exitPrice==null?"":p.exitPrice,exitAt:fmtTs(p.exitAt),
+          entry:p.entry,tp:p.tp,tpPct:p.tpPct!=null?p.tpPct.toFixed(2):"",sl:p.sl,slPct:p.slPct!=null?p.slPct.toFixed(2):"",
+          rr:(p.tpPct!=null&&p.slPct)?(p.tpPct/p.slPct).toFixed(2):"",volRatio:p.volRatio!=null?p.volRatio.toFixed(2):"",
+          cappedByLevel:p.cappedByLevel?"Y":"N",status:p.status,exitPrice:p.exitPrice==null?"":p.exitPrice,exitAt:fmtTs(p.exitAt),
           pnlPct:pnl.toFixed(2),strength:(p.strength*100).toFixed(0),conviction:p.conviction==null?"":p.conviction,
           techNote:p.techNote||""};
         rows.push(cols.map(k=>{let v=cells[k];if(v==null)v="";v=String(v).replace(/"/g,'""');return/[",\n]/.test(v)?`"${v}"`:v;}).join(","));
@@ -2979,8 +2993,9 @@ function renderOpportunityRadar(){
    切标签页打断,这也是"推荐追踪一直空白"的根因。
    新模式不再"等信号自己被确认",而是做确定性快照: 每4小时(UTC对齐: 0/4/8/12/16/20点)用当时
    已经在跑的 confluence 扫描结果(opportunityResults,由上面的 runOpportunityScan 每5分钟刷新,
-   本身不受影响,继续保留)按信号强度选出Top10,按那一刻的实时价格直接"开仓",止盈止损用固定
-   百分比——整件事只在4小时边界发生一次决策,决策之后钉住不再变,到下一个边界不论中途有没有摸到
+   本身不受影响,继续保留)按信号强度选出Top10,按那一刻的实时价格直接"开仓",止盈止损用
+   基准%按各币种自身ATR波动率个性化放宽/收窄、止盈再受最近结构位封顶(见下方buildCyclePositions
+   的详细说明,不是所有币种同一把尺子)——整件事只在4小时边界发生一次决策,决策之后钉住不再变,到下一个边界不论中途有没有摸到
    止盈止损,一律强制结算(到期平仓)并归档。任何设备只要用同一份实时行情在边界附近打开页面,
    算出来的Top10和入场价都会高度一致(仍会有WS到达时间差导致的极小价格误差,但不再有"确认进度"
    这种纯会话状态造成的根本性分歧)。"复盘"区永远能看到上一期每一笔的入场价与结果。 */
@@ -3001,9 +3016,21 @@ let activeCycleTf="4h"; // 面板tab状态,模块级变量、不写localStorage(
 
 function cycleResultsMapFor(tf){return tf==="1d"?opportunityResultsDaily:tf==="1w"?opportunityResultsWeekly:opportunityResults;}
 function cycleStartOf(t,tf){const ms=CYCLE_TF_CONFIG[tf].ms;return Math.floor(t/ms)*ms;}
-function loadCycleCurrent(tf){try{return JSON.parse(localStorage.getItem(CYCLE_TF_CONFIG[tf].logKey)||"null");}catch(e){return null;}}
+/* 兼容2026-09-17之前(纯固定%版本)已经存在localStorage里的旧记录——那批数据没有
+   tpPct/slPct/volRatio/cappedByLevel字段,这里读出来时补算一遍(用tp/sl/entry反推%,
+   波动系数标"–"表示"这笔是旧版固定%时代产生的,不代表当时做过波动率调整"),避免旧数据
+   直接崩渲染,同时不悄悄伪造一个"当时其实做了ATR调整"的假象。*/
+function cycleNormalizePos(p){
+  if(p.tpPct==null)p.tpPct=p.entry?Math.abs((p.tp-p.entry)/p.entry*100):0;
+  if(p.slPct==null)p.slPct=p.entry?Math.abs((p.sl-p.entry)/p.entry*100):0;
+  if(p.volRatio==null)p.volRatio=null; // null(而不是1)用来在UI上区分"旧版无此概念" vs "新版算出来正好是1"
+  if(p.cappedByLevel==null)p.cappedByLevel=false;
+  return p;
+}
+function cycleNormalizeRec(rec){if(rec&&rec.positions)rec.positions.forEach(cycleNormalizePos);return rec;}
+function loadCycleCurrent(tf){try{return cycleNormalizeRec(JSON.parse(localStorage.getItem(CYCLE_TF_CONFIG[tf].logKey)||"null"));}catch(e){return null;}}
 function saveCycleCurrent(tf,rec){try{localStorage.setItem(CYCLE_TF_CONFIG[tf].logKey,JSON.stringify(rec));}catch(e){}}
-function loadCycleHistory(tf){try{return JSON.parse(localStorage.getItem(CYCLE_TF_CONFIG[tf].histKey)||"[]");}catch(e){return[];}}
+function loadCycleHistory(tf){try{return(JSON.parse(localStorage.getItem(CYCLE_TF_CONFIG[tf].histKey)||"[]")).map(cycleNormalizeRec);}catch(e){return[];}}
 function saveCycleHistory(tf,arr){
   try{
     const max=CYCLE_TF_CONFIG[tf].histMax;
@@ -3040,18 +3067,67 @@ function pickCycleTopN(tf){
   const items=[...map.entries()]
     .filter(([symbol,r])=>r.sig&&r.sig.dirSign!==0&&market.get(symbol)&&market.get(symbol).price!=null)
     .map(([symbol,r])=>({symbol,dir:r.sig.dirSign,strength:Math.abs(r.sig.score)/(r.sig.maxScore||1),
-      conviction:r.sig.outlook?r.sig.outlook.conviction:null,techNote:cycleTechNote(r.sig)}));
+      conviction:r.sig.outlook?r.sig.outlook.conviction:null,techNote:cycleTechNote(r.sig),
+      atrPct:(r.sig.atr!=null&&r.sig.price)?(r.sig.atr/r.sig.price*100):null,
+      nearLevel:cycleNearestLevel(r.sig,r.sig.dirSign)}));
   items.sort((a,b)=>b.strength-a.strength);
   return items.slice(0,CYCLE_TOP_N);
 }
+/* 距入场价最近的、且在"止盈方向"上的结构位(多头找上方最近压力,空头找下方最近支撑)——
+   直接复用主引擎已经算好、已用R²过滤掉不可信趋势线的sig.structure,不重新计算。用于给
+   ATR止盈止损设一个"结构位封顶",避免纯数学上的波动率目标离场价飘到一个明显会先撞上
+   真实压力/支撑位的地方——那种情况下先摸到结构位的概率远高于摸到理论ATR目标。 */
+function cycleNearestLevel(sig,dirSign){
+  if(!sig||!sig.structure||!sig.price||!dirSign)return null;
+  const price=sig.price;
+  const pool=dirSign>0?(sig.structure.resistances||[]):(sig.structure.supports||[]);
+  const beyond=pool.filter(l=>dirSign>0?l.price>price:l.price<price);
+  if(!beyond.length)return null;
+  beyond.sort((a,b)=>Math.abs(a.price-price)-Math.abs(b.price-price));
+  return beyond[0];
+}
+function cycleMedian(arr){
+  const a=arr.filter(v=>v!=null&&isFinite(v)).slice().sort((x,y)=>x-y);
+  if(!a.length)return null;
+  const mid=Math.floor(a.length/2);
+  return a.length%2?a[mid]:(a[mid-1]+a[mid])/2;
+}
+const cycleClamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+/* ── 为什么不再用"全币种同一档固定%"(2026-09-17改) ──
+   同一期Top10里,低波动的主流币(比如ARB这种日内典型波动可能不到1%)和高波动的小盘/meme币
+   (典型波动可能是前者的3~5倍)如果套用完全相同的止盈+2.4%/止损-1.2%,统计上是有偏的:
+   低波动币几乎不可能在周期内碰到2.4%的TP(样本会被稀释成大量"到期强制平仓"而不是真正验证
+   信号方向),高波动币则可能在信号方向根本没被验证清楚之前就被1.2%的噪音扫损——这两种情况
+   下测出来的"胜率"反映的主要是"这个币种本身有多吵",而不是"这条信号有没有价值",这正是
+   用户指出的核心问题:止盈止损应该看波动率、看结构位,不能是一刀切的常数。
+   新逻辑(仍然100%机械化、不引入任何主观判断、任何设备算出来的结果依然完全一致):
+   ① 以本期Top10各自的ATR%(已在主扫描引擎算好,sig.atr/sig.price)算出中位数,每个币种的
+      止盈止损 = 基准% × (自身ATR% / 中位ATR%),比例夹在[0.5x,2x]之间防止极端值失控;
+      这样R:R(止盈/止损比例)对所有币种始终保持基准配置里定好的比例(4H=2:1),只是绝对
+      止盈止损宽窄按各自真实波动率个性化,不再是同一把尺子量所有币。
+   ② 止盈方向上如果有更近的结构压力/支撑位(sig.structure,已用R²过滤趋势线可信度),
+      止盈价格不允许穿过该结构位——用ATR目标与结构位中更保守(更近)的那个,因为价格先
+      撞上真实压力/支撑位的概率显著高于撞上一个纯数学算出来的百分比。止损保持ATR算出的
+      距离不变(止损位不做结构收紧,以保留合理的呼吸空间,避免被噪音过早扫损)。 */
 function buildCyclePositions(tf,topN){
-  const{tpPct,slPct}=CYCLE_TF_CONFIG[tf];
+  const{tpPct:baseTp,slPct:baseSl}=CYCLE_TF_CONFIG[tf];
+  const medAtr=cycleMedian(topN.map(x=>x.atrPct));
   return topN.map(x=>{
     const m=market.get(x.symbol);
     const entry=m.price;
-    const tp=x.dir>0?entry*(1+tpPct/100):entry*(1-tpPct/100);
+    const volRatio=(medAtr&&x.atrPct!=null)?cycleClamp(x.atrPct/medAtr,0.5,2.0):1;
+    const tpPct=baseTp*volRatio, slPct=baseSl*volRatio;
+    let tp=x.dir>0?entry*(1+tpPct/100):entry*(1-tpPct/100);
     const sl=x.dir>0?entry*(1-slPct/100):entry*(1+slPct/100);
-    return{symbol:x.symbol,dir:x.dir,entry,tp,sl,strength:x.strength,conviction:x.conviction,techNote:x.techNote,
+    let cappedByLevel=false;
+    if(x.nearLevel){
+      const levelPx=x.nearLevel.price;
+      if(x.dir>0&&levelPx<tp){tp=levelPx;cappedByLevel=true;}
+      else if(x.dir<0&&levelPx>tp){tp=levelPx;cappedByLevel=true;}
+    }
+    return{symbol:x.symbol,dir:x.dir,entry,tp,sl,tpPct:Math.abs((tp-entry)/entry*100),slPct,volRatio,
+      cappedByLevel,levelSrc:x.nearLevel&&x.nearLevel.sources?x.nearLevel.sources[0]:null,
+      strength:x.strength,conviction:x.conviction,techNote:x.techNote,
       status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
   });
 }
@@ -3066,6 +3142,7 @@ function settleCycleIfDue(tf,cur){
       p.exitPrice=px;p.exitAt=cur.end;p.status="EOC"; // end-of-cycle,到期强制平仓,不是TP也不是SL
       p.outcome=(p.dir>0?px>=p.entry:px<=p.entry)?"flat_win":"flat_loss";
     }
+    delete p._srr; // 只是渲染期间用来防抖的临时平滑值,结算归档后没有意义,不留进历史记录
   });
   cur.settledAt=now;
   const hist=loadCycleHistory(tf);
@@ -3118,6 +3195,84 @@ function cyclePnlPct(p){
   const raw=(live-p.entry)/p.entry*100;
   return p.dir>0?raw:-raw;
 }
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 把握度校准 + 预期值(EV) —— 从用户角度回答"这个信号该有多大信心" ──
+   光给一个"把握度44%"的模型自评分数没有意义——用户没法知道这个44%是不是真的对应44%
+   的实际胜率。这里用该tf全部已结算历史(不含当前还没分胜负的这期,不存在用未来数据
+   校准当下的问题),按把握度每10个百分点分一档,回填每档历史上的真实胜率+Wilson CI。
+   有了校准胜率,才能算出有意义的预期值EV = 校准胜率×止盈% − (1−校准胜率)×止损%——
+   这才是"到底该不该参考这笔"的核心数字,而不是止盈止损本身的绝对大小。 */
+function cycleConvictionBucket(conv){
+  if(conv==null)return null;
+  const lo=Math.max(0,Math.min(90,Math.floor(conv/10)*10));
+  return`${lo}-${lo+9}%`;
+}
+function cycleCalibrationByBucket(tf){
+  const hist=loadCycleHistory(tf);
+  const buckets={};
+  hist.forEach(c=>c.positions.forEach(p=>{
+    if(p.conviction==null||p.status==="OPEN")return;
+    const b=cycleConvictionBucket(p.conviction);
+    if(!buckets[b])buckets[b]={wins:0,total:0};
+    buckets[b].total++;
+    if(p.status==="TP"||p.outcome==="flat_win")buckets[b].wins++;
+  }));
+  return buckets;
+}
+const CYCLE_CALIB_MIN_N=10; // 分档样本低于这个数,Wilson CI会宽到没有参考意义,不拿来算EV,只如实标注"样本不足"
+function cycleBucketStat(buckets,conv){
+  const b=cycleConvictionBucket(conv);
+  if(!b||!buckets[b])return{bucket:b,wins:0,total:0,rate:null,lo:0,hi:0};
+  const{wins,total}=buckets[b];
+  const[lo,hi]=wilsonCI(wins,total);
+  return{bucket:b,wins,total,rate:total?wins/total*100:null,lo,hi};
+}
+// 面板顶部"这套方法论目前整体测出来怎么样"——不分把握度档,近30期(与复盘页同一口径,不另造数字)
+function cycleOverallStats(tf){
+  const hist=loadCycleHistory(tf).slice(-30);
+  const wins=hist.reduce((s,c)=>s+cycleWinLoss(c).wins,0);
+  const total=hist.reduce((s,c)=>s+c.positions.length,0);
+  const[lo,hi]=wilsonCI(wins,total);
+  return{wins,total,rate:total?wins/total*100:null,lo,hi,cycles:hist.length};
+}
+function cycleTileEV(p,bStat){
+  if(!bStat||bStat.total<CYCLE_CALIB_MIN_N||bStat.rate==null)return null;
+  const wr=bStat.rate/100;
+  return wr*p.tpPct-(1-wr)*p.slPct;
+}
+/* 对正在持仓中的这一笔:现价相对入场价已经跑了多少——用来回答"如果我现在才看到这个信号,
+   现价追进去还划算吗",而不是假装现价=入场价。这是给"没有在4H边界那一刻刚好在场"的真实用户
+   用的——面板本身仍是机械化的观察日志(入场/止盈/止损全部锁定不因谁在看而改变),但迟到看到的人
+   应该有办法判断"现在追值不值",不该只能干看着数字走。
+   2026-xx-xx改(v2): 原版只用"已消耗止损/止盈空间的比例"分三档,有两个问题——①只给"风险回报比
+   变差了"这种定性描述,没有把"现在追进去,剩余的止盈空间:剩余的止损空间"这个真正决定"值不值得
+   追"的数字直接算出来;②用瞬时现价去比对固定阈值(0.6),现价在阈值附近来回震荡时,同一张卡片
+   的档位会跟着来回跳变(ok→neutral→warn→neutral…),这正是"模型的信心不能一直乱跳"——同一条
+   信息几分钟内反复翻转,用户没法把它当一个稳定的判断来用。
+   v2做两件事: ①直接算"现价到止盈的剩余距离 : 现价到止损的剩余距离"这个剩余R:R,与开仓时的
+   原始R:R(基准配置定好的2:1等)相比,给出具体数字和百分比,不是只给一句定性描述;②用EMA(α=0.3,
+   随renderTrackPanel约20秒一次的刷新节奏)把这个比例磨平后存在position对象上(随cycle一起持久化
+   到localStorage,刷新页面/换设备不会丢失也不会跳回没平滑过的原始值)——只有剩余R:R真的持续
+   变差或变好,档位才会跟着变,单次tick的价格抖动不会让提示来回闪烁。*/
+function cycleActionHint(p){
+  if(p.status!=="OPEN")return null;
+  const m=market.get(p.symbol);
+  if(!m||m.price==null||!p.slPct||!p.tpPct)return null;
+  const cur=m.price;
+  const remReward=Math.abs(p.tp-cur), remRisk=Math.abs(cur-p.sl);
+  const origRR=p.tpPct/p.slPct;
+  // remRisk<=0 表示现价已经在止损位之外(理论上下一次evaluateOpenPositions就会判定SL,这里
+  // 提前把比例钉到0,不让除以0或负数产生错误数字)
+  const rawRatio=(origRR>0&&remRisk>0)?cycleClamp((remReward/remRisk)/origRR,0,2):0;
+  const prevSmooth=(p._srr!=null&&isFinite(p._srr))?p._srr:rawRatio;
+  const smooth=prevSmooth+0.3*(rawRatio-prevSmooth);
+  p._srr=smooth;
+  const remRRVal=smooth*origRR;
+  const rrTxt=`现价剩余R:R约${remRRVal.toFixed(2)}:1(原始${origRR.toFixed(2)}:1的${(smooth*100).toFixed(0)}%)`;
+  if(smooth<0.45)return{cls:"warn",text:`${rrTxt} · 现价追进去性价比已明显变差,不建议追,可以等回踩,或直接跳过看下一期`};
+  if(smooth<0.85)return{cls:"neutral",text:`${rrTxt} · 处于边缘,若仍想跟进,按现价重新算止损距离、仓位比原计划减半,不要照抄原止损价`};
+  return{cls:"ok",text:`${rrTxt} · 现价与建议入场价接近,若要参考,滑点很小,可按原计划跟进`};
+}
 function cycleStatusBadge(p){
   if(p.status==="OPEN")return`<span class="trk-badge" style="color:var(--amber);background:var(--amber-bg);">持仓中</span>`;
   if(p.status==="TP")return`<span class="trk-badge win">✅ 止盈 TP</span>`;
@@ -3136,31 +3291,52 @@ function cycleTfTabsHtml(){
 function renderCycleHeatmap(tf,cur){
   const cfg=CYCLE_TF_CONFIG[tf];
   if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟自动开始第一期…</div>';
+  const calib=cycleCalibrationByBucket(tf);
+  const overall=cycleOverallStats(tf);
   const tiles=cur.positions.slice().sort((a,b)=>cyclePnlPct(b)-cyclePnlPct(a)).map(p=>{
     const pnl=cyclePnlPct(p);
     const bg=trkHeatColor(p.status==="OPEN"?pnl:null);
     const id=tf+"|"+cur.start+"|"+p.symbol;
     const expanded=trkExpandedIds.has(id);
     const pnlCls=pnl>=0?"up":"down";
+    const bStat=cycleBucketStat(calib,p.conviction);
+    const ev=cycleTileEV(p,bStat);
+    const evChip=ev==null?`<span class="trk-ev-chip na">样本不足</span>`:`<span class="trk-ev-chip ${ev>=0?"pos":"neg"}">EV${ev>=0?"+":""}${ev.toFixed(2)}%</span>`;
+    const hint=cycleActionHint(p);
     return`<div class="trk-tile${expanded?" open":""}" data-id="${esc(id)}" data-symbol="${esc(p.symbol)}" style="background:${bg};" title="点击查看这笔的入场/止盈/止损/技术分析明细">
       <div class="trk-tile-top">
         <span class="trk-tile-sym">${esc(p.symbol.replace("USDT",""))} <span class="trk-tile-dir ${p.dir>0?"up":"down"}">${p.dir>0?"▲":"▼"}</span></span>
       </div>
       <div class="trk-tile-pnl ${pnlCls}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</div>
-      <div class="trk-tile-meta">${cycleStatusBadge(p)}</div>
-      <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 入场/止盈/止损/技术分析"}</div>
+      <div class="trk-tile-meta">${cycleStatusBadge(p)} ${evChip}</div>
+      <div class="trk-tile-time">${p.status==="OPEN"?`建议 ${fmtTrkTime(cur.start)}`:`建议${fmtTrkTime(cur.start)} → 结算${fmtTrkTime(p.exitAt)}`}</div>
+      ${hint?`<div class="trk-tile-hint ${hint.cls}">${esc(hint.text)}</div>`:""}
+      <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 入场/止盈/止损/信心依据"}</div>
     </div>${expanded?`<div class="trk-tile-detail" data-id="${esc(id)}">
       <div class="trk-detail-row"><span>方向</span><span>${p.dir>0?"LONG 多":"SHORT 空"}</span></div>
+      <div class="trk-detail-row"><span>建议时间 Signal</span><span>${fmtTrkDateTime(cur.start)}</span></div>
       <div class="trk-detail-row"><span>入场价 Entry</span><span>${fmtPrice(p.entry)}</span></div>
-      <div class="trk-detail-row"><span>止盈 TP(固定${cfg.tpPct}%)</span><span>${fmtPrice(p.tp)}</span></div>
-      <div class="trk-detail-row"><span>止损 SL(固定${cfg.slPct}%)</span><span>${fmtPrice(p.sl)}</span></div>
+      <div class="trk-detail-row"><span>止盈 TP(${p.tpPct.toFixed(2)}%${p.cappedByLevel?" · 结构位封顶":""})</span><span>${fmtPrice(p.tp)}</span></div>
+      <div class="trk-detail-row"><span>止损 SL(${p.slPct.toFixed(2)}%)</span><span>${fmtPrice(p.sl)}</span></div>
+      <div class="trk-detail-row"><span>R:R</span><span>${(p.tpPct/p.slPct).toFixed(2)} : 1</span></div>
+      <div class="trk-detail-row"><span>波动系数</span><span>${p.volRatio==null?"– (旧版固定%记录,未做波动率调整)":`×${p.volRatio.toFixed(2)}(该币种ATR相对本期Top10中位数${p.volRatio>1?"更高,止盈止损相应放宽":p.volRatio<1?"更低,止盈止损相应收窄":"持平,采用基准值"})`}</span></div>
+      ${p.cappedByLevel?`<div class="trk-detail-row trk-detail-tech"><span>止盈依据</span><span>ATR目标已超出最近${p.dir>0?"压力位":"支撑位"}${p.levelSrc?`(${esc(p.levelSrc)})`:""},改用该结构位作为止盈,因为价格更可能先在此受阻/受撑</span></div>`:""}
       <div class="trk-detail-row"><span>现价/平仓价</span><span>${fmtPrice(p.status==="OPEN"?(market.get(p.symbol)?market.get(p.symbol).price:p.entry):p.exitPrice)}</span></div>
-      <div class="trk-detail-row"><span>信号强度</span><span>${(p.strength*100).toFixed(0)}%${p.conviction!=null?` · 把握度${p.conviction}%`:""}</span></div>
+      ${p.status!=="OPEN"&&p.exitAt?`<div class="trk-detail-row"><span>结算时间 Matched</span><span>${fmtTrkDateTime(p.exitAt)}</span></div>`:""}
+      <div class="trk-detail-row"><span>模型自评把握度</span><span>${p.conviction!=null?p.conviction+"%":"–"}(信号强度${(p.strength*100).toFixed(0)}%)</span></div>
+      <div class="trk-detail-row trk-detail-tech"><span>该把握度档历史校准</span><span>${bStat.bucket?(bStat.total>0?`把握度${bStat.bucket}这一档,历史已结算${bStat.total}笔,实际胜率${bStat.rate.toFixed(0)}% ${ciLabel(bStat.wins,bStat.total)}${bStat.total<CYCLE_CALIB_MIN_N?` · 样本<${CYCLE_CALIB_MIN_N},区间还很宽,先当参考不当定论`:""}`:"该把握度档目前还没有已结算样本,暂无法校准"):"–"}</span></div>
+      <div class="trk-detail-row trk-detail-tech"><span>预期值 EV</span><span>${ev==null?`样本不足(&lt;${CYCLE_CALIB_MIN_N}笔),暂不计算EV,只能看模型自评分数`:`${ev>=0?"+":""}${ev.toFixed(2)}%(按该档校准胜率${bStat.rate.toFixed(0)}%计算: ${bStat.rate.toFixed(0)}%×${p.tpPct.toFixed(2)}% − ${(100-bStat.rate).toFixed(0)}%×${p.slPct.toFixed(2)}%)`}</span></div>
+      ${hint?`<div class="trk-detail-row trk-detail-tech"><span>操作提示</span><span>${esc(hint.text)}</span></div>`:""}
       ${p.techNote?`<div class="trk-detail-row trk-detail-tech"><span>技术分析</span><span>${esc(p.techNote)}</span></div>`:""}
       <button class="trk-tile-gotomodal" data-symbol="${esc(p.symbol)}">📈 打开${esc(p.symbol.replace("USDT",""))}行情图 →</button>
     </div>`:""}`;
   }).join("");
-  return`<div class="trk-cycle-head">本期开仓时间 ${fmtTrkDateTime(cur.start)} · ${cycleCountdownText(cur)} · 固定策略: TP+${cfg.tpPct}% / SL-${cfg.slPct}%,按${cfg.label}周期信号强度选出的Top${CYCLE_TOP_N},周期内不改判</div>
+  const confBand=overall.total>0
+    ?`<div class="trk-conf-band">📊 近${overall.cycles}期整体校准: 已结算${overall.total}笔 · 实际胜率${overall.rate.toFixed(1)}% ${ciLabel(overall.wins,overall.total)}${overall.total<20?" · 样本还不多,数字会随样本增加而变稳":""}</div>`
+    :`<div class="trk-conf-band na">📊 本${cfg.label}周期还没有已结算样本,校准胜率暂时算不出来——现在能看到的只是模型自评分数,还没有实证支持,建议先观察不建议参考实盘</div>`;
+  const guideNote=`<div class="trk-guide-note">怎么用这个面板: ① 先看上面的整体校准胜率是不是站得住(样本够、CI不太宽);② 每笔卡片上的EV是用"该把握度档历史实际胜率"算出来的预期值,只看EV为正、且样本不算太小的信号,EV为负或"样本不足"的应跳过或只当观察;③ 仍在持仓中的信号,注意卡片下方的操作提示——现价已经偏离建议入场价太多时,追入的风险回报已经不是当初那个样子了;④ 这里不做仓位/杠杆建议,只机械化验证方向和目标价,具体仓位大小请按自己的风险承受能力决定;⑤ 这一期是按4小时边界(0/4/8/12/16/20点SGT)自动开仓的,不是等你点进来才开——如果你不是刚好在那一刻打开页面,不代表只能干看:卡片下方的"现价剩余R:R"已经把"现在追进去还剩多少赚赔比"算给你,数字在ok/neutral区间才考虑跟(neutral建议仓位减半、按现价重新算止损),掉进warn区间就说明这期的空间已经被走掉大半,等下一期新开仓,不要为了"看到了方向标注"就无脑追价。</div>`;
+  return`<div class="trk-cycle-head">本期开仓时间 ${fmtTrkDateTime(cur.start)} · ${cycleCountdownText(cur)} · 基准 TP+${cfg.tpPct}%/SL-${cfg.slPct}%(R:R ${(cfg.tpPct/cfg.slPct).toFixed(1)}:1)按每个币种自身ATR波动率个性化放宽/收窄,止盈另受最近结构压力/支撑位封顶 · 按${cfg.label}周期信号强度选出的Top${CYCLE_TOP_N},周期内不改判</div>
+    ${confBand}${guideNote}
     <div class="trk-heatmap">${tiles}</div>`;
 }
 /* 每期整体盈亏%(等权10笔平均),供趋势图/复利权益曲线/历史表共用同一口径,避免各处
@@ -3198,8 +3374,9 @@ function renderCycleReview(tf){
       <td>${fmtPrice(p.entry)}</td>
       <td>${fmtPrice(p.exitPrice)}</td>
       <td>${cycleStatusBadge(p)}</td>
+      <td>${p.exitAt?fmtTrkTime(p.exitAt):"–"}</td>
       <td class="${pnl>=0?"up":"down"}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</td>
-      <td class="trk-tech-cell">${p.techNote?esc(p.techNote):"–"}</td>
+      <td class="trk-tech-cell">${p.techNote?esc(p.techNote):"–"}${p.cappedByLevel?` · 止盈受结构位封顶`:""}</td>
     </tr>`;
   }).join("");
   const{wins,losses}=cycleWinLoss(last);
@@ -3225,7 +3402,7 @@ function renderCycleReview(tf){
   }).join("");
   return`<div class="trk-cycle-head">上一期 ${fmtTrkDateTime(last.start)} → ${fmtTrkDateTime(last.end)} · ${wins}胜${losses}负 · 本期平均${avgPnl>=0?"+":""}${avgPnl.toFixed(2)}% · 近${trend.length}期累计胜率 ${trendWinRate}%(n=${trendTotal}) ${ciLabel(trendWins,trendTotal)}</div>
     <table class="trk-calib-table">
-      <thead><tr><th>币种</th><th>方向</th><th>入场价</th><th>结算价</th><th>结果</th><th>盈亏%</th><th>技术分析(斐波/趋势线/K线/月相)</th></tr></thead>
+      <thead><tr><th>币种</th><th>方向</th><th>入场价</th><th>结算价</th><th>结果</th><th>结算时间</th><th>盈亏%</th><th>技术分析(斐波/趋势线/K线/月相)</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="trk-trend-wrap">
@@ -3492,6 +3669,13 @@ function fmtTrkDateTime(ts){
   const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date(ts));
   const o={};p.forEach(x=>o[x.type]=x.value);
   return`${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}`;
+}
+// 卡片折叠态下的短时间格式(月/日 时:分),用于在不展开明细的情况下也能看到"什么时候建议/什么时候结算"
+function fmtTrkTime(ts){
+  if(ts==null)return"–";
+  const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date(ts));
+  const o={};p.forEach(x=>o[x.type]=x.value);
+  return`${o.month}/${o.day} ${o.hour}:${o.minute}`;
 }
 /* 详情展开区: 把这笔推荐当时原封不动的TP/SL计划摊开来给用户核对——追踪记录要有说服力,
    前提是"当初到底提议了什么"必须可回溯查证,不能只留一个胜负标签让人无从核实。*/
@@ -3781,7 +3965,7 @@ function renderTrackPanel(){
     ${renderCycleHeatmap(tf,cur)}
     <div class="trk-subhead">📓 复盘 · 上一期结算结果(${cfg.label})</div>
     ${renderCycleReview(tf)}
-    <div class="sig-note" style="margin-top:10px;">固定周期策略(${cfg.label}): 用当时的信号强度选出Top${CYCLE_TOP_N},按当时实时价开仓,止盈+${cfg.tpPct}%/止损-${cfg.slPct}%全程固定不变,到期不论有没有摸到止盈止损一律强制结算。1D/1W与4H是三条完全独立并行的轨道,各自的Top10、止盈止损、历史记录互不影响,只是共用同一套信号引擎按各自周期的K线重新计算(见斐波那契/趋势线/K线形态/月相技术分析)。这样任何设备打开都是同一套确定性规则算出来的结果,不再依赖"这个标签页开了多久""上一次扫描确认到第几次"这类单次会话状态。数据存在本机浏览器localStorage,不会跨设备同步——多台设备各自独立按同一套规则计算,理应非常接近但不保证逐笔完全一致(取决于各自那一刻的实时行情快照)。</div>`;
+    <div class="sig-note" style="margin-top:10px;">固定周期策略(${cfg.label}): 用当时的信号强度选出Top${CYCLE_TOP_N},按当时实时价开仓。止盈止损不是所有币种一刀切的同一个%数——基准是TP+${cfg.tpPct}%/SL-${cfg.slPct}%(R:R ${(cfg.tpPct/cfg.slPct).toFixed(1)}:1),再按每个币种自己的ATR波动率相对本期Top10中位数做0.5~2倍个性化放宽/收窄(低波动币止盈止损更窄,高波动币更宽,R:R比例始终不变),止盈方向上如果有更近的真实压力/支撑结构位,则改用该结构位封顶止盈,不会让数学算出的目标飘到明显会先撞结构位的地方。全程锁定后开仓期间不改判,到期不论有没有摸到止盈止损一律强制结算。每张卡片(不展开也能看到)都标了"建议→结算"时间,以及按该把握度档历史实际胜率算出来的预期值EV(样本不够就如实标"样本不足",不硬凑数字);展开后能看到完整的止盈止损依据、把握度校准明细、EV计算过程和技术面摘要。面板顶部会显示这套方法论近30期的整体校准胜率(带Wilson 95%置信区间),这是判断"现在能不能信这个模型"最该看的数字,不是单笔的把握度分数。1D/1W与4H是三条完全独立并行的轨道,各自的Top10、止盈止损、历史记录互不影响,只是共用同一套信号引擎按各自周期的K线重新计算(见斐波那契/趋势线/K线形态/月相技术分析)。这样任何设备打开都是同一套确定性规则算出来的结果,不再依赖"这个标签页开了多久""上一次扫描确认到第几次"这类单次会话状态。数据存在本机浏览器localStorage,不会跨设备同步——多台设备各自独立按同一套规则计算,理应非常接近但不保证逐笔完全一致(取决于各自那一刻的实时行情快照)。</div>`;
   drawCycleTrendCharts(tf);
 }
 
