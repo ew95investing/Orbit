@@ -1376,10 +1376,11 @@ const PARAM_CONFIG = {
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
   breakoutVolMult:{baseline:1.2,label:"突破放量确认倍数(×前20根均量)",group:"放量确认",
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
-  atrSlDefaultMult:{baseline:2.0,label:"默认止损ATR倍数(无结构位时)",group:"ATR倍数",
+  atrSlDefaultMult:{baseline:2.0,label:"默认止损ATR倍数下限(无结构位时,与周期化下限取更大值)",group:"ATR倍数",
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
-  atrTp1MinMult:{baseline:1.0,label:"TP1最小ATR倍数",group:"ATR倍数",
-    sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
+  // 2026-09-18: atrTp1MinMult(原"TP1最小ATR倍数")已被 TF_TPSL_CONFIG 里按周期分档的
+  // tp1AtrMin取代(1m~1w七档,4H下限3.5×ATR远高于原来全周期统一的1.0×ATR),因此移除这个
+  // 已经不生效的旧参数,避免用户在灵敏度面板调它却发现毫无效果。
   ciTrendEnter:{baseline:28,label:"Choppiness≤该值→判定为趋势市",group:"regime分类阈值",
     sens:[0.5,0.65,0.8,1.0,1.2,1.35,1.5]},
   ciRangeEnter:{baseline:65,label:"Choppiness≥该值→判定为震荡市",group:"regime分类阈值",
@@ -3029,6 +3030,9 @@ function cycleNormalizePos(p){
   if(p.tpSrc===undefined)p.tpSrc=p.levelSrc||null;
   if(p.slSrc===undefined)p.slSrc=null;
   if(p.raceWinProb===undefined)p.raceWinProb=null;
+  // 兼容2026-09-18之前(旧TP/SL模块)已存在的记录——那批数据没有ev/evTier字段(当时没有
+  // 预期值门槛这个概念),标"unknown"如实说明"这笔是旧版逻辑产生的",不倒填一个假分数。
+  if(p.evTier===undefined){p.evTier="unknown";p.ev=null;p.evNote="– (旧版记录,无预期值字段)";}
   return p;
 }
 function cycleNormalizeRec(rec){if(rec&&rec.positions)rec.positions.forEach(cycleNormalizePos);return rec;}
@@ -3074,81 +3078,212 @@ function pickCycleTopN(tf){
     .filter(([symbol,r])=>r.sig&&r.sig.dirSign!==0&&r.sig.structure&&r.sig.atr!=null&&market.get(symbol)&&market.get(symbol).price!=null)
     .map(([symbol,r])=>({symbol,dir:r.sig.dirSign,strength:Math.abs(r.sig.score)/(r.sig.maxScore||1),
       conviction:r.sig.outlook?r.sig.outlook.conviction:null,techNote:cycleTechNote(r.sig),
-      atr:r.sig.atr,structure:r.sig.structure,regime:r.sig.regime,regimeLabel:r.sig.regimeLabel}));
+      atr:r.sig.atr,structure:r.sig.structure,regime:r.sig.regime,regimeLabel:r.sig.regimeLabel,
+      highs:r.sig.highs,lows:r.sig.lows}));
   items.sort((a,b)=>b.strength-a.strength);
-  return items.slice(0,CYCLE_TOP_N);
+  // 2026-09-18: buildCyclePositions现在会把"目标距离低于该周期最小有效目标%"或"EV<0"的候选
+  // 过滤掉(见buildStructureTargets的noSetup),取比CYCLE_TOP_N更大的候选池(3倍余量)送过去,
+  // 尽量让过滤后仍能凑够Top10,而不是强行把凑不够的边际候选也塞进去充数。
+  return items.slice(0,CYCLE_TOP_N*3);
 }
 const cycleClamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
-/* ── 2026-09-17 重写: 止盈止损不再由"基准百分比×波动率缩放"决定 ──
-   旧逻辑的根本问题: 无论怎么按ATR个性化缩放,TP/SL距离的起点始终是一个写死的基准%(4H=2.4%/1.2%
-   这类数字),市场当下的趋势线、斐波那契位、K线摆动结构、MACD/RSI状态全都不参与止盈止损"最终
-   落在哪个价位"这一步的计算,只在"选不选这个币种"(排方向、排Top10)时用过——这正是用户指出的
-   核心问题:止盈止损必须由结构与技术面直接算出来,而不是套一个百分比再打折/放大。
-   新逻辑: 直接复用主引擎buildTradePlan()同一套"止损找结构失效点+ATR缓冲、止盈找结构目标位+ATR
-   下限、按趋势/震荡状态放宽或收紧"的方法(见buildStructureTargets),只是把入场价从"限价回调价"
-   换成"本期开仓那一刻的实时价"(固定周期复盘本来就是按当时市价开仓,不是挂限价单)。sig.structure
-   里的支撑/压力位本身就是缠论摆动点+斐波那契回撤/扩展+回归拟合趋势线+成交量POC/HVN+锚定VWAP
-   多重共振聚类出来的(见buildStructureLevels),而dirSign与regime(趋势/震荡)又是MACD柱、RSI、
-   EMA、Vegas隧道等指标按当前状态动态加权投票选出来的——止盈止损因此是这整套技术面共同算出的
-   结果,不再是"选完方向后另起一个百分比公式"这种两张皮的做法。 */
-/* 止损: 找entry不利方向一侧最近的结构位(支撑/压力,来自斐波那契/趋势线/摆动点/VWAP聚类),
-   贴着它加一层ATR缓冲(留一点空间,不贴到结构位正上面被插针扫到);附近没有结构位时才退回
-   纯ATR倍数缓冲,并如实标注"附近无结构确认位"。趋势市/震荡市系数(regimeSlMult)与主引擎一致:
-   趋势市给止损更多呼吸空间,震荡市略微收紧。
-   止盈: 找entry有利方向一侧最近的结构目标位,必须同时满足①离entry够远(不小于ATR下限,避免
-   目标定在噪音范围内)②对应的R:R不小于盈亏比下限(不会出现"止损比目标还宽"这种不成正比的计划,
-   与主引擎buildTradePlan用的是同一条tp1RRMin下限,两套系统口径统一)。附近没有合格的结构目标位时,
-   才退回按ATR倍数扩展估算,同样受盈亏比下限保护,且如实标注"改用ATR估算"而不是假装这是一个
-   结构位。 */
-function buildStructureTargets(dirSign,entry,atrVal,structure,regime){
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 2026-09-18 TP/SL 计算模块彻底重构(结构分级 + 周期化ATR倍数 + 空间先于RR + EV门槛) ──
+   旧逻辑(截至09-17)的真实问题(4H上实测case: TP距0.56%/SL距0.51%/RR仅1.10/先达胜率48%):
+   ①结构位"就近取",没有区分"噪音级摆动点"和"真正有交易意义的结构位";
+   ②ATR倍数下限(SL 0.8×/TP1 1.0×)是全周期统一的一套数字,对4H这种大周期完全不够,4H自身
+     的正常噪音就有0.5~1×ATR,止损摆在这个范围内等于必被扫;
+   ③TP1的距离由 riskDist×tp1RRMin(=1.1) 反推而来——"SL多窄,TP就多窄",RR被这个反推关系
+     死死锁在1.1附近,完全不反映真实行情空间,是本末倒置(应该先有目标空间,RR只是算出来的
+     结果,不是拿来反推目标的约束);
+   ④完全没有"这个周期的目标至少要多大,等待才划算"的检查,0.5%的目标配上"4H内"的标签毫无意义;
+   ⑤先达胜率48%(接近抛硬币)且RR仅1.1,扣除双边手续费+滑点后期望值已经是负的,旧逻辑却依然
+     把它当作一个"计划"展示出来。
+   下面这套模块解决以上五点,同时被 buildStructureTargets(机会雷达/固定周期复盘用,单一TP)
+   和 buildTradePlan(单symbol深度视图用,TP1/TP2/TP3三档时间线)共用同一套核心逻辑,两套展示
+   形态不再各算各的、口径分裂。 */
+
+// 结构位三级分类(需求一): 按"距入场价/ATR"分档,不再就近取——噪音区的位置连SL的候选资格都没有。
+const ZONE_NOISE_ATR=0.8, ZONE_EFFECTIVE_ATR=2.5, FAR_CAP_ATR=20;
+function classifyZone(distAtr){
+  if(distAtr<ZONE_NOISE_ATR)return"noise";
+  if(distAtr<=ZONE_EFFECTIVE_ATR)return"effective";
+  return"far";
+}
+
+// 每个周期一套ATR倍数下限 + SL缓冲倍数 + "值得等这个周期"的最小目标%软门槛(需求二+四)。
+// 4H/1D/1W三档数值直接取自需求原文;1m/5m/15m/1h是按同一等比节奏外推(数值随周期变长单调
+// 放大,不外推的话相邻周期会在1h→4h之间出现不连续的跳变)。softMinPct/softAtrMult是需求四
+// "周期时间预算"检查用的软门槛,与tp1AtrMin(需求二,TP1实际选点的下限)是两条独立的线:
+// 后者更严,前者只是"这笔交易到底值不值得等"的最后一道保险丝,理论上很少单独触发。
+const TF_TPSL_CONFIG={
+  "1m": {slAtrMin:1.0, tp1AtrMin:1.5, slBufAtrMult:0.25, softMinPct:0.0015, softAtrMult:0.5},
+  "5m": {slAtrMin:1.2, tp1AtrMin:2.0, slBufAtrMult:0.30, softMinPct:0.0025, softAtrMult:0.8},
+  "15m":{slAtrMin:1.5, tp1AtrMin:2.5, slBufAtrMult:0.35, softMinPct:0.004,  softAtrMult:1.0},
+  "1h": {slAtrMin:1.8, tp1AtrMin:3.0, slBufAtrMult:0.45, softMinPct:0.006,  softAtrMult:1.3},
+  "4h": {slAtrMin:2.2, tp1AtrMin:3.5, tp2AtrMin:6.0, tp3AtrMin:10.0, slBufAtrMult:0.60, softMinPct:0.008, softAtrMult:1.5},
+  "1d": {slAtrMin:2.5, tp1AtrMin:4.5, slBufAtrMult:0.70, softMinPct:0.025, softAtrMult:2.0},
+  "1w": {slAtrMin:3.0, tp1AtrMin:6.0, slBufAtrMult:0.85, softMinPct:0.06,  softAtrMult:3.0},
+};
+function tfTpslConfig(intervalMinutes){
+  const table=[[1,"1m"],[5,"5m"],[15,"15m"],[60,"1h"],[240,"4h"],[1440,"1d"],[10080,"1w"]];
+  let best=table[0];
+  for(const row of table)if(Math.abs(row[0]-intervalMinutes)<Math.abs(best[0]-intervalMinutes))best=row;
+  return TF_TPSL_CONFIG[best[1]];
+}
+
+/* 需求六重写: 止损不再是"最近的反向结构位-固定buffer"。真正有意义的止损位应该是"最后一个
+   证明当前方向为真的结构位"——做多时,找一个摆动低点,且这个低点之后价格确实创出了比"该低点
+   出现之前最近一个摆动高点"更高的新高(这个低点带出的反弹是被后续行情验证过的,不是随手一个
+   噪音pivot);做空对称。只在"有效区"(0.8~2.5×ATR)内找离入场最近的一个已确认摆动点。
+   用 highs/lows(findPivots()产出的原始摆动点,未经聚类)做逐点确认判断,比用聚类后的
+   structure.supports/resistances更准确——聚类会把好几层级的位混在一起,不利于"这一个具体的
+   低点后来有没有被验证"这种逐点核实,所以在SL这一步刻意绕开聚类,直接用原始pivot。*/
+function findConfirmedSwing(dirSign,entry,atrVal,highs,lows){
+  if(!highs||!lows||!highs.length||!lows.length)return null;
+  const pivots=dirSign>0?lows:highs;
+  const opposite=dirSign>0?highs:lows;
+  const candidates=[];
+  pivots.forEach(pv=>{
+    const favorable=dirSign>0?pv.price<entry:pv.price>entry;
+    if(!favorable)return;
+    const distAtr=Math.abs(entry-pv.price)/atrVal;
+    if(classifyZone(distAtr)!=="effective")return; // 噪音区/远端区都不能作为SL候选(需求一)
+    const priorOpp=opposite.filter(o=>o.i<pv.i);
+    const priorExtreme=priorOpp.length?(dirSign>0?Math.max(...priorOpp.map(o=>o.price)):Math.min(...priorOpp.map(o=>o.price))):null;
+    const laterOpp=opposite.filter(o=>o.i>pv.i);
+    // 没有更早的反向摆动点可比较时,只要这个低点之后出现过一次反向摆动点也算走出过一次确认;
+    // 有更早的反向点时,必须"创新高/新低"才算真正确认(这才是需求原文"之后价格创出了新高"的意思)。
+    const confirmed=priorExtreme==null?laterOpp.length>0
+      :laterOpp.some(o=>dirSign>0?o.price>priorExtreme:o.price<priorExtreme);
+    if(confirmed)candidates.push({...pv,distAtr});
+  });
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>a.distAtr-b.distAtr);
+  return candidates[0];
+}
+/* 止损构建(三级退化,需求六): ①被确认过的摆动点(最优,buffer按周期缩放) → ②聚类结构位里
+   "有效区"内离入场最近的一档(共振聚类本身已是多重技术位叠加,只是没有走过后续验证这一步,
+   如实标注) → ③纯ATR倍数兜底(仍按周期缩放,标注"无结构确认位")。任何情况下最终止损距离
+   都不会小于 tfCfg.slAtrMin×ATR×regimeSlMult(需求二的周期化硬下限)。*/
+function buildStructuralSL(dirSign,entry,atrVal,structure,tfCfg,regimeSlMult,highs,lows){
+  const confirmed=findConfirmedSwing(dirSign,entry,atrVal,highs,lows);
+  let slPrice,slSources,slBasis;
+  if(confirmed){
+    const buf=atrVal*tfCfg.slBufAtrMult*regimeSlMult;
+    slPrice=dirSign>0?confirmed.price-buf:confirmed.price+buf;
+    slSources=[`已确认摆动${dirSign>0?"低点":"高点"}(该点之后价格已创出反向新${dirSign>0?"高":"低"},证明当时方向判断为真,而非任意噪音pivot)`];
+    slBasis="confirmed-swing";
+  }else{
+    const pool=(dirSign>0?structure.supports:structure.resistances)||[];
+    const effective=pool
+      .filter(l=>{const distAtr=Math.abs(entry-l.price)/atrVal,favorable=dirSign>0?l.price<entry:l.price>entry;return favorable&&classifyZone(distAtr)==="effective";})
+      .sort((a,b)=>Math.abs(a.price-entry)-Math.abs(b.price-entry));
+    if(effective[0]){
+      const buf=atrVal*tfCfg.slBufAtrMult*regimeSlMult;
+      slPrice=dirSign>0?effective[0].price-buf:effective[0].price+buf;
+      slSources=effective[0].sources;
+      slBasis="structure-cluster";
+    }else{
+      const atrSlDefMult=Math.max(P('atrSlDefaultMult'),tfCfg.slAtrMin);
+      slPrice=dirSign>0?entry-atrVal*atrSlDefMult*regimeSlMult:entry+atrVal*atrSlDefMult*regimeSlMult;
+      slSources=[`ATR×${atrSlDefMult.toFixed(2)} 周期化默认缓冲(附近无有效区结构确认位)`];
+      slBasis="atr-fallback";
+    }
+  }
+  const minSlDist=atrVal*tfCfg.slAtrMin*regimeSlMult;
+  if(dirSign>0&&slPrice>entry-minSlDist)slPrice=entry-minSlDist;
+  if(dirSign<0&&slPrice<entry+minSlDist)slPrice=entry+minSlDist;
+  return{slPrice,slSources,slBasis};
+}
+/* 止盈构建(需求三+七): "先定空间,再定R:R"——不再用riskDist×tp1RRMin反推TP距离,而是直接从
+   结构位池里按"离entry从近到远"挑候选,每一档有自己周期化的ATR距离下限,且强制严格递增
+   (TP2距离≥1.8×TP1距离,TP3距离≥2.5×TP1距离,同时都必须严格大于上一档,双重保险)。候选池
+   排除噪音区(<0.8×ATR)和超过20×ATR的位置(统计上该周期内不可能到达);找不到合格候选时才
+   退回ATR倍数扩展估算,且来源文案明确标注"ATR兜底",不假装是结构位。*/
+function buildTieredTargets(dirSign,entry,atrVal,structure,tfCfg,regimeTpMult,tierCount){
+  const pool=(dirSign>0?structure.resistances:structure.supports)||[];
+  const candidates=pool
+    .map(l=>({...l,distAtr:Math.abs(l.price-entry)/atrVal}))
+    .filter(l=>{const z=classifyZone(l.distAtr);return(z==="effective"||z==="far")&&l.distAtr<=FAR_CAP_ATR;})
+    .sort((a,b)=>a.distAtr-b.distAtr);
+  const tp1AtrFloor=tfCfg.tp1AtrMin*regimeTpMult;
+  const extraAtrFloors=[tfCfg.tp2AtrMin,tfCfg.tp3AtrMin]; // 只有4H这类周期在需求里显式给了TP2/TP3的ATR下限
+  const atrFallbackMults=[1.8,3.2,5.5]; // 找不到合格结构位时的ATR扩展起点,最终仍会被下方minDist钳住,不会真的只有1.8×ATR
+  const used=new Set();
+  const tps=[];
+  for(let i=0;i<tierCount;i++){
+    const ownAtrFloor=i===0?tp1AtrFloor:(extraAtrFloors[i-1]!=null?extraAtrFloors[i-1]*regimeTpMult:tp1AtrFloor*(i===1?1.8:2.5));
+    const growthFloor=i===1?tps[0].dist*1.8:i===2?tps[0].dist*2.5:0; // 恒以TP1实际距离为基准,不是逐档相乘
+    const chainFloor=i>=1?tps[i-1].dist*1.15:0; // 无论TP2/TP3各自的下限算出多少,都必须严格大于紧邻的上一档
+    const minDist=Math.max(atrVal*ownAtrFloor,growthFloor,chainFloor);
+    const lvl=candidates.find(c=>!used.has(c)&&Math.abs(c.price-entry)>=minDist);
+    let price,sources,basis;
+    if(lvl){
+      used.add(lvl);
+      price=lvl.price;sources=lvl.sources;basis="structure";
+    }else{
+      const rawMult=atrFallbackMults[i]*regimeTpMult;
+      const raw=dirSign>0?entry+atrVal*rawMult:entry-atrVal*rawMult;
+      price=dirSign>0?Math.max(raw,entry+minDist):Math.min(raw,entry-minDist);
+      const near=candidates.filter(c=>!used.has(c)).sort((a,b)=>Math.abs(a.price-entry)-Math.abs(b.price-entry))[0];
+      sources=near?[`附近结构位(${near.sources[0]})距入场过近或已被前一档目标占用,已改用ATR兜底扩展估算(非结构位,已标注)`]
+        :[`ATR兜底扩展估算(周边${FAR_CAP_ATR}×ATR范围内无合格远端结构位,已标注)`];
+      basis="atr-fallback";
+    }
+    tps.push({price,sources,dist:Math.abs(price-entry),basis});
+  }
+  return tps;
+}
+/* 需求五: 可信度/EV门槛。ev = 先达胜率×RR - (1-先达胜率),单位为R(风险的倍数)——标准的
+   二元胜负期望值公式。ev<0.15R(扣除双边手续费+滑点后已接近盈亏平衡)标记为"边际机会",
+   在UI上显著提示并建议降低仓位;ev<0直接判定为"不该做",上层据此改造成noSetup、不展示计划。*/
+function evaluateEdge(raceWinProbPct,rr){
+  const p=raceWinProbPct/100,rrNum=parseFloat(rr);
+  if(!(rrNum>=0)||isNaN(rrNum))return{ev:null,evTier:"unknown",evNote:"数据不足,无法计算预期值"};
+  const ev=p*rrNum-(1-p);
+  if(ev<0)return{ev,evTier:"reject",evNote:`预期值 EV=${ev.toFixed(2)}R<0(先达胜率${raceWinProbPct}%×RR${rrNum.toFixed(2)}扣去(1-胜率)后为负),扣除双边手续费与滑点前已是负期望值,不构成可执行计划`};
+  if(ev<0.15)return{ev,evTier:"marginal",evNote:`预期值 EV=${ev.toFixed(2)}R,低于0.15R的边际门槛(先达胜率${raceWinProbPct}%×RR${rrNum.toFixed(2)}),扣除双边手续费+滑点后接近盈亏平衡,已标记为边际机会,建议降低仓位`};
+  return{ev,evTier:"ok",evNote:`预期值 EV=${ev.toFixed(2)}R(先达胜率${raceWinProbPct}%×RR${rrNum.toFixed(2)})`};
+}
+function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMinutes,highs,lows){
   const regimeSlMult=regime==="trend"?1.25:regime==="range"?1.05:1.0;
   const regimeTpMult=regime==="trend"?1.15:regime==="range"?0.8:1.0;
-  const slCandidates=(dirSign>0?(structure.supports||[]):(structure.resistances||[]))
-    .filter(l=>dirSign>0?(l.price<entry&&(entry-l.price)>atrVal*0.5):(l.price>entry&&(l.price-entry)>atrVal*0.5));
-  let sl,slSources;
-  if(slCandidates[0]){
-    const buf=atrVal*0.4*regimeSlMult;
-    sl=dirSign>0?slCandidates[0].price-buf:slCandidates[0].price+buf;
-    slSources=slCandidates[0].sources;
-  }else{
-    const atrSlDefMult=P('atrSlDefaultMult');
-    sl=dirSign>0?entry-atrVal*atrSlDefMult*regimeSlMult:entry+atrVal*atrSlDefMult*regimeSlMult;
-    slSources=[`ATR×${atrSlDefMult.toFixed(2)} 默认缓冲(附近无结构确认位)`];
-  }
-  const minSlDist=atrVal*0.8*regimeSlMult;
-  if(dirSign>0&&sl>entry-minSlDist)sl=entry-minSlDist;
-  if(dirSign<0&&sl<entry+minSlDist)sl=entry+minSlDist;
-  const riskDist=Math.abs(entry-sl);
-
-  const rrFloor=P('tp1RRMin'); // 与主引擎buildTradePlan同一条RR下限,两套系统统一口径
-  const minTpByRR=riskDist*rrFloor;
-  const minTpByAtr=atrVal*P('atrTp1MinMult')*regimeTpMult;
-  const minTpDist=Math.max(minTpByRR,minTpByAtr);
-  const targets=(dirSign>0?(structure.resistances||[]):(structure.supports||[]))
-    .filter(l=>Math.abs(l.price-entry)>atrVal*0.8&&Math.abs(l.price-entry)<atrVal*18);
-  const lvl=targets[0];
-  let tp,tpSources,cappedByLevel=false,levelSkippedTooClose=false;
-  if(lvl&&Math.abs(lvl.price-entry)>=minTpDist){
-    tp=lvl.price;tpSources=lvl.sources;cappedByLevel=true;
-  }else{
-    const mult=1.8*regimeTpMult;
-    const raw=dirSign>0?entry+atrVal*mult:entry-atrVal*mult;
-    tp=dirSign>0?Math.max(raw,entry+minTpDist):Math.min(raw,entry-minTpDist);
-    tpSources=lvl?[`附近结构位(${lvl.sources[0]})距入场过近,按此止盈会使R:R跌破${rrFloor.toFixed(2)}下限,已改用ATR波动率扩展估算`]
-      :["ATR波动率扩展估算(周边无强结构位)"];
-    if(lvl)levelSkippedTooClose=true;
-  }
+  const tfCfg=tfTpslConfig(intervalMinutes||240);
+  const{slPrice,slSources,slBasis}=buildStructuralSL(dirSign,entry,atrVal,structure,tfCfg,regimeSlMult,highs,lows);
+  const riskDist=Math.abs(entry-slPrice);
+  const[t1]=buildTieredTargets(dirSign,entry,atrVal,structure,tfCfg,regimeTpMult,1);
+  const tp=t1.price,tpSources=t1.sources;
+  const cappedByLevel=t1.basis==="structure",levelSkippedTooClose=t1.basis==="atr-fallback";
   const reward=Math.abs(tp-entry);
   const rr=riskDist>0?reward/riskDist:null;
-  const logSl=Math.abs(Math.log(sl/entry)),logTp=Math.abs(Math.log(tp/entry));
+  const logSl=Math.abs(Math.log(slPrice/entry)),logTp=Math.abs(Math.log(tp/entry));
   const raceWinProb=Math.round(raceProbability(logTp,logSl)*100);
-  return{sl,slSources,tp,tpSources,cappedByLevel,levelSkippedTooClose,rr,raceWinProb,regimeSlMult,regimeTpMult};
+  // 需求四: 该周期下这个目标%够不够"值得等" — 低于门槛不强行凑计划,交给上层判定为noSetup。
+  const atrPct=entry>0?atrVal/entry:0;
+  const minMeaningfulPct=Math.max(tfCfg.softMinPct,tfCfg.softAtrMult*atrPct);
+  const tp1DistPct=entry>0?reward/entry:0;
+  const belowTimeBudget=tp1DistPct<minMeaningfulPct;
+  const edge=evaluateEdge(raceWinProb,rr!=null?rr.toFixed(2):null);
+  const noSetup=belowTimeBudget||edge.evTier==="reject";
+  const noSetupReason=belowTimeBudget
+    ?`目标距离仅${(tp1DistPct*100).toFixed(2)}%,低于该周期"值得等待"的最小目标${(minMeaningfulPct*100).toFixed(2)}%,判定为无有效交易机会`
+    :(edge.evTier==="reject"?edge.evNote:null);
+  return{sl:slPrice,slSources,slBasis,tp,tpSources,cappedByLevel,levelSkippedTooClose,rr,raceWinProb,regimeSlMult,regimeTpMult,
+    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,noSetup,noSetupReason};
 }
+const CYCLE_TF_MINUTES={"4h":240,"1d":1440,"1w":10080};
 function buildCyclePositions(tf,topN){
+  const intervalMinutes=CYCLE_TF_MINUTES[tf]||240;
+  // 2026-09-18: buildStructureTargets现在可能因为"目标距离低于该周期最小有效目标%"(需求四)或
+  // "期望值EV<0"(需求五)而返回noSetup——这类币种不该被硬塞进本期持仓列表凑数,直接过滤掉
+  // (而不是像单symbol深度视图那样渲染一张"无方向"卡片,固定周期复盘列表本身就是"选出来的Top N",
+  // 过滤掉不合格的候选是这个列表天然该做的事)。
   return topN.map(x=>{
     const m=market.get(x.symbol);
     const entry=m.price;
-    const t=buildStructureTargets(x.dir,entry,x.atr,x.structure,x.regime);
+    const t=buildStructureTargets(x.dir,entry,x.atr,x.structure,x.regime,intervalMinutes,x.highs,x.lows);
+    if(t.noSetup)return null;
     return{symbol:x.symbol,dir:x.dir,entry,tp:t.tp,sl:t.sl,
       tpPct:Math.abs((t.tp-entry)/entry*100),slPct:Math.abs((t.sl-entry)/entry*100),
       tpSrc:t.tpSources&&t.tpSources[0]?t.tpSources[0]:null,
@@ -3156,8 +3291,9 @@ function buildCyclePositions(tf,topN){
       cappedByLevel:t.cappedByLevel,levelSkippedTooClose:t.levelSkippedTooClose,
       raceWinProb:t.raceWinProb,regime:x.regime,regimeLabel:x.regimeLabel,
       strength:x.strength,conviction:x.conviction,techNote:x.techNote,
+      ev:t.ev,evTier:t.evTier,evNote:t.evNote,
       status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
-  });
+  }).filter(Boolean).slice(0,CYCLE_TOP_N);
 }
 // 强制结算一期已经越过截止时间的记录(不论中途有没有摸到止盈止损),归档进历史
 function settleCycleIfDue(tf,cur){
@@ -3350,6 +3486,7 @@ function renderCycleHeatmap(tf,cur){
       <div class="trk-detail-row trk-detail-tech"><span>止损依据</span><span>${p.slSrc?`方向判断错了的话,大概率先在这里被证伪: ${esc(p.slSrc)}`:"– (旧版记录,无结构依据字段)"}</span></div>
       <div class="trk-detail-row"><span>R:R(目标:风险)</span><span>${(p.tpPct/p.slPct).toFixed(2)} : 1</span></div>
       <div class="trk-detail-row"><span>先达胜率</span><span title="从入场价出发,数学上先摸到止盈还是先摸到止损的概率(与时间无关),不是模型自评把握度">${p.raceWinProb!=null?p.raceWinProb+"%":"– (旧版记录)"}</span></div>
+      <div class="trk-detail-row"><span>预期值 EV</span><span class="${p.evTier==="marginal"?"amb":p.evTier==="ok"?"bull":""}" title="先达胜率×RR-(1-先达胜率),单位为R(风险的倍数);低于0.15R视为边际机会,扣除手续费滑点后接近盈亏平衡">${p.evNote?esc(p.evNote):"–"}</span></div>
       <div class="trk-detail-row"><span>现价/平仓价</span><span>${fmtPrice(p.status==="OPEN"?(market.get(p.symbol)?market.get(p.symbol).price:p.entry):p.exitPrice)}</span></div>
       ${p.status!=="OPEN"&&p.exitAt?`<div class="trk-detail-row"><span>结算时间 Matched</span><span>${fmtTrkDateTime(p.exitAt)}</span></div>`:""}
       <div class="trk-detail-row"><span>模型自评把握度</span><span>${p.conviction!=null?p.conviction+"%":"–"}(信号强度${(p.strength*100).toFixed(0)}%)</span></div>
@@ -5437,126 +5574,74 @@ function computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinute
     invalidatePrice,invalidateNote};
 }
 
-function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability,regime){
+function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability,regime,highs,lows){
   // entry = 限价回调入场价(非当前市价) — 所有后续 TP/SL/RR 均以此为基准计算
   const entryInfo=computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinutes,sigmaVal,reliability);
   const entry=entryInfo.price;
-  // 趋势/震荡状态修正系数(regimeSlMult / regimeTpMult) — 之前 TP/SL 的最小距离是固定值,不管当前
-  // 是趋势市还是震荡市都用同一套,会导致两个真实问题:①趋势市里止损设得太紧,一次正常的深回调就把
-  // 你直接洗出局,明明趋势还在、只是这一次波动比平时大;②震荡市里止盈设得太远,价格根本没有单边
-  // 动能却硬要它跑到那个位置,大概率来回打脸后原地反转。这里用已经算好的 regime(缠论分型密度/
-  // Choppiness Index 判定的趋势/震荡状态)做一次系数修正:趋势市 → SL 放宽、TP 也放宽(让利润奔跑);
+  regime=regime||"mixed";
+  // 趋势/震荡状态修正系数(regimeSlMult / regimeTpMult) — 趋势市 → SL 放宽、TP 也放宽(让利润奔跑);
   // 震荡市 → SL 略微收紧但留出插针缓冲、TP 明显收紧(现实点位,震荡市统计上很难走远);
-  // 过渡区(mixed) → 不做修正,维持原有基准。这样"不要太容易就 hit 到"和"不要一次正常回调就被扫损"
-  // 这两个诉求,都直接体现在距离本身上,而不是靠感觉调参。
+  // 过渡区(mixed) → 不做修正,维持原有基准。这两个系数与buildStructureTargets共用同一套定义。
   const regimeSlMult=regime==="trend"?1.25:regime==="range"?1.05:1.0;
   const regimeTpMult=regime==="trend"?1.15:regime==="range"?0.8:1.0;
-  // ── SL 先算(顺序修复) ── 之前 SL 是在整段TP循环算完之后才算的,导致 TP1 的最小距离下限
-  // (minMults[0]×ATR)和 SL 的最小距离下限(0.8×ATR)是两条完全独立、互不知晓对方的线——震荡市系数
-  // 一个放大 SL(regimeSlMult)一个缩小 TP(regimeTpMult)的极端组合下,SL 下限(0.8×1.05≈0.84×ATR)会
-  // 反而比 TP1 下限(1.0×0.8=0.8×ATR)更远,算出"止损比首个止盈还宽"这种不成正比的计划,却完全没有
-  // 兜底。现在把 SL 挪到 TP 循环之前算,再把 riskDist 当成 TP1 minDist 的一条硬性下限(见下方循环
-  // 里的 minDist),从源头保证"TP1 的目标距离不会比止损距离还窄",而不是事后靠执行闸门的
-  // rr≥1.5 去被动过滤、把不成正比的计划原样展示成"仅供参考"。
-  const slCandidates=(dirSign>0?structure.supports:structure.resistances)
-    .filter(l=>dirSign>0?(l.price<entry&&(entry-l.price)>atrVal*0.5):(l.price>entry&&(l.price-entry)>atrVal*0.5));
-  let slPrice,slSources;
-  if(slCandidates[0]){
-    const buf=atrVal*0.4*regimeSlMult;
-    slPrice=dirSign>0?slCandidates[0].price-buf:slCandidates[0].price+buf;
-    slSources=slCandidates[0].sources;
-  }else{
-    const atrSlDefMult=P('atrSlDefaultMult');
-    slPrice=dirSign>0?entry-atrVal*atrSlDefMult*regimeSlMult:entry+atrVal*atrSlDefMult*regimeSlMult;
-    slSources=[`ATR×${atrSlDefMult.toFixed(2)} 默认缓冲(附近无结构确认位)`];
-  }
-  // enforce minimum SL distance: at least 0.8 ATR from entry(趋势市放宽/震荡市略收紧,见上方regimeSlMult)
-  const minSlDist=atrVal*0.8*regimeSlMult;
-  if(dirSign>0&&slPrice>entry-minSlDist)slPrice=entry-minSlDist;
-  if(dirSign<0&&slPrice<entry+minSlDist)slPrice=entry+minSlDist;
+  // 2026-09-18: 本函数的SL/TP计算已整体搬进 buildStructuralSL/buildTieredTargets 共享模块
+  // (见上文"TP/SL 计算模块彻底重构"大段注释),这里只负责: ①按当前周期(intervalMinutes)取出
+  // 对应的ATR倍数下限配置表 ②调用共享模块算出SL和三档TP ③在此基础上叠加"固定时间窗口触碰概率"
+  // 和"先达胜率"这两样单symbol深度视图特有的展示字段。buildStructureTargets(机会雷达/固定周期
+  // 复盘用)与这里用的是同一套SL/TP核心逻辑,不再各算各的。
+  const tfCfg=tfTpslConfig(intervalMinutes);
+  const{slPrice,slSources,slBasis}=buildStructuralSL(dirSign,entry,atrVal,structure,tfCfg,regimeSlMult,highs,lows);
   const riskDist=Math.abs(entry-slPrice);
-  // TP1 的盈亏比硬性下限。执行闸门要求"已触发"必须 R:R≥1.5,这里在源头就把 TP1 的最小距离顶到
-  // tp1RRMin×riskDist(留一点余量,不等于1.5那条线本身,好让1.5仍然是一个有真实区分度的门槛,而不是
-  // 100%必然通过的摆设)——但无论如何,TP1 距离不会再小于止损距离,"止损比目标还宽"的情况被从源头堵死。
-  const tp1RRMinVal=P('tp1RRMin');
-  const minTp1RR=riskDist*tp1RRMinVal;
-  // Minimum distances per TP tier: TP1≥1×ATR, TP2≥2×ATR, TP3≥3.2×ATR — ensures realistic non-trivial targets,均以限价入场价为起点
-  // 上限从原先的65×ATR大幅收紧到18×ATR: 过远的"结构位"即便存在,也早已脱离该资产已实现波动率能支撑的合理范围,
-  // 会导致"看似有结构确认、实则统计上不可能在标注周期内达成"的误导性目标 — 交给下面的触碰概率去真实评估,而不是硬选。
-  const minMults=[P('atrTp1MinMult'),2.0,3.2];
-  const targets=(dirSign>0?structure.resistances:structure.supports)
-    .filter(l=>Math.abs(l.price-entry)>atrVal*0.8&&Math.abs(l.price-entry)<atrVal*18);
-  // 三档固定时间窗口(4小时/24小时/3天),不再用"距离÷ATR"反推出一个可以短到几十分钟的假ETA。
-  // 每一档改为: 在这个固定窗口内,基于该资产真实波动率,价格触碰到目标位的概率是多少 — 概率会自然地
-  // 因资产、距离、周期而不同,而不是被伪装成一个精确却虚假的"N分钟后到价"。
+  const tierResults=buildTieredTargets(dirSign,entry,atrVal,structure,tfCfg,regimeTpMult,3);
+  // 三档固定时间窗口(4小时/24小时/3天): 在这个固定窗口内,基于该资产真实已实现波动率,价格触碰到
+  // 目标位的概率是多少——概率自然会因资产/距离/周期而不同,而不是伪装成一个精确却虚假的"N分钟后到价"。
   const HZ_MINS=[240,1440,4320];
-  const tps=[];
-  let prevDist=0; // 上一档TP的实际距离,用于强制递进(见下方 minDist 说明)
-  for(let i=0;i<3;i++){
-    const lvl=targets[i];
+  const logSlDist=Math.abs(Math.log(slPrice/entry));
+  const tps=tierResults.map((t,i)=>{
     const hz=HORIZONS[i];
-    // 关键修复: minDist 不能只看"这一档自己的ATR倍数下限",还必须严格大于上一档TP*已经实际选中*的距离
-    // (乘 1.15 留出安全间距)。原逻辑里每一档各自独立判断"有没有结构位/够不够自己的最小距离",互相之间毫无
-    // 关联 —— 于是会出现 TP1/TP2 恰好选中了两个"虽然通过了各自下限、但离入场特别远"的真实结构位(如高成交
-    // 密集区HVN),而 TP3 附近没有结构位、退化成"ATR×5.5"兜底,这个兜底距离反而比前两档的真实结构位距离更
-    // 短,导致最终出现"TP3 比 TP1/TP2 还近、甚至方向上往回缩"这种不符合交易逻辑的倒挂(生产环境实测case:
-    // TP1距离699点/TP2距离1438点,TP3的ATR兜底只有594点,比TP1还近)。加入 prevDist*1.15 这个下限后,
-    // 三档永远保证 TP1 < TP2 < TP3(按到入场价的距离,严格递增),形成正确的止盈阶梯。第一档(i===0)
-    // 额外再加 minTp1RR 这条下限,确保 TP1 不会比止损距离还窄(见上方注释)。
-    const minDist=Math.max(atrVal*minMults[i]*regimeTpMult,prevDist*1.15,i===0?minTp1RR:0);
-    let tpPrice,weight,sources;
-    if(lvl&&Math.abs(lvl.price-entry)>=minDist){tpPrice=lvl.price;weight=lvl.weight;sources=lvl.sources;}
-    else{
-      // Use ATR multiples, but ensure they're at least minDist away (含上面新增的"必须比上一档更远"约束)
-      const mult=[1.8,3.2,5.5][i]*regimeTpMult;
-      const raw=dirSign>0?entry+atrVal*mult:entry-atrVal*mult;
-      const withMin=dirSign>0?Math.max(raw,entry+minDist):Math.min(raw,entry-minDist);
-      tpPrice=withMin;
-      weight=0.4;
-      sources=lvl?[`附近结构位与${i===0?"入场价":tps[i-1].label}距离过近,改用ATR递进扩展估算`]:["ATR 扩展估算(周边无强结构位)"];
-      if(i===0&&Math.abs(withMin-entry)>Math.abs(raw-entry))sources=[`按盈亏比下限(TP1距离≥${tp1RRMinVal.toFixed(2)}×止损距离)扩展,避免止损比目标还宽`];
-    }
-    prevDist=Math.abs(tpPrice-entry);
-    const dist=prevDist;
+    const tpPrice=t.price;
     const logDist=Math.abs(Math.log(tpPrice/entry));
     const horizonMins=HZ_MINS[i];
     const barsInWindow=horizonMins/intervalMinutes;
+    const weight=t.basis==="structure"?1.2:0.4; // 结构位命中给更高的展示权重,兜底档保持中性权重
     let prob;
     if(sigmaVal&&logDist>0){
-      // 反射原理: 固定时间窗口内触碰目标位的真实概率(自然会随距离/波动率/周期变化,而不是拍脑袋打分)
       prob=Math.round(touchProbability(logDist,sigmaVal,barsInWindow)*100);
-      // 结构共振位仍给予小幅可信度加成(±最多8个百分点),但不再是唯一/主要依据
       prob=prob+Math.min(weight,4)*2+(confluencePct-50)*0.06;
     }else{
       prob=42+Math.min(weight,4)*11-i*10+(confluencePct-50)*0.12;
     }
     prob=Math.max(3,Math.min(90,Math.round(prob/5)*5));
-    const horizonLabel=hz.hint; // 固定标签(4h内/当日内/3日内),不再被虚假eta悄悄改写成别的档位
-    // eta 仅作参考展示: 触碰概率达到55%大约所需时间,并硬性限制不能超过该档位的时间窗口上限,
-    // 避免"标签写TP1(4h内)但显示的分钟数其实对应几个百分点的极小概率"这种自相矛盾的呈现。
     let etaMin=null;
     if(sigmaVal&&logDist>0){
       let bars=barsForTouchProbability(logDist,sigmaVal,0.55);
       etaMin=Math.min(bars*intervalMinutes,horizonMins);
-      if(touchProbability(logDist,sigmaVal,etaMin/intervalMinutes)*100<15)etaMin=null; // 55%分位数超出窗口太多时,不展示误导性的"预计时间",只展示概率
+      if(touchProbability(logDist,sigmaVal,etaMin/intervalMinutes)*100<15)etaMin=null;
     }
-    tps.push({label:hz.label,price:tpPrice,sources,weight,eta:etaMin,prob,horizon:horizonLabel,horizonMins});
-  }
-  const risk=riskDist,reward=Math.abs(tps[0].price-entry);
-  // 注意: 这个 rr 只是"TP1 相对 SL"的盈亏比,不代表整套三档计划的风险回报——见下方 t.rr 才是每一档
-  // 各自的盈亏比(TP3 的距离在上面的递进修复后必然 > TP2 > TP1,所以 TP3.rr 也必然是三档里最大的,
-  // 越靠后的目标承担的时间更长,但对应换来的也应该是更高的盈亏比,这才是分批止盈的意义所在)。
-  const rr=risk>0?(reward/risk).toFixed(2):"–";
-  // 赌徒破产公式(鞅的最优停时定理精确解): 从入场价出发,行情先摸到该TP还是先摸到SL的真实胜率——
-  // 与"多久能到"无关,只取决于两边对数距离之比。这是判断"这笔限价单值不值得挂"最核心的一个数字,
-  // 之前的版本完全没有这项,只给了一个不知道怎么来的"概率"分数。
-  const logSlDist=Math.abs(Math.log(slPrice/entry));
-  tps.forEach(t=>{
-    const logTpDist=Math.abs(Math.log(t.price/entry));
-    t.raceWinProb=Math.round(raceProbability(logTpDist,logSlDist)*100);
-    t.rr=risk>0?(Math.abs(t.price-entry)/risk).toFixed(2):"–"; // 该档自己的盈亏比,而非只借用TP1那一个数字
+    const logTpDist=Math.abs(Math.log(tpPrice/entry));
+    const raceWinProb=Math.round(raceProbability(logTpDist,logSlDist)*100);
+    const rr=riskDist>0?(Math.abs(tpPrice-entry)/riskDist).toFixed(2):"–";
+    return{label:hz.label,price:tpPrice,sources:t.sources,basis:t.basis,weight,eta:etaMin,prob,horizon:hz.hint,horizonMins,raceWinProb,rr};
   });
-  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,tps,rr,sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult};
+  const risk=riskDist,reward=Math.abs(tps[0].price-entry);
+  const rr=risk>0?(reward/risk).toFixed(2):"–";
+
+  // 需求四: 该周期下TP1的目标距离够不够"值得等"——低于软门槛不强行凑计划,直接判定为无有效交易机会。
+  const atrPct=entry>0?atrVal/entry:0;
+  const minMeaningfulPct=Math.max(tfCfg.softMinPct,tfCfg.softAtrMult*atrPct);
+  const tp1DistPct=entry>0?reward/entry:0;
+  const belowTimeBudget=tp1DistPct<minMeaningfulPct;
+  // 需求五: 可信度/EV门槛,用TP1这一档的先达胜率×RR算期望值(单位R)。
+  const edge=evaluateEdge(tps[0].raceWinProb,rr);
+  if(belowTimeBudget||edge.evTier==="reject"){
+    const noSetupReason=belowTimeBudget
+      ?`TP1目标距离仅${(tp1DistPct*100).toFixed(2)}%,低于该周期"值得等待"的最小目标${(minMeaningfulPct*100).toFixed(2)}%,判定为无有效交易机会`
+      :edge.evNote;
+    return{dir:dirSign,noSetup:true,noSetupReason,entry:null,entryInfo:null,marketPrice:price,sl:null,slSources:[],tps:[],
+      rr:"–",sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult,ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote};
+  }
+  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,slBasis,tps,rr,sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult,
+    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote};
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -6220,7 +6305,7 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   const tier=(overExtended&&tierRaw!=="N")?"C":tierRaw;
   const checks=[
     {key:"direction",label:"【硬性】已形成方向共识(非中性 NEUTRAL)",pass:hasDirection,detail:hasDirection?"方向已确认":"当前徽章为中性 NEUTRAL,尚未形成方向共识"},
-    {key:"rr",label:`【硬性】首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?"无方向,未生成":`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
+    {key:"rr",label:`【硬性】首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?(plan.noSetupReason||"无方向,未生成"):`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
     {key:"extension",label:`【硬性护栏】未追高(偏离EMA50<${extGuardAtr.toFixed(1)}×ATR)`,pass:!overExtended,
       detail:extensionATR!=null?`当前偏离 ${extensionATR>=0?"+":""}${extensionATR.toFixed(2)}×ATR${overExtended?" · 已触发追高护栏,降级为仅观测":""}`:"数据不足,暂不评估"},
     ...softChecks.map(c=>({...c,label:c.label+(GATE_SOFT_MISS_ALLOWED?` [软性,五项允许错${GATE_SOFT_MISS_ALLOWED}项]`:"")})),
@@ -6531,9 +6616,23 @@ votes.push(macroDominanceVote(symbol));
   // dirSign===0 → 未形成方向共识,不构建挂在"某一侧结构位"上的限价单/TP/SL(那样做等于替一个
   // 没有方向依据的判断硬点一个假装有依据的价位)。改为返回 noSetup 占位对象,渲染层据此
   // 显示"无方向·不构成交易机会"而不是一整套看似煞有介事的交易计划。
-  const plan={mode:"trend",main:dirSign!==0
-    ?pinnedOrFreshPlan(symbol,intervalLabel,dirSign,buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability,regime),price)
-    :{dir:0,noSetup:true,reliability,entry:null,entryInfo:null,sl:null,slSources:[],tps:[],rr:"–",sigma:sigmaVal}};
+  const freshPlan=dirSign!==0?buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability,regime,highs,lows):null;
+  // 2026-09-18: noSetup(无论是"目标距离低于该周期时间预算"还是"EV<0")不走钉住机制——钉住是为了
+  // 让一个已经生成的挂单价位在页面刷新间保持稳定,而noSetup根本没有挂单价位可钉,每次都应该按
+  // 最新数据重新判断,不能把上一次算出来的"不该做"强行钉在页面上,让用户看到一个已经过期的拒绝理由。
+  const plan={mode:"trend",main:(dirSign!==0&&freshPlan&&!freshPlan.noSetup)
+    ?pinnedOrFreshPlan(symbol,intervalLabel,dirSign,freshPlan,price)
+    :(freshPlan||{dir:0,noSetup:true,reliability,entry:null,entryInfo:null,sl:null,slSources:[],tps:[],rr:"–",sigma:sigmaVal})};
+  // 需求五: EV边际机会(0≤EV<0.15R) → 显著提示并降低建议仓位。做在sizeTier这个所有UI渲染点都
+  // 读的单一来源上(仓位卡片/一句话摘要/挂单小票等全部引用同一个outlook.sizeTier),而不是在
+  // 每个渲染位置各自重复判断一遍evTier,避免"这里降了仓、那里忘了降"的口径分裂。
+  if(plan.main&&plan.main.evTier==="marginal"&&outlook.sizeTier){
+    const st=outlook.sizeTier;
+    st.posMin=+(st.posMin*0.5).toFixed(2);st.posMax=+(st.posMax*0.5).toFixed(2);
+    st.levMax=Math.max(1,st.levMax-1);st.levMin=Math.min(st.levMin,st.levMax);
+    st.label=st.label+" · 边际机会已降仓";
+    st.note=(st.note?st.note+" ":"")+"⚠ 该机会预期值EV低于0.15R边际门槛(先达胜率×RR扣去(1-胜率)后接近盈亏平衡),已自动降低建议仓位与杠杆。";
+  }
 
   const moon=moonPhaseLabel(new Date());
   const solarTerms=getLunarSolarTerms();
@@ -6570,6 +6669,8 @@ votes.push(macroDominanceVote(symbol));
   const stability=computeSignalStability(symbol); // P1-2: {changesLastHour,currentStableMs,avgStableMs}
 
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
+    highs,lows, // 2026-09-18新增: 供机会雷达/固定周期复盘路径(pickCycleTopN→buildStructureTargets)复用,
+    // 做"被后续价格确认过的摆动点"止损判断(见findConfirmedSwing),不用在那条路径里重新拉K线/重新findPivots。
     regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,mtfDetail,gate,bbU,bbL,bbM,breakout,sigma:sigmaVal,
     dirChanged,dirChangedAt,dirStableSince,previousDirSign,stability};
 }
@@ -6699,7 +6800,7 @@ function backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState){
   const intervalMinutes=BT_INTERVAL_MINUTES[intervalLabel]||60;
   let plan=null;
   if(dirSign!==0){
-    plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,clusterRes.confluence,vwapVal,sigmaVal,reliability);
+    plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,clusterRes.confluence,vwapVal,sigmaVal,reliability,regime,highs,lows);
   }
   return{dirSign,plan,reliability};
 }
@@ -6764,7 +6865,9 @@ async function runBacktest(candles,intervalLabel,sampleSize,onProgress){
   const regimeState={regime:"mixed",pendingRegime:null,pendingCount:0}; // 本次回测独立状态,随idx递增走一遍历史
   for(let idx=startIdx;idx<=endIdx;idx++){
     const snap=backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState);
-    if(snap.dirSign!==0&&snap.plan){
+    // 2026-09-18: plan.noSetup(时间预算不达标或EV<0)不计入回测信号总数——这类case在实盘里
+    // 根本不会生成一张可执行的计划,统计进totalSignals/trades会人为拉低样本量里"真实开过仓"的占比。
+    if(snap.dirSign!==0&&snap.plan&&!snap.plan.noSetup){
       totalSignals++;
       const outcome=simulateTradeOutcome(candles,idx,snap.plan,intervalMinutes);
       trades.push({idx,time:candles[idx].time,dir:snap.dirSign,reliability:snap.reliability.tier,
@@ -7315,6 +7418,23 @@ function renderTradePlanSection(sig){
   // 但如果你手上有已标记的持仓,这个"中性"判断本身就是持仓论文健康度的重要信号之一
   // (见 healthCard/evaluateThesisHealth 的"模型现在已回到中性"一条),所以中性分支也要显示 healthCard。
   if(p.noSetup){
+    // 2026-09-18: noSetup现在有两种成因,文案不能再统一写"中性NEUTRAL"——
+    // ①dirSign===0: 真的未形成方向共识(旧有分支,原样保留);
+    // ②dirSign!==0但p.noSetupReason存在: 方向已确认,但TP1目标距离低于该周期"值得等待"的
+    //   最小目标%(需求四),或先达胜率×RR算出的期望值EV<0(需求五)——这种情况如实说明
+    //   "有方向但不构成可执行计划",不能冒充"无方向",否则会掩盖真实原因、误导用户以为
+    //   是指标没判断出方向,而不是"判断出方向了,但这笔在数学上不值得做"。
+    const hasDirButRejected=p.dir!==0&&p.noSetupReason;
+    if(hasDirButRejected){
+      return `
+      ${healthCard}
+      <div class="section-title">📊 TP / SL 交易计划 <span class="dim amb" style="font-size:9px;">方向: ${p.dir>0?"偏多(已确认)":"偏空(已确认)"} · 但判定为不该做</span></div>
+      <div class="neutral-banner" style="border-color:rgba(184,85,95,.35);background:rgba(184,85,95,.06);">
+        <b class="bear">⛔ 方向已确认(${p.dir>0?"偏多 LONG":"偏空 SHORT"}),但不构成可执行计划。</b> ${esc(p.noSetupReason)}
+        <div class="dim" style="font-size:11px;margin-top:4px;">${esc(rel.detail)}</div>
+      </div>
+      <div class="section-note">这不是"指标没判断出方向"——方向本身已经过共振度/可信度门槛,只是把它换算成实际能挂的限价单后,目标空间太小(不值得占用这个周期的时间成本)或数学期望值已经转负(先达胜率×盈亏比扣去(1-胜率)后≤0,扣除双边手续费与滑点前就已经不划算)。这两条判定都是在算出SL/TP之后才检查的,不是靠感觉打分。建议观望,等结构位重新拉开距离,或等波动率/共振度改善后再看。</div>`;
+    }
     return `
       ${healthCard}
       <div class="section-title">📊 TP / SL 交易计划 <span class="dim neutral" style="font-size:9px;">方向: 中性 NEUTRAL · 不构成交易机会</span></div>
@@ -8156,7 +8276,7 @@ function renderStrategySummary(sig){
       </div>
       <div class="strat-row">
         <span class="strat-label">限价挂单价位</span>
-        <span class="strat-val">${plan.noSetup?'<span class="neutral">未形成方向共识,不给出挂单价位——见下方⚖机会可信度依据</span>':`<b style="color:var(--amber);">${fmtPrice(plan.entry)}</b> · 现价 ${fmtPrice(price)} · <span class="prob-tag">成交概率 ~${plan.entryInfo.prob}%</span> · <span class="eta-live">预计 ${esc(fmtEtaFull(plan.entryInfo.eta))}打到</span> · <span style="color:var(--down);">⛔失效撤单 ${fmtPrice(plan.entryInfo.invalidatePrice)}</span><br><span style="font-size:11px;color:var(--dim2,#8a94a6);">🔒 ${plan.pinnedAt?`此价位已钉住 · 生成于 ${esc(fmtEtaFull((Date.now()-plan.pinnedAt)/60000))}前 · 在未触及失效价或过期(3天)前不会跟随现价重算`:"刚生成"}</span>`}</span>
+        <span class="strat-val">${plan.noSetup?`<span class="neutral">${esc(plan.noSetupReason||"未形成方向共识,不给出挂单价位——见下方⚖机会可信度依据")}</span>`:`<b style="color:var(--amber);">${fmtPrice(plan.entry)}</b> · 现价 ${fmtPrice(price)} · <span class="prob-tag">成交概率 ~${plan.entryInfo.prob}%</span> · <span class="eta-live">预计 ${esc(fmtEtaFull(plan.entryInfo.eta))}打到</span> · <span style="color:var(--down);">⛔失效撤单 ${fmtPrice(plan.entryInfo.invalidatePrice)}</span><br><span style="font-size:11px;color:var(--dim2,#8a94a6);">🔒 ${plan.pinnedAt?`此价位已钉住 · 生成于 ${esc(fmtEtaFull((Date.now()-plan.pinnedAt)/60000))}前 · 在未触及失效价或过期(3天)前不会跟随现价重算`:"刚生成"}</span>`}</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">结构现状</span>
@@ -8172,11 +8292,15 @@ function renderStrategySummary(sig){
       </div>
       <div class="strat-row">
         <span class="strat-label">首选 TP1 盈亏比</span>
-        <span class="strat-val ${plan.noSetup?"neutral":(+rr1>=2?"bull":+rr1>=1?"amb":"bear")}">${plan.noSetup?"– 无方向,不构成交易机会":`R:R = ${rr1} · 风险 ${riskPct}% of price`}</span>
+        <span class="strat-val ${plan.noSetup?"neutral":(+rr1>=2?"bull":+rr1>=1?"amb":"bear")}">${plan.noSetup?"– 未构成交易机会,见上方原因":`R:R = ${rr1} · 风险 ${riskPct}% of price`}</span>
+      </div>
+      <div class="strat-row">
+        <span class="strat-label">⚖️ 预期值 EV / 边际机会门槛</span>
+        <span class="strat-val ${plan.evTier==="reject"?"bear":plan.evTier==="marginal"?"amb":plan.evTier==="ok"?"bull":"neutral"}">${plan.evNote?esc(plan.evNote):"– 无方向,未计算"}</span>
       </div>
       <div class="strat-row">
         <span class="strat-label">止损逻辑</span>
-        <span class="strat-val">${plan.noSetup?'<span class="neutral">未建仓,无止损位</span>':`结构失效点 + 0×ATR 缓冲 · <b class="down">${fmtPrice(plan.sl)}</b>`}</span>
+        <span class="strat-val">${plan.noSetup?'<span class="neutral">未建仓,无止损位</span>':`${esc(plan.slSources&&plan.slSources[0]?plan.slSources[0]:"结构位")} · <b class="down">${fmtPrice(plan.sl)}</b>`}</span>
       </div>
       ${risks.length?`<div class="strat-row">
         <span class="strat-label">风险提示</span>
