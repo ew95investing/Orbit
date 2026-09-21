@@ -1149,6 +1149,26 @@
     .dpm-tf span{display:none;} .dpm-cell{padding:6px 6px 7px;} .dpm-cell .pct{font-size:17px;} .dpm-cell .ev{font-size:9.5px;} .dpm-cell .tier{font-size:10.5px;}
     .dpm-tbl td:first-child{white-space:normal;}
   }
+
+  /* ═══ LP · 追踪面板现价价格带 ═══ */
+  .lp-tile{font-size:10.5px;font-family:var(--mono);color:var(--text);margin-top:4px;padding:2px 5px;border-radius:3px;background:rgba(198,165,101,.10);letter-spacing:.2px;}
+  .lp{margin:8px 0 6px;padding:8px 10px 9px;border:1px solid var(--line2);border-radius:5px;background:var(--panel2);}
+  .lp-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .lp-tag{font-size:11px;color:var(--dim2);letter-spacing:1px;}
+  .lp-price{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text);}
+  .lp-chg{font-size:11.5px;font-variant-numeric:tabular-nums;}
+  .lp-chg.up{color:var(--up);} .lp-chg.down{color:var(--down);}
+  .lp-band{position:relative;height:10px;margin:14px 2px 6px;border-radius:3px;background:var(--line);}
+  .lp-z{position:absolute;top:0;height:100%;} .lp-zr{background:rgba(184,85,95,.45);} .lp-zg{background:rgba(90,155,120,.45);}
+  .lp-tick{position:absolute;top:-3px;width:2px;height:16px;background:var(--dim);transform:translateX(-1px);} .lp-tick.e{background:var(--amber);}
+  .lp-now{position:absolute;top:-15px;transform:translateX(-50%);font-style:normal;font-size:12px;line-height:1;color:var(--amber);transition:left .35s ease;}
+  .lp-legend{display:flex;justify-content:space-between;gap:6px;font-size:10.5px;font-family:var(--mono);color:var(--dim2);}
+  .lp-legend .up{color:var(--up);} .lp-legend .down{color:var(--down);}
+  .lp-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 14px;margin-top:8px;font-size:11.5px;color:var(--dim2);}
+  .lp-grid span:nth-child(even){text-align:right;color:var(--text);font-variant-numeric:tabular-nums;}
+  .lp-state{margin-top:7px;font-size:11px;line-height:1.5;padding:3px 6px;border-radius:3px;}
+  .lp-state.ok{color:var(--up);background:var(--up-bg);} .lp-state.warn{color:var(--down);background:var(--down-bg);} .lp-state.neutral{color:var(--dim2);background:#171d29;}
+  .lp-fresh{margin-top:4px;font-size:10px;color:var(--dim2);text-align:right;}
 </style>
 </head>
 <body>
@@ -3450,6 +3470,7 @@ function cycleCalibrationByBucket(tf){
     const b=cycleConvictionBucket(p.conviction);
     if(!buckets[b])buckets[b]={wins:0,total:0};
     buckets[b].total++;
+    {const v=cyclePnlPct(p);if(isFinite(v)){buckets[b].pnl=(buckets[b].pnl||0)+v;buckets[b].pnlN=(buckets[b].pnlN||0)+1;}}
     if(p.status==="TP"||p.outcome==="flat_win")buckets[b].wins++;
   }));
   return buckets;
@@ -3458,9 +3479,9 @@ const CYCLE_CALIB_MIN_N=10; // 分档样本低于这个数,Wilson CI会宽到没
 function cycleBucketStat(buckets,conv){
   const b=cycleConvictionBucket(conv);
   if(!b||!buckets[b])return{bucket:b,wins:0,total:0,rate:null,lo:0,hi:0};
-  const{wins,total}=buckets[b];
+  const{wins,total,pnl,pnlN}=buckets[b];
   const[lo,hi]=wilsonCI(wins,total);
-  return{bucket:b,wins,total,rate:total?wins/total*100:null,lo,hi};
+  return{bucket:b,wins,total,rate:total?wins/total*100:null,lo,hi,avgPnl:pnlN?pnl/pnlN:null};
 }
 // 面板顶部"这套方法论目前整体测出来怎么样"——不分把握度档,近30期(与复盘页同一口径,不另造数字)
 function cycleOverallStats(tf){
@@ -3545,6 +3566,7 @@ function renderCycleHeatmap(tf,cur){
       <div class="trk-tile-pnl ${pnlCls}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</div>
       <div class="trk-tile-meta">${cycleStatusBadge(p)} ${evChip}</div>
       <div class="trk-tile-time">${p.status==="OPEN"?`建议 ${fmtTrkTime(cur.start)}`:`建议${fmtTrkTime(cur.start)} → 结算${fmtTrkTime(p.exitAt)}`}</div>
+      ${lpTileHTML(p,cur)}
       ${hint?`<div class="trk-tile-hint ${hint.cls}">${esc(hint.text)}</div>`:""}
       <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 入场/止盈/止损/信心依据"}</div>
     </div>${expanded?`<div class="trk-tile-detail" data-id="${esc(id)}">
@@ -3557,12 +3579,13 @@ function renderCycleHeatmap(tf,cur){
       <div class="trk-detail-row trk-detail-tech"><span>止损依据</span><span>${p.slSrc?`方向判断错了的话,大概率先在这里被证伪: ${esc(p.slSrc)}`:"– (旧版记录,无结构依据字段)"}</span></div>
       <div class="trk-detail-row"><span>R:R(目标:风险)</span><span>${(p.tpPct/p.slPct).toFixed(2)} : 1</span></div>
       <div class="trk-detail-row"><span>先达胜率</span><span title="从入场价出发,数学上先摸到止盈还是先摸到止损的概率(与时间无关),不是模型自评把握度">${p.raceWinProb!=null?p.raceWinProb+"%":"– (旧版记录)"}</span></div>
-      <div class="trk-detail-row"><span>预期值 EV</span><span class="${p.evTier==="marginal"?"amb":p.evTier==="ok"?"bull":""}" title="先达胜率×RR-(1-先达胜率),单位为R(风险的倍数);低于0.15R视为边际机会,扣除手续费滑点后接近盈亏平衡">${p.evNote?esc(p.evNote):"–"}</span></div>
-      <div class="trk-detail-row"><span>现价/平仓价</span><span>${fmtPrice(p.status==="OPEN"?(market.get(p.symbol)?market.get(p.symbol).price:p.entry):p.exitPrice)}</span></div>
+      <div class="trk-detail-row"><span>预期值 EV(理论·先达胜率)</span><span class="${p.evTier==="marginal"?"amb":p.evTier==="ok"?"bull":""}" title="先达胜率×RR-(1-先达胜率),单位为R(风险的倍数);低于0.15R视为边际机会,扣除手续费滑点后接近盈亏平衡">${p.evNote?esc(p.evNote):"–"}</span></div>
+      ${lpBlockHTML(p,cur)}
       ${p.status!=="OPEN"&&p.exitAt?`<div class="trk-detail-row"><span>结算时间 Matched</span><span>${fmtTrkDateTime(p.exitAt)}</span></div>`:""}
       <div class="trk-detail-row"><span>模型自评把握度</span><span>${p.conviction!=null?p.conviction+"%":"–"}(信号强度${(p.strength*100).toFixed(0)}%)</span></div>
       <div class="trk-detail-row trk-detail-tech"><span>该把握度档历史校准</span><span>${bStat.bucket?(bStat.total>0?`把握度${bStat.bucket}这一档,历史已结算${bStat.total}笔,实际胜率${bStat.rate.toFixed(0)}% ${ciLabel(bStat.wins,bStat.total)}${bStat.total<CYCLE_CALIB_MIN_N?` · 样本<${CYCLE_CALIB_MIN_N},区间还很宽,先当参考不当定论`:""}`:"该把握度档目前还没有已结算样本,暂无法校准"):"–"}</span></div>
-      <div class="trk-detail-row trk-detail-tech"><span>预期值 EV</span><span>${ev==null?`样本不足(&lt;${CYCLE_CALIB_MIN_N}笔),暂不计算EV,只能看模型自评分数`:`${ev>=0?"+":""}${ev.toFixed(2)}%(按该档校准胜率${bStat.rate.toFixed(0)}%计算: ${bStat.rate.toFixed(0)}%×${p.tpPct.toFixed(2)}% − ${(100-bStat.rate).toFixed(0)}%×${p.slPct.toFixed(2)}%)`}</span></div>
+      <div class="trk-detail-row trk-detail-tech"><span>预期值 EV(公式·该档校准胜率)</span><span>${ev==null?`样本不足(&lt;${CYCLE_CALIB_MIN_N}笔),暂不计算EV,只能看模型自评分数`:`${ev>=0?"+":""}${ev.toFixed(2)}%(按该档校准胜率${bStat.rate.toFixed(0)}%计算: ${bStat.rate.toFixed(0)}%×${p.tpPct.toFixed(2)}% − ${(100-bStat.rate).toFixed(0)}%×${p.slPct.toFixed(2)}%)`}</span></div>
+      ${bStat.avgPnl!=null&&bStat.total>=CYCLE_CALIB_MIN_N?`<div class="trk-detail-row trk-detail-tech"><span>该档历史实际平均盈亏</span><span>${bStat.avgPnl>=0?"+":""}${bStat.avgPnl.toFixed(2)}%/笔(${bStat.total}笔实际结算,含到期平仓;"胜率"里的到期浮盈单并没有赚到TP,所以上面按TP/SL套公式的EV会偏乐观,这一行才是实际兑现的平均值)</span></div>`:""}
       ${hint?`<div class="trk-detail-row trk-detail-tech"><span>操作提示</span><span>${esc(hint.text)}</span></div>`:""}
       ${p.techNote?`<div class="trk-detail-row trk-detail-tech"><span>技术分析</span><span>${esc(p.techNote)}</span></div>`:""}
       <button class="trk-tile-gotomodal" data-symbol="${esc(p.symbol)}">📈 打开${esc(p.symbol.replace("USDT",""))}行情图 →</button>
@@ -10258,6 +10281,105 @@ function dhrBody(symbol){
    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;"><button class="dpm-refresh dhr-export" style="margin-left:0;">⬇ 导出数据(JSON,含前向账本)</button><button class="dpm-refresh dhr-clear" style="margin-left:0;">清空衍生品历史</button></div>
    <div class="dpm-mini">导出文件可直接交给我做离线的真实数据研究(是否入模、用哪些因子,应该由真实样本外结果决定)。</div>`;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LP · 追踪面板"现价价格带"
+   问题: 追踪卡片里"现价"只是十几行明细中的一行,而且只在面板每~20秒重绘时才更新;
+   看不出现价离入场/止盈/止损有多远、是不是已经追高、这笔单已经放了多久。
+   做法: 展开明细里放一条 SL—入场—TP 价格带,实时标出现价(每秒只改文字与位置,不重绘面板),
+   并直接给出"现价视角"的数字: 现价相对入场的涨跌与R倍数、距止盈/止损还剩多少%、剩余R:R、
+   信号已发出多久、行情流是否新鲜。收起状态的卡片上也带一行现价。
+   ══════════════════════════════════════════════════════════════════════════ */
+function lpDur(ms){
+  const m=Math.max(0,Math.floor(ms/60000));
+  if(m<60)return m+"分钟";
+  const h=Math.floor(m/60);
+  if(h<48)return h+"小时"+(m%60?(m%60)+"分":"");
+  return Math.floor(h/24)+"天"+(h%24)+"小时";
+}
+function lpCalc(d){
+  const dir=d.dir,px=d.px;
+  const chg=dir*(px-d.entry)/d.entry*100;                       // 现价相对入场,按持仓方向计的盈亏%
+  const risk=Math.abs(d.entry-d.sl)||1e-12;
+  const rNow=dir*(px-d.entry)/risk;                              // 折合多少R(以入场时的止损距离为1R)
+  const toTP=dir*(d.tp-px)/px*100;                               // >0 = 距止盈还有这么多%;<0 = 已越过
+  const toSL=dir*(px-d.sl)/px*100;                               // >0 = 距止损还有这么多%;<0 = 已越过
+  const remRR=toSL>0?Math.max(0,toTP)/toSL:0;
+  const lo=Math.min(d.sl,d.tp,d.entry),hi=Math.max(d.sl,d.tp,d.entry),pad=(hi-lo)*0.15||1e-9,L=lo-pad,R=hi+pad;
+  const pos=v=>Math.max(0,Math.min(100,(v-L)/(R-L)*100));
+  let state,cls;
+  if(!d.open){state="已平仓";cls="neutral";}
+  else if(toSL<=0){state="⚠ 现价已越过止损位,等待系统下次判定结算";cls="warn";}
+  else if(toTP<=0){state="✅ 现价已越过止盈位,等待系统下次判定结算";cls="ok";}
+  else if(d.origRR>0&&remRR/d.origRR<0.45){state="追进去性价比已明显变差(剩余R:R不足原计划的45%)";cls="warn";}
+  else if(d.origRR>0&&remRR/d.origRR<0.85){state="现价已离入场价有一段,剩余R:R处于边缘";cls="neutral";}
+  else{state="现价与入场价接近,剩余空间基本完整";cls="ok";}
+  return{chg,rNow,toTP,toSL,remRR,pos,pxPos:pos(px),over:px<L?"◂":px>R?"▸":"",state,cls};
+}
+function lpFields(d){
+  const c=lpCalc(d),sg=x=>(x>=0?"+":"−")+Math.abs(x).toFixed(2);
+  let fresh="";
+  if(d.open){
+    const age=Date.now()-lastWsTickAt;
+    fresh=lastWsTickAt&&age<20000?"实时":`⚠ 行情推送已 ${lpDur(lastWsTickAt?age:0)||"–"} 未更新,价格来自REST轮询,可能延迟数秒`;
+    if(!lastWsTickAt)fresh="行情来自REST轮询,可能延迟数秒";
+  }
+  return{c,price:fmtPrice(d.px),
+    chg:`${sg(c.chg)}% vs 入场 · ${c.rNow>=0?"+":"−"}${Math.abs(c.rNow).toFixed(2)}R`,
+    toTP:c.toTP>=0?`还差 ${c.toTP.toFixed(2)}%`:`已越过 ${Math.abs(c.toTP).toFixed(2)}%`,
+    toSL:c.toSL>=0?`还差 ${c.toSL.toFixed(2)}%`:`已越过 ${Math.abs(c.toSL).toFixed(2)}%`,
+    rr:`${c.remRR.toFixed(2)} : 1${d.origRR>0?`(原计划 ${d.origRR.toFixed(2)} : 1)`:""}`,
+    age:d.start?lpDur(Date.now()-d.start):"",
+    tile:`现价 ${fmtPrice(d.px)} · 距TP ${c.toTP>=0?c.toTP.toFixed(2)+"%":"已越过"} · 距SL ${c.toSL>=0?c.toSL.toFixed(2)+"%":"已越过"}`,
+    fresh};
+}
+function lpDataAttrs(p,cur,open){
+  return `data-sym="${esc(p.symbol)}" data-dir="${p.dir}" data-entry="${p.entry}" data-tp="${p.tp}" data-sl="${p.sl}" data-start="${cur&&cur.start||0}" data-origrr="${p.slPct?p.tpPct/p.slPct:0}" data-open="${open?1:0}"`;
+}
+function lpBlockHTML(p,cur){
+  const open=p.status==="OPEN",m=market.get(p.symbol);
+  const px=open?(m&&m.price!=null?m.price:p.entry):p.exitPrice;
+  if(px==null||!isFinite(px))return "";
+  const d={dir:p.dir,entry:p.entry,tp:p.tp,sl:p.sl,px,open,start:cur&&cur.start,origRR:p.slPct?p.tpPct/p.slPct:0};
+  const f=lpFields(d),c=f.c;
+  const zone=(a,b,cl)=>`<i class="lp-z ${cl}" style="left:${Math.min(c.pos(a),c.pos(b)).toFixed(1)}%;width:${Math.abs(c.pos(a)-c.pos(b)).toFixed(1)}%"></i>`;
+  const legend=[{n:"止损 SL",v:p.sl,cl:"down"},{n:"入场",v:p.entry,cl:""},{n:"止盈 TP",v:p.tp,cl:"up"}].sort((a,b)=>a.v-b.v)
+    .map(x=>`<span class="${x.cl}">${x.n} ${fmtPrice(x.v)}</span>`).join("");
+  return `<div class="lp${open?" lp-live":""}" ${lpDataAttrs(p,cur,open)}>
+    <div class="lp-head"><span class="lp-tag">${open?"现价":"平仓价"}</span><span class="lp-price" data-r="price">${f.price}</span><span class="lp-chg ${c.chg>=0?"up":"down"}" data-r="chg">${f.chg}</span></div>
+    <div class="lp-band">${zone(p.sl,p.entry,"lp-zr")}${zone(p.entry,p.tp,"lp-zg")}
+      <b class="lp-tick" style="left:${c.pos(p.sl).toFixed(1)}%"></b><b class="lp-tick e" style="left:${c.pos(p.entry).toFixed(1)}%"></b><b class="lp-tick" style="left:${c.pos(p.tp).toFixed(1)}%"></b>
+      <em class="lp-now" data-r="now" style="left:${c.pxPos.toFixed(1)}%">▼</em></div>
+    <div class="lp-legend">${legend}</div>
+    <div class="lp-grid">
+      <span>到止盈</span><span data-r="toTP">${f.toTP}</span>
+      <span>到止损</span><span data-r="toSL">${f.toSL}</span>
+      ${open?`<span>现价视角剩余R:R</span><span data-r="rr">${f.rr}</span>`:""}
+      ${open?`<span>距信号发出</span><span data-r="age">${f.age}</span>`:""}
+    </div>
+    <div class="lp-state ${c.cls}" data-r="state">${esc(c.state)}</div>
+    ${open?`<div class="lp-fresh" data-r="fresh">${esc(f.fresh)}</div>`:""}
+  </div>`;
+}
+function lpTileHTML(p,cur){
+  if(p.status!=="OPEN")return "";
+  const m=market.get(p.symbol);if(!m||m.price==null)return "";
+  const f=lpFields({dir:p.dir,entry:p.entry,tp:p.tp,sl:p.sl,px:m.price,open:true,start:cur&&cur.start,origRR:p.slPct?p.tpPct/p.slPct:0});
+  return `<div class="lp lp-tile lp-live" ${lpDataAttrs(p,cur,true)}><span data-r="tile">${esc(f.tile)}</span></div>`;
+}
+function lpPatchAll(){
+  if(typeof document==="undefined"||document.hidden)return;
+  document.querySelectorAll(".lp.lp-live[data-sym]").forEach(el=>{
+    const m=market.get(el.dataset.sym);if(!m||m.price==null)return;
+    const f=lpFields({dir:+el.dataset.dir,entry:+el.dataset.entry,tp:+el.dataset.tp,sl:+el.dataset.sl,px:m.price,open:true,start:+el.dataset.start,origRR:+el.dataset.origrr});
+    const set=(k,v)=>{const n=el.querySelector(`[data-r="${k}"]`);if(n&&n.textContent!==v)n.textContent=v;};
+    set("price",f.price);set("chg",f.chg);set("toTP",f.toTP);set("toSL",f.toSL);set("rr",f.rr);set("age",f.age);set("fresh",f.fresh);set("state",f.c.state);set("tile",f.tile);
+    const chg=el.querySelector('[data-r="chg"]');if(chg){chg.classList.toggle("up",f.c.chg>=0);chg.classList.toggle("down",f.c.chg<0);}
+    const st=el.querySelector('[data-r="state"]');if(st)st.className="lp-state "+f.c.cls;
+    const now=el.querySelector('[data-r="now"]');if(now){now.style.left=f.c.pxPos.toFixed(1)+"%";now.textContent=f.c.over||"▼";}
+  });
+}
+setInterval(lpPatchAll,1000);
 
 init();
 })();
