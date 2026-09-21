@@ -5095,7 +5095,37 @@ function computeBreakoutState(candles,levelPrice,dirSign){
   return{state:"tentative",label:"暂破·待确认(缺放量)",
     detail:`已连续2根收盘站稳线外,但突破当根量能仅为前20根均量的${volMult!=null?volMult.toFixed(1):"–"}倍,未达${bvMult.toFixed(2)}倍放量确认门槛,强度打折`,refPrice:levelPrice};
 }
-function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap){
+/* ══════ 2026-09-18 新增: 江恩角度线(Gann Fan)作为斐波那契/结构位的"二次确认层" ══════
+   交易员视角的取舍(用户明确问过: 同时独立打分,还是江恩先/斐波那契验证?):
+   经典江恩角度线要求"价格轴1点=时间轴1天"这个换算关系,这个换算本身是极度主观的、且跨资产/
+   跨K线周期完全不可比——1美元的BTC波动和1美元的山寨币波动不是一回事,1根4H K线也不是1天。
+   纯粹靠江恩角度线自己去挑方向、挑目标位,在自动化系统里是不可靠的一等公民信号源。
+   但江恩角度线背后"价格应按一个稳定速率运行、明显偏离速率才是关键位置"这个思想仍然有效;
+   而斐波那契回撤/扩展是按实际摆动幅度算出来的比例关系,是scale-invariant、可跨资产/周期
+   可靠自动化的基准,这也是它已经是本工具结构聚类主力的原因。
+   结论: 两者不是同一量级的信号来源,不该被当成两票平权的独立投票"同时"参与判断。斐波那契
+   (以及缠论摆动点/趋势线/成交量结构)仍然是止盈止损选点的主结构;江恩角度线降格为"确认层"——
+   把"1江恩单位价格"标准化为"1×ATR/每根K线"(而不是1美元=1天,这样不同资产/周期才可比),
+   只有当江恩角度线恰好也落在斐波那契/摆动点/趋势线已经选出的同一个价位附近时,才给这个价位
+   的权重加成、并在来源里追加"江恩NxM线共振",不会让江恩角度线单独凭空造出一个新的止盈止损位。
+   这就是"江恩先算/斐波那契验证"的反面——顺序反过来: 斐波那契/结构先定位置,江恩角度线做
+   二次验证,理由是斐波那契的可靠性/可比性本身就更高,该做基准的是它,不是江恩。 */
+function computeGannFan(candles,atrVal,anchor){
+  if(!atrVal||atrVal<=0||!anchor)return[];
+  const lastIdx=candles.length-1;
+  const bars=lastIdx-anchor.i;
+  if(bars<5||bars>300)return[]; // 太近样本不够,太远这个锚点早已失去"这一轮走势起点"的意义
+  const unit=atrVal; // 1江恩单位价格 = 1×ATR/每根K线(标准化换算,见上方大段注释)
+  const ratios=[{r:1/8,l:"1×8"},{r:1/4,l:"1×4"},{r:1/3,l:"1×3"},{r:1/2,l:"1×2"},{r:1,l:"1×1"},{r:2,l:"2×1"},{r:3,l:"3×1"},{r:4,l:"4×1"},{r:8,l:"8×1"}];
+  const out=[];
+  ratios.forEach(rt=>{
+    const move=bars*unit*rt.r;
+    out.push({label:rt.l+"↑",price:anchor.price+move});
+    if(anchor.price-move>0)out.push({label:rt.l+"↓",price:anchor.price-move});
+  });
+  return out;
+}
+function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap,atrVal){
   const fibHi=highs.length?Math.max(...highs.slice(-5).map(h=>h.price)):Math.max(...candles.slice(-80).map(c=>c.high));
   const fibLo=lows.length?Math.min(...lows.slice(-5).map(l=>l.price)):Math.min(...candles.slice(-80).map(c=>c.low));
   const fibs=fibLevels(fibHi,fibLo).filter(f=>f.price>0);
@@ -5146,9 +5176,24 @@ function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap){
     else clusters.push({avg:c.price,items:[c],weight:c.w,sources:[c.src]});
   });
   const enriched=clusters.map(cl=>({price:cl.avg,weight:cl.weight,sources:[...new Set(cl.sources)]}));
+  // 江恩角度线二次确认(见上方computeGannFan大段注释): 从最近一个摆动低点和最近一个摆动高点
+  // 各起一组角度线(不猜方向,两组都算,交给下面去和已经聚类好的结构位比对),命中已有聚类
+  // 才加权,命中不了不新增位置——江恩角度线在这里只做"确认",不单独产生止盈止损位。
+  const gannFan=(atrVal&&atrVal>0)?[
+    ...computeGannFan(candles,atrVal,lows.length?lows[lows.length-1]:null).map(g=>({...g,anchor:"摆动低点"})),
+    ...computeGannFan(candles,atrVal,highs.length?highs[highs.length-1]:null).map(g=>({...g,anchor:"摆动高点"})),
+  ]:[];
+  if(gannFan.length){
+    const gannTol=price*0.004; // 与结构聚类同一个容差,"是否共振"的判定口径保持统一
+    enriched.forEach(cl=>{
+      const hit=gannFan.find(g=>Math.abs(g.price-cl.price)<=gannTol);
+      if(hit){cl.weight+=0.5;cl.sources.push(`江恩角度线共振(${hit.anchor}起${hit.label},1单位=1×ATR/K线)`);}
+    });
+  }
   const supports=enriched.filter(c=>c.price<price).sort((a,b)=>b.price-a.price);
   const resistances=enriched.filter(c=>c.price>price).sort((a,b)=>a.price-b.price);
-  return{supports,resistances,fibHi,fibLo};
+  return{supports,resistances,fibHi,fibLo,
+    gannFanNear:gannFan.filter(g=>Math.abs(g.price-price)/price<0.05).sort((a,b)=>Math.abs(a.price-price)-Math.abs(b.price-price)).slice(0,6)};
 }
 
 function seriesSlopeSign(hist){
@@ -5641,7 +5686,59 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
       rr:"–",sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult,ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote};
   }
   return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,slBasis,tps,rr,sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult,
-    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote};
+    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,slLadder:buildSlLadder(dirSign,entry,slPrice,tps,atrVal)};
+}
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 2026-09-18 新增: 3档止损阶梯(SL LADDER),取代"只有一个固定SL"──
+   用户描述的真实交易行为: "我有时候会上调SL去锁定一点小利润,再看会不会继续;有时候这样调整
+   后被打止损又继续涨,造成卖飞;有时候确实是要回调,这样调整反而保住了本金"——这是"分批止盈+
+   止损阶梯上移(ratchet stop)"的经典取舍,没有一个永远正确的调法,但可以用规则取代临场感觉:
+   Stage 0 初始止损: 入场时的结构性止损(buildStructuralSL的结果),价格还没走出有利距离前不动。
+   Stage 1 保本止损: 价格朝有利方向走出TP1距离的60%后,上移止损到入场价附近(留一点缓冲盖过
+     手续费/滑点),此时"卖飞"的代价已经很小(最多损失这一点缓冲),而"防止整笔回吐成亏损"
+     的价值远大于这点代价,是整个阶梯里性价比最高的一步。
+   Stage 2 TP1后锁利: TP1被打到、建议分批止盈一部分仓位后,剩余仓位止损上移到锁定TP1涨幅的
+     一半——不是移到TP1本身。移到TP1本身等于把剩余仓位的容错空间压缩到0,一根正常回调就会
+     把剩余仓位也扫出去,这正是用户说的"卖飞"场景的主要成因之一。
+   Stage 3 TP2后结构化跟踪: TP2被打到后,剩余仓位(通常是为TP3博最后一段)止损改为跟踪"最近
+     一个已确认摆动点"(复用findConfirmedSwing同一套标准),不再用固定价位——这一段往往已经
+     进入趋势后段,固定价位跟不上,结构化跟踪止损能让利润奔跑,同时仍在真正反转时给出信号。
+   这套阶梯不是"工具帮你自动下单调整SL"(本工具没有交易所API/下单权限),而是把"什么时候调、
+   调到哪"变成一套可复核的规则,交给用户自己在交易所手动执行,取代"凭感觉猜"。 */
+function buildSlLadder(dirSign,entry,slInitial,tps,atrVal){
+  if(!tps||tps.length<2||entry==null||slInitial==null||!atrVal)return null;
+  const tp1=tps[0].price,tp2=tps[1].price;
+  const tp1Dist=Math.abs(tp1-entry);
+  const breakEvenBuf=atrVal*0.1;
+  const stage1Trigger=dirSign>0?entry+tp1Dist*0.6:entry-tp1Dist*0.6;
+  const stage1Sl=dirSign>0?entry+breakEvenBuf:entry-breakEvenBuf;
+  const stage2Sl=dirSign>0?entry+(tp1-entry)*0.5:entry-(entry-tp1)*0.5;
+  return{entry,dirSign,tp1,tp2,atrVal,stages:[
+    {stage:0,name:"初始止损",trigger:null,sl:slInitial,
+      note:"入场时的结构性止损,价格还没走出明显有利距离前维持不变,不提前收紧。"},
+    {stage:1,name:"保本止损",trigger:stage1Trigger,sl:stage1Sl,
+      note:"价格到达TP1距离的60%后,上移止损到接近入场价(留一点缓冲盖过手续费/滑点),把这笔交易的下行风险基本清零。"},
+    {stage:2,name:"TP1后锁利",trigger:tp1,sl:stage2Sl,
+      note:"TP1被打到、建议先分批止盈一部分仓位后,剩余仓位止损上移到锁定TP1涨幅的一半——故意不移到TP1本身,留出容错空间,避免一根正常回调就把剩余仓位也扫出去(卖飞的常见成因)。"},
+    {stage:3,name:"TP2后结构跟踪",trigger:tp2,sl:null,
+      note:"TP2被打到后,剩余仓位(通常是博TP3的最后一段)止损改为跟踪最近一个已确认摆动点,而非固定价位,让利润奔跑,同时仍能在真正反转时给出止损信号。"},
+  ]};
+}
+// 根据当前价格判断"现在应该处于哪一档",Stage 3 用实时的已确认摆动点重新算跟踪止损价位——
+// 与主SL逻辑(buildStructuralSL/findConfirmedSwing)同一套"已确认"标准,不是另起一套算法。
+function recommendSlStage(ladder,price,highs,lows){
+  if(!ladder)return null;
+  const{dirSign,tp1,tp2,atrVal,stages}=ladder;
+  let idx=0;
+  if(dirSign>0?price>=tp2:price<=tp2)idx=3;
+  else if(dirSign>0?price>=tp1:price<=tp1)idx=2;
+  else if(stages[1].trigger!=null&&(dirSign>0?price>=stages[1].trigger:price<=stages[1].trigger))idx=1;
+  let sl=stages[idx].sl;
+  if(idx===3){
+    const confirmed=findConfirmedSwing(dirSign,price,atrVal,highs,lows);
+    sl=confirmed?(dirSign>0?confirmed.price-atrVal*0.3:confirmed.price+atrVal*0.3):stages[2].sl;
+  }
+  return{activeIdx:idx,all:stages.map((s,i)=>({...s,sl:i===3?sl:s.sl,active:i===idx}))};
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -6489,7 +6586,7 @@ votes.push(macroDominanceVote(symbol));
   votes.push(santongVote(santongForSig));
 
   const volProfile=buildVolumeProfile(candles);
-  const structure=buildStructureLevels(candles,price,highs,lows,volProfile,avwap);
+  const structure=buildStructureLevels(candles,price,highs,lows,volProfile,avwap,a);
   const nearestFib=fibLevels(structure.fibHi,structure.fibLo).reduce((p,c)=>Math.abs(c.price-price)<Math.abs(p.price-price)?c:p);
   const fibDir=price>=structure.fibHi*0.995?1:price<=structure.fibLo*1.005?-1:0;
   const nearestFibKind=nearestFib.kind==="ext"?"扩展":"回撤";
@@ -6784,7 +6881,7 @@ function backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState){
     structDir=(hh&&hl)?1:((!hh)&&(!hl))?-1:0;
   }
   votes.push({name:"缠论笔结构",cat:"trend",dir:structDir});
-  const structure=buildStructureLevels(winCandles,price,highs,lows,volProfile,avwap);
+  const structure=buildStructureLevels(winCandles,price,highs,lows,volProfile,avwap,atrVal);
   const nearestFib=fibLevels(structure.fibHi,structure.fibLo).reduce((p,c)=>Math.abs(c.price-price)<Math.abs(p.price-price)?c:p,{r:0,price:price});
   const fibDir=price>=structure.fibHi*0.995?1:price<=structure.fibLo*1.005?-1:0;
   votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir});
@@ -7192,18 +7289,37 @@ function renderSignalDetail(sig){
 }
 
 /* ── RENDER: TRADE PLAN ── */
-function tpCardHTML(t){
+/* 需求(2026-09-18新增): 分批止盈的杠杆/仓位分配,按每一档自己的先达胜率做权重——用户明确
+   要求"要考虑每一个策略的概率,以及是否可以杠杆加倍",且说明自己习惯用3-5倍杠杆。这里不是
+   另起一套凭空的倍数,而是以用户的习惯区间(3~5x)为锚: 概率最高、持有时间最短的TP1档给
+   区间上限(5x),越往后(TP2/TP3持有时间更长、统计上先达胜率更低)逐档下调杠杆——这是标准的
+   风险管理逻辑: 持仓时间越长,越应该降低杠杆给波动留缓冲(同样的价格回撤,杠杆越高对应的
+   保证金安全边际越薄),而不是三档都用同一个杠杆。仓位占比按各档先达胜率归一化后分配
+   (概率越高的档,建议分配的仓位占比也越高),并夹在15%~60%之间避免出现极端分配。*/
+function buildTierLeveragePlan(tps){
+  if(!tps||!tps.length)return null;
+  const USER_LEV_MIN=3,USER_LEV_MAX=5;
+  const totalProb=tps.reduce((s,t)=>s+(t.raceWinProb||0),0)||1;
+  return tps.map((t,i)=>{
+    const leverage=Math.max(USER_LEV_MIN,USER_LEV_MAX-i);
+    const allocPct=Math.max(15,Math.min(60,Math.round((t.raceWinProb||0)/totalProb*100)));
+    return{label:t.label,leverage,allocPct};
+  });
+}
+function tpCardHTML(t,tierLev){
   const pct=(t.price>0&&t.prob>0)?t.prob:0;
   const realistic=t.weight>=1.0;
   const etaTxt=t.eta!=null?esc(fmtEtaFull(t.eta))+"内约55%概率触及":"窗口内触及概率偏低(见下方%)";
   const race=t.raceWinProb!=null?`<span class="rr-badge" title="从入场价出发,先摸到此TP还是先摸到SL止损的真实胜率(赌徒破产公式,与时间无关)">先达胜率 ${t.raceWinProb}%</span>`:"";
   const rrBadge=t.rr!=null?`<span class="rr-badge" title="该档目标自己的盈亏比 = 到此TP的距离 ÷ 到SL的距离(不是借用TP1那一个数字)">R:R ${t.rr}</span>`:"";
+  const levBadge=tierLev?`<span class="atr-badge" style="margin-left:4px;border-color:rgba(90,155,120,.35);color:var(--up);" title="按用户习惯的3~5倍杠杆区间,持有时间越长(TP2/TP3)杠杆越低,给波动留缓冲;仓位占比按该档先达胜率归一化后分配">建议 ${tierLev.leverage}x · 约${tierLev.allocPct}%仓位</span>`:"";
   return `<div class="tp-card ${t.label.toLowerCase()}">
     <div class="row1"><span class="lab">${esc(t.label)}</span><span class="up">${fmtPrice(t.price)}</span></div>
     <div class="row2"><span class="prob-tag" title="固定时间窗口内,基于该资产真实已实现波动率(反射原理)计算的触碰概率">窗口内触碰概率 ~${t.prob}%</span>${rrBadge}${race}</div>
     <div class="row3">
       <span class="horizon-badge">${esc(t.horizon)}</span>
       ${realistic?'<span class="atr-badge" style="margin-left:4px;">结构确认</span>':'<span class="atr-badge" style="margin-left:4px;border-color:rgba(240,177,50,.3);color:var(--amber);">ATR延伸</span>'}
+      ${levBadge}
     </div>
     <div class="src" style="margin-top:2px;">⏱ ${etaTxt}</div>
     <div class="prob-bar"><div class="prob-fill" style="width:${pct}%;background:${t.label==="TP1"?"var(--up)":t.label==="TP2"?"#4f8a68":"#3c6b52"}"></div></div>
@@ -7285,7 +7401,7 @@ function markPositionFilled(){
   const positions=getPositions();
   positions[posKey(selectedSymbol,chartInterval)]={
     dir:p.dir,entry:p.entry,actualEntryPrice,sl:p.sl,invalidatePrice:p.entryInfo.invalidatePrice,
-    tps:p.tps.map(t=>({label:t.label,price:t.price})),
+    tps:p.tps.map(t=>({label:t.label,price:t.price})),atrAtEntry:sig.atr,
     regimeAtEntry:sig.regime,regimeLabelAtEntry:sig.regimeLabel,
     reliabilityTierAtEntry:sig.reliability.tier,convictionAtEntry:sig.outlook.conviction,
     entryMarketPrice:p.entryInfo.marketPrice,filledAt:Date.now()
@@ -7342,6 +7458,27 @@ function fmtElapsed(ms){
   if(hrs<24)return hrs+"小时"+(mins%60)+"分钟前";
   return Math.floor(hrs/24)+"天"+(hrs%24)+"小时前";
 }
+function slLadderHTML(pos,sig){
+  const ladder=buildSlLadder(pos.dir,pos.entry,pos.sl,pos.tps,pos.atrAtEntry||sig.atr);
+  if(!ladder)return"";
+  const rec=recommendSlStage(ladder,sig.price,sig.highs,sig.lows);
+  if(!rec)return"";
+  const rows=rec.all.map(s=>{
+    const activeStyle=s.active?`border-color:var(--amber);background:rgba(198,165,101,.08);`:`border-color:var(--line2);`;
+    const slTxt=s.sl!=null?fmtPrice(s.sl):"–";
+    return`<div style="border:1px solid transparent;${activeStyle}border-radius:5px;padding:6px 9px;margin-top:5px;">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;">
+        <span style="color:${s.active?"var(--amber)":"var(--dim)"};font-weight:${s.active?700:400};">${s.active?"👉 ":""}Stage ${s.stage} · ${esc(s.name)}</span>
+        <span style="color:${s.active?"var(--amber)":"var(--dim)"};font-weight:700;">SL → ${slTxt}</span>
+      </div>
+      <div style="font-size:10.5px;color:var(--dim2,#8a94a6);margin-top:2px;line-height:1.5;">${esc(s.note)}</div>
+    </div>`;
+  }).join("");
+  return`<div style="margin-top:10px;border-top:1px solid var(--line2);padding-top:10px;">
+    <div style="font-size:11.5px;color:var(--dim);font-weight:700;">📶 止损阶梯建议(当前处于 Stage ${rec.activeIdx}) <span style="font-weight:400;color:var(--dim2,#8a94a6);">— 本工具不能替你在交易所改单,以下是"现在应该把止损放在哪"的建议,需自行手动调整</span></div>
+    ${rows}
+  </div>`;
+}
 function positionHealthCardHTML(pos,sig){
   const health=evaluateThesisHealth(pos,sig);
   const badge={green:{emoji:"🟢",label:"论文仍然成立",col:"var(--up)"},
@@ -7361,10 +7498,24 @@ function positionHealthCardHTML(pos,sig){
       <div style="font-size:11.5px;color:var(--dim);">已持仓 ${fmtElapsed(Date.now()-pos.filledAt)} · ${entryLine} · <b style="color:${pnlCol};">${Number(pnlPct)>=0?"+":""}${pnlPct}%</b></div>
     </div>
     <div style="font-size:12px;color:var(--dim);margin-top:8px;line-height:1.65;">${health.reasons.map(r=>"· "+esc(r)).join("<br>")}</div>
+    ${slLadderHTML(pos,sig)}
     <div style="margin-top:10px;">
       <button onclick="clearPosition()" style="font-size:11px;padding:5px 10px;border:1px solid var(--line2);border-radius:4px;background:var(--panel3);color:var(--dim);cursor:pointer;">✕ 清除持仓记录(已离场 / 已触发止盈止损)</button>
     </div>
   </div>`;
+}
+function slLadderPreviewHTML(ladder){
+  if(!ladder)return"";
+  const rows=ladder.stages.map(s=>`<div style="border:1px solid var(--line2);border-radius:5px;padding:6px 9px;margin-top:5px;">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;">
+        <span style="color:var(--dim);">Stage ${s.stage} · ${esc(s.name)}${s.trigger!=null?` <span style="color:var(--dim2,#8a94a6);">(触发: ${fmtPrice(s.trigger)})</span>`:""}</span>
+        <span style="color:var(--dim);font-weight:700;">SL → ${s.sl!=null?fmtPrice(s.sl):"跟踪最近已确认摆动点"}</span>
+      </div>
+      <div style="font-size:10.5px;color:var(--dim2,#8a94a6);margin-top:2px;line-height:1.5;">${esc(s.note)}</div>
+    </div>`).join("");
+  return`<div class="section-title" style="margin-top:14px;">📶 止损阶梯(建仓后随行情推进逐档上移,而不是一直用同一个固定SL)</div>
+    <div class="section-note">标记已入场后,下方"持仓论文追踪"卡片会实时告诉你现在处于哪一档;成交前这里只是预告,方便你提前想好每一档打算怎么操作。</div>
+    ${rows}`;
 }
 function timelineHTML(plan,hasPosition){
   const ei=plan.entryInfo;
@@ -7455,9 +7606,10 @@ function renderTradePlanSection(sig){
       ${healthCard}
       <div class="section-title">📊 TP / SL 交易计划 <span class="dim" style="font-size:9px;">方向: ${p.dir>0?"做多 LONG 🟢":"做空 SHORT 🔴"} · ${esc(st.label)}</span></div>
       ${convBanner}
-      <div class="section-note">全部按限价单(LIMIT)设计,不追市价:入场价为价格朝${p.dir>0?"下方支撑/回踩":"上方压力/反抽"}结构位回调后的挂单价,而非当前市价,需等待 rebound 打到该价位才成交(预计30分钟~8小时)。目标位来自缠论分型摆动高低点、斐波那契回撤/扩展、趋势线(连接摆动点位)、Volume Profile POC/HVN、VWAP 多重共振确认;周边确实缺乏任何结构确认位时才会退回ATR估算,并会在下方"📍来源"中明确标注。TP1固定4h窗口 / TP2固定24h窗口 / TP3固定3日窗口 — 每档"窗口内触碰概率"由该资产近100根K线真实已实现波动率(对数收益标准差)代入反射原理公式计算,不是拿距离硬除以ATR编出来的分钟数,因此不会出现"35分钟内涨10%"这类不符合该资产真实波动速度的说法。"先达胜率"则是止盈与止损两边对数距离之比(赌徒破产公式/鞅的最优停时定理精确解),与时间无关,是判断这笔限价单是否值得挂的核心数字。止损设于限价入场价外侧最近结构失效点+ATR缓冲(${esc(regimeNote)});挂单成交前若价格反向击穿"失效撤单价"(入场价再往不利方向1×ATR),说明这不是健康回调而是趋势单边延续,应撤单离场,不追价、不下移/上移限价——此逻辑仅在成交前有效,成交后请点【标记已入场】切换为持仓论文追踪。三档目标按到入场价的距离严格递增(TP1&lt;TP2&lt;TP3),对应的盈亏比 R:R 和持有时间也依次变大 —— 设计上是给<b>分批止盈</b>用的梯度(例如TP1先落袋一部分、剩余仓位博TP2/TP3,而非到TP1就必须清仓),具体分几档、每档留多少仓位由你自己按风险偏好决定,不代表必须在TP1全平。以上概率、仓位与杠杆建议均为基于历史已实现波动率与信号共振度的启发式估计,不构成回测验证过的胜率,也不构成投资建议,请自行结合自身风险承受能力核实与调整。</div>
+      <div class="section-note">全部按限价单(LIMIT)设计,不追市价:入场价为价格朝${p.dir>0?"下方支撑/回踩":"上方压力/反抽"}结构位回调后的挂单价,而非当前市价,需等待 rebound 打到该价位才成交(预计30分钟~8小时)。目标位来自缠论分型摆动高低点、斐波那契回撤/扩展、趋势线(连接摆动点位)、Volume Profile POC/HVN、VWAP 多重共振确认,并叠加江恩角度线作为二次确认(1江恩单位价格已标准化为1×ATR/每根K线,只在恰好命中上述结构位时加权,不单独造位);周边确实缺乏任何结构确认位时才会退回ATR估算,并会在下方"📍来源"中明确标注。TP1固定4h窗口 / TP2固定24h窗口 / TP3固定3日窗口 — 每档"窗口内触碰概率"由该资产近100根K线真实已实现波动率(对数收益标准差)代入反射原理公式计算,不是拿距离硬除以ATR编出来的分钟数,因此不会出现"35分钟内涨10%"这类不符合该资产真实波动速度的说法。"先达胜率"则是止盈与止损两边对数距离之比(赌徒破产公式/鞅的最优停时定理精确解),与时间无关,是判断这笔限价单是否值得挂的核心数字。止损设于限价入场价外侧最近结构失效点+ATR缓冲(${esc(regimeNote)}),成交后止损并非固定不动,而是按下方"止损阶梯"随盈利进度分3档上移(保本→锁利→结构跟踪),取代"整笔只有一个固定SL"的做法;挂单成交前若价格反向击穿"失效撤单价"(入场价再往不利方向1×ATR),说明这不是健康回调而是趋势单边延续,应撤单离场,不追价、不下移/上移限价——此逻辑仅在成交前有效,成交后请点【标记已入场】切换为持仓论文追踪。三档目标按到入场价的距离严格递增(TP1&lt;TP2&lt;TP3),对应的盈亏比 R:R 和持有时间也依次变大 —— 设计上是给<b>分批止盈</b>用的梯度(例如TP1先落袋一部分、剩余仓位博TP2/TP3,而非到TP1就必须清仓),具体分几档、每档留多少仓位由你自己按风险偏好决定,不代表必须在TP1全平。以上概率、仓位与杠杆建议均为基于历史已实现波动率与信号共振度的启发式估计,不构成回测验证过的胜率,也不构成投资建议,请自行结合自身风险承受能力核实与调整。</div>
       ${timelineHTML(p,!!pos)}
-      <div class="plan-grid" style="margin-top:12px;">${entryCardHTML(p,!!pos)}${slCardHTML(p)}${p.tps.map(t=>tpCardHTML(t)).join("")}</div>`;
+      <div class="plan-grid" style="margin-top:12px;">${entryCardHTML(p,!!pos)}${slCardHTML(p)}${(()=>{const tierLevs=buildTierLeveragePlan(p.tps);return p.tps.map((t,i)=>tpCardHTML(t,tierLevs?tierLevs[i]:null)).join("");})()}</div>
+      ${!pos?slLadderPreviewHTML(p.slLadder):""}`;
 }
 
 /* ── RENDER: STRUCTURE ── */
