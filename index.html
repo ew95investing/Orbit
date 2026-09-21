@@ -1281,7 +1281,7 @@
   <div class="trk-panel" id="trkPanel">
     <div class="trk-head">
       <span class="trk-title">推荐追踪 · TRACK RECORD</span>
-      <span class="trk-sub">固定4小时周期策略 · 每期Top10按信号强度选出,固定止盈止损,到期强制结算 · 只是观察日志,不影响任何实盘决策</span>
+      <span class="trk-sub">多周期策略追踪(1H/4H/8H/1D/1W) · 每期Top10按信号强度选出,止盈止损按各自周期的真实K线结构与ATR波动率单独计算(不是固定百分比,入场后周期内不改判),到期强制结算 · 只是观察日志,不影响任何实盘决策</span>
       <span class="trk-status" id="trkStatus">–</span>
       <button class="trk-reset-btn" id="trkScanNowBtn" title="不等定时器,立刻手动跑一轮扫描(诊断/验证扫描引擎是否还在正常工作用)">▶ 立即扫描一次</button>
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
@@ -1586,7 +1586,7 @@ function higherTfOf(interval){
   // no-op MTF check); now steps up to "1w" like every other tier. "1w" has nowhere higher
   // to go, so it stays mapped to itself — the MTF confirmation naturally becomes a no-op
   // only at the top of the ladder, not one rung early.
-  return{"1m":"15m","5m":"1h","15m":"1h","1h":"4h","4h":"1d","1d":"1w","1w":"1w"}[interval]||interval;
+  return{"1m":"15m","5m":"1h","15m":"1h","1h":"4h","4h":"1d","8h":"1d","1d":"1w","1w":"1w"}[interval]||interval;
 }
 async function ensureHigherTf(symbol,interval){
   const htf=higherTfOf(interval);
@@ -2292,6 +2292,14 @@ let opportunityResults = new Map(); // symbol -> {sig, ts}
 // 末尾),不额外发请求。与opportunityResults同一套Map结构,只是键入的sig来自不同周期的K线。
 let opportunityResultsDaily = new Map();
 let opportunityResultsWeekly = new Map();
+// 2026-09-22新增: 1H/4H/8H三条固定周期轨道各自的专属信号缓存,均来自真实的对应周期K线
+// (见下方fetchCycleTfCandlesForScan),不再借用主扫描面板当前选的chartInterval(那个下拉框
+// 默认是5m,且用户随时可能切到1m/15m/1d等——之前的"4H固定周期"轨道其实是直接复用主扫描的
+// opportunityResults,导致"4H策略"名不副实地跑在用户当前图表选的任意周期上;现在四条固定
+// 周期轨道(1H/4H/8H,加上下面已有的日线/周线)全部各自独立取真实K线,口径与自己的标签一致)。
+let opportunityResults1h = new Map();
+let opportunityResults4h = new Map();
+let opportunityResults8h = new Map();
 let opportunityScanning = false, opportunityScanTimer = null, opportunityRescanDebounce = null;
 let lastOpportunityScanAt = 0;      // 标签页恢复前台时,用于判断该不该立刻补扫一次
 // 2026-09-09 新增: 用户报告"持仓热力图/推荐追踪长期空白"根因复查——之前 setupOpportunityScan
@@ -2488,6 +2496,31 @@ async function fetchSantongForScan(symbol){
     return entry;
   }
 }
+// 2026-09-22新增: 1H/4H/8H固定周期轨道专用K线缓存——同一个symbol的1h/4h/8h蜡烛一次性并行拉齐,
+// 与上面日线/周线的思路一致(独立缓存,不跟90秒扫描节奏抢请求)。三个周期都比日线/周线更新快,
+// 用10分钟TTL(而不是30分钟):1H蜡烛每小时收一根,10分钟内命中缓存不会错过太久;比每轮扫描都
+// 重新拉(90秒一次)省了约6~7倍请求量,又不会像30分钟缓存那样让1H轨道的信号明显滞后于当前行情。
+const cycleTfScanCache=new Map(); // key: symbol -> {h1,h4,h8 candles, fetchedAt}
+const CYCLE_TF_SCAN_TTL_MS=10*60*1000;
+async function fetchCycleTfCandlesForScan(symbol){
+  const cached=cycleTfScanCache.get(symbol);
+  if(cached&&Date.now()-cached.fetchedAt<CYCLE_TF_SCAN_TTL_MS)return cached;
+  const conv=arr=>arr.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+  try{
+    const[h1,h4,h8]=await Promise.all([
+      fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=1h&limit=300`),
+      fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=300`),
+      fetchJSON(REST+`/fapi/v1/klines?symbol=${symbol}&interval=8h&limit=300`),
+    ]);
+    const entry={h1:conv(h1),h4:conv(h4),h8:conv(h8),fetchedAt:Date.now()};
+    cycleTfScanCache.set(symbol,entry);
+    return entry;
+  }catch(e){
+    const entry={h1:[],h4:[],h8:[],fetchedAt:Date.now()};
+    cycleTfScanCache.set(symbol,entry); // 失败也短暂缓存,避免失效symbol每轮重试拖慢整体扫描
+    return entry;
+  }
+}
 /* 用日线+周线K线算出三通所需的四个数字,单symbol深度视图(用已有的cycleAnchorCandles/
    weeklyAnchorCandles全局)与机会雷达批量扫描(用上面的独立缓存)最终都调这一个函数,
    两处口径完全一致,不会出现"详情页说超卖、雷达说没有"这种同一个symbol两套结论的情况。*/
@@ -2568,6 +2601,34 @@ async function scanOneOpportunity(symbol){
       if(sigW)opportunityResultsWeekly.set(symbol,{sig:sigW,ts:Date.now()});
     }
   }catch(e){ /* 1D/1W是4H主扫描的附加产出,出错不影响4H路径 */ }
+  /* 2026-09-22新增: 1H/4H/8H固定周期轨道的信号来源——各自用真实的1h/4h/8h K线单独算一遍
+     computeSignal(不是复用上面chartInterval可能是5m/15m/1d任意值的主扫描结果),higherTfCandles
+     按各自周期该看的上一级周期传入(1h→4h,4h→1d,8h→1d,见higherTfOf映射),santong/周期锚定
+     复用同一个symbol刚拉到的日线/周线数据(与主路径口径一致,不重复发请求)。三条轨道互相独立,
+     任一失败不影响其余轨道与4H/1D/1W主路径。 */
+  try{
+    const cyc=await fetchCycleTfCandlesForScan(symbol);
+    const santongData2=santongScanCache.get(symbol);
+    const santong2=(santongData2&&santongData2.dailyCandles&&santongData2.dailyCandles.length>=125)?computeSantong(santongData2.dailyCandles,santongData2.weeklyCandles):null;
+    const anchor2=(santongData2&&santongData2.dailyCandles&&santongData2.dailyCandles.length)?computeCycleAnchor(santongData2.dailyCandles):null;
+    const emptyCtx2=(hi,hl)=>({oiHist:[],cvdHist:[],lsRatio:null,topLsRatio:null,topLsTrendSrc:[],
+      takerRatio:null,fundingHist:[],higherTfCandles:hi||null,higherTfLabel:hl||null,santong:santong2,cycleAnchorScan:anchor2});
+    if(cyc.h1&&cyc.h1.length>=50){
+      const htf1=await fetchHigherTfForScan(symbol,"1h");
+      const sig1=computeSignal(cyc.h1,"1h",symbol,emptyCtx2(htf1.candles,htf1.label));
+      if(sig1)opportunityResults1h.set(symbol,{sig:sig1,ts:Date.now()});
+    }
+    if(cyc.h4&&cyc.h4.length>=50){
+      const htf4=await fetchHigherTfForScan(symbol,"4h");
+      const sig4=computeSignal(cyc.h4,"4h",symbol,emptyCtx2(htf4.candles,htf4.label));
+      if(sig4)opportunityResults4h.set(symbol,{sig:sig4,ts:Date.now()});
+    }
+    if(cyc.h8&&cyc.h8.length>=50){
+      const htf8=await fetchHigherTfForScan(symbol,"8h");
+      const sig8=computeSignal(cyc.h8,"8h",symbol,emptyCtx2(htf8.candles,htf8.label));
+      if(sig8)opportunityResults8h.set(symbol,{sig:sig8,ts:Date.now()});
+    }
+  }catch(e){ /* 1H/4H/8H固定周期轨道是附加产出,出错不影响4H/1D/1W主路径 */ }
 }
 
 async function runOpportunityScan(){
@@ -2908,7 +2969,7 @@ function priceLevelKind(sig,dir){
 }
 function computeFutureScanRows(symbol,sig){
   if(!sig||!sig.structure||!sig.atr||!sig.price)return[];
-  const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440,"1w":10080}[sig.intervalLabel]||5;
+  const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080}[sig.intervalLabel]||5;
   const barsIn24h=Math.max(1,Math.round(1440/intervalMinutes));
   const expectedMove=sig.atr*Math.sqrt(barsIn24h)*0.5;
   if(!expectedMove)return[];
@@ -3092,20 +3153,34 @@ function renderOpportunityRadar(){
    算出来的Top10和入场价都会高度一致(仍会有WS到达时间差导致的极小价格误差,但不再有"确认进度"
    这种纯会话状态造成的根本性分歧)。"复盘"区永远能看到上一期每一笔的入场价与结果。 */
 const CYCLE_TOP_N = 10;
-/* 三个并行的固定周期复盘轨道——4H用实盘同频的主扫描信号(opportunityResults),1D/1W复用
-   上面scanOneOpportunity里已经拉到的日线/周线K线各算一份独立信号,互不干扰、互不影响4H主路径。
-   三条轨道的止盈止损不再依赖任何按周期粗略换算的固定基准%——都统一走buildStructureTargets,
-   直接用各自周期(4H/1D/1W)K线算出来的结构位(斐波那契/趋势线/摆动点/VWAP)与ATR,天然随周期
-   变化而变化,不需要一个单独的sqrt(t)经验换算系数。 */
+/* 五个并行的固定周期复盘轨道(1H/4H/8H/1D/1W)——2026-09-22起全部各自独立取真实K线算信号
+   (见opportunityResults1h/4h/8h/Daily/Weekly与fetchCycleTfCandlesForScan/fetchSantongForScan),
+   互不干扰、互不影响彼此。此前版本里"4H"轨道曾直接借用主扫描面板当前选的chartInterval结果
+   (那个下拉框默认5m,用户还可能随时切到1m/15m/1d),导致"4H策略"名不副实地跑在任意周期上——
+   现在已改为5条轨道口径统一,标签是哪个周期,信号就来自哪个周期的真实K线。
+   五条轨道的止盈止损不再依赖任何按周期粗略换算的固定基准%——都统一走buildStructureTargets,
+   直接用各自周期(1H/4H/8H/1D/1W)K线算出来的结构位(斐波那契/趋势线/摆动点/VWAP)与ATR,天然
+   随周期变化而变化,不需要一个单独的sqrt(t)经验换算系数。 */
 const CYCLE_TF_CONFIG = {
+  "1h":{ms:1*3600*1000, label:"1小时", logKey:"orbit_cycle_current_1h_v1", histKey:"orbit_cycle_history_1h_v1", histMax:120},
   "4h":{ms:4*3600*1000, label:"4小时", logKey:"orbit_cycle_current_v1", histKey:"orbit_cycle_history_v1", histMax:60},
+  "8h":{ms:8*3600*1000, label:"8小时", logKey:"orbit_cycle_current_8h_v1", histKey:"orbit_cycle_history_8h_v1", histMax:90},
   "1d":{ms:24*3600*1000, label:"1天(日线)", logKey:"orbit_cycle_current_1d_v1", histKey:"orbit_cycle_history_1d_v1", histMax:60},
   "1w":{ms:7*24*3600*1000, label:"1周(周线)", logKey:"orbit_cycle_current_1w_v1", histKey:"orbit_cycle_history_1w_v1", histMax:52},
 };
-const CYCLE_TFS=["4h","1d","1w"];
+const CYCLE_TFS=["1h","4h","8h","1d","1w"];
 let activeCycleTf="4h"; // 面板tab状态,模块级变量、不写localStorage(与其它opp-collapse-*会话状态同一模式),刷新页面回到默认4H
 
-function cycleResultsMapFor(tf){return tf==="1d"?opportunityResultsDaily:tf==="1w"?opportunityResultsWeekly:opportunityResults;}
+// 2026-09-22: 1H/4H/8H三档都改为各自独立的真实K线信号源(opportunityResults1h/4h/8h),
+// 不再让"4H"轨道复用主扫描面板当前选的chartInterval结果——理由见上面三个Map声明处的注释。
+function cycleResultsMapFor(tf){
+  return tf==="1h"?opportunityResults1h
+    :tf==="4h"?opportunityResults4h
+    :tf==="8h"?opportunityResults8h
+    :tf==="1d"?opportunityResultsDaily
+    :tf==="1w"?opportunityResultsWeekly
+    :opportunityResults4h;
+}
 function cycleStartOf(t,tf){const ms=CYCLE_TF_CONFIG[tf].ms;return Math.floor(t/ms)*ms;}
 /* 兼容旧版本(固定%时代 / ATR波动率缩放时代)已经存在localStorage里的旧记录——那批数据
    没有当前这一版的字段,这里读出来时补算一遍,缺的字段一律标"–"如实说明"这笔是旧逻辑产生的",
@@ -3213,11 +3288,15 @@ const TF_TPSL_CONFIG={
   "15m":{slAtrMin:1.5, tp1AtrMin:2.5, slBufAtrMult:0.35, softMinPct:0.004,  softAtrMult:1.0},
   "1h": {slAtrMin:1.8, tp1AtrMin:3.0, slBufAtrMult:0.45, softMinPct:0.006,  softAtrMult:1.3},
   "4h": {slAtrMin:2.2, tp1AtrMin:3.5, tp2AtrMin:6.0, tp3AtrMin:10.0, slBufAtrMult:0.60, softMinPct:0.008, softAtrMult:1.5},
+  // 8h是4h与1d之间的插值档(2026-09-22新增,配合CYCLE_TFS新增的8H固定周期轨道):数值在
+  // 4h/1d两档之间单调放大,不是凭空取的——8h蜡烛的正常噪音幅度比4h大、比1d小,ATR倍数下限
+  // 与"值得等待"的最小目标%也应落在两者之间,避免4h→1d之间出现不连续的跳变。
+  "8h": {slAtrMin:2.35, tp1AtrMin:3.9, tp2AtrMin:6.8, tp3AtrMin:11.2, slBufAtrMult:0.65, softMinPct:0.014, softAtrMult:1.7},
   "1d": {slAtrMin:2.5, tp1AtrMin:4.5, slBufAtrMult:0.70, softMinPct:0.025, softAtrMult:2.0},
   "1w": {slAtrMin:3.0, tp1AtrMin:6.0, slBufAtrMult:0.85, softMinPct:0.06,  softAtrMult:3.0},
 };
 function tfTpslConfig(intervalMinutes){
-  const table=[[1,"1m"],[5,"5m"],[15,"15m"],[60,"1h"],[240,"4h"],[1440,"1d"],[10080,"1w"]];
+  const table=[[1,"1m"],[5,"5m"],[15,"15m"],[60,"1h"],[240,"4h"],[480,"8h"],[1440,"1d"],[10080,"1w"]];
   let best=table[0];
   for(const row of table)if(Math.abs(row[0]-intervalMinutes)<Math.abs(best[0]-intervalMinutes))best=row;
   return TF_TPSL_CONFIG[best[1]];
@@ -3363,7 +3442,7 @@ function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMin
   return{sl:slPrice,slSources,slBasis,tp,tpSources,cappedByLevel,levelSkippedTooClose,rr,raceWinProb,regimeSlMult,regimeTpMult,
     ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,noSetup,noSetupReason};
 }
-const CYCLE_TF_MINUTES={"4h":240,"1d":1440,"1w":10080};
+const CYCLE_TF_MINUTES={"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080};
 function buildCyclePositions(tf,topN){
   const intervalMinutes=CYCLE_TF_MINUTES[tf]||240;
   // 2026-09-18: buildStructureTargets现在可能因为"目标距离低于该周期最小有效目标%"(需求四)或
@@ -3632,7 +3711,7 @@ function computeCycleEquityCurve(hist){
 function renderCycleReview(tf){
   const cfg=CYCLE_TF_CONFIG[tf];
   const hist=loadCycleHistory(tf);
-  if(!hist.length)return`<div class="trk-empty">还没有已结算的${cfg.label}周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。${tf!=="4h"?`${cfg.label}周期较长,积累样本会比4H慢很多,请耐心等待。`:""}</div>`;
+  if(!hist.length)return`<div class="trk-empty">还没有已结算的${cfg.label}周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。${CYCLE_TF_CONFIG[tf].ms>CYCLE_TF_CONFIG["4h"].ms?`${cfg.label}周期较长,积累样本会比1H/4H慢很多,请耐心等待。`:""}</div>`;
   const last=hist[hist.length-1];
   const rows=last.positions.map(p=>{
     const pnl=cyclePnlPct(p);
@@ -4224,6 +4303,10 @@ function renderTrackPanel(){
   const tf=activeCycleTf;
   const cfg=CYCLE_TF_CONFIG[tf];
   const cur=ensureCycle(tf);
+  // 每次面板刷新(20秒一次,或被逐tick判定命中后立即触发)都重新收集一遍"当前真的挂着仓位/
+  // 追踪记录的symbol集合",让新开的仓位/新记录的推荐尽快被逐tick判定覆盖到(见上方
+  // openPositionSymbols/refreshOpenPositionSymbols说明),同时把已经平仓/结算的symbol移出去。
+  refreshOpenPositionSymbols();
   const statusEl=document.getElementById("trkStatus");
   if(statusEl)statusEl.textContent=cur?`本期${cur.positions.length}笔 · ${cycleCountdownText(cur)} · 每20秒刷新止盈止损判定`:"等待首轮扫描…";
   el.innerHTML=`
@@ -4240,6 +4323,100 @@ function renderTrackPanel(){
       <br><b>其它</b>: 4H/1D/1W三条时间维度各自独立开仓、独立记录,互不影响,只是共用同一套引擎按各自的K线重新计算;数据存在本机浏览器里,不跨设备同步,换设备/清缓存会看到各自独立算出的结果,理应接近但不保证逐笔一致。
     </div>`;
   drawCycleTrendCharts(tf);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 2026-09-22 根因修复: 止盈止损判定从"轮询快照"改成"逐tick实时判定" ──
+   用户实测复现: ONDO按本工具的挂单开仓,行情插针精准打到SL价位0.444189后又迅速反弹,
+   但面板刷新时看到的还是"持仓中"——不是显示延迟,是判定逻辑本身的漏洞:
+   evaluateOpenPositions(固定周期持仓)和settleTrackLog(推荐追踪)过去都只在各自的
+   定时器触发那一刻(每20秒/每5分钟)读一次market.get(symbol).price,拿这一个瞬时快照去比
+   TP/SL。如果插针触发止损后,在下一次定时器触发前就已经反弹回去,那一次触碰会被完整地
+   跳过——不是"看漏了",是这套判定方式在数学上就是必然会漏掉发生在两次轮询之间的任何触碰,
+   插针行情下这种情况非常常见,不是小概率bug。
+   修复方式: 不再只依赖20秒/5分钟的定时器,而是在价格数据源本身(WS !ticker@arr,约1秒/次,
+   全市场统一节奏;WS不可用时的REST轮询兜底,约5秒/次)每次收到新价格时,立即对"当前持有
+   未平仓仓位的那些币种"做一次TP/SL判定——检测粒度从"最长20秒-5分钟才可能命中"收紧到
+   "约1秒内必定命中"(WS存活时),不再有"insidethegap"的时间窗口可以让插针溜走。
+   诚实边界: 这仍然是"页面收到的价格流"驱动的判定,不是交易所订单簿的逐笔成交——如果
+   浏览器标签页被切到后台太久导致定时器被系统限流、或WS/REST都断线超过十几秒,极端插针
+   仍有极小概率被跳过,但已经从"结构性必然漏掉"降到"只在网络/标签页异常时才可能漏掉"。
+   openPositionSymbols: 只对"当前真的有仓位挂着"的币种做逐tick判定,而不是每次价格更新
+   都遍历全部固定周期仓位+推荐追踪日志(那样在几十个symbol每秒都跳价的情况下会白白浪费大量
+   计算),用一个显式维护的symbol集合把逐tick检查限制在真正需要检查的范围内。 */
+const openPositionSymbols=new Set();
+function refreshOpenPositionSymbols(){
+  openPositionSymbols.clear();
+  CYCLE_TFS.forEach(tf=>{
+    const cur=loadCycleCurrent(tf);
+    if(cur)cur.positions.forEach(p=>{if(p.status==="OPEN")openPositionSymbols.add(p.symbol);});
+  });
+  getTrackLog().forEach(r=>{if(r.status==="awaiting"||r.status==="filled")openPositionSymbols.add(r.symbol);});
+}
+/* 对单个symbol做一次即时TP/SL/失效价判定——判定条件与evaluateOpenPositions/settleTrackLog
+   完全同源(同一套>=/<=比较,同一套字段),只是触发时机从"定时器到点"改成"这个symbol的价格
+   一有更新就立刻查"。返回是否有任何记录发生了状态变化,调用方据此决定要不要重绘面板。*/
+function checkImmediateHitsForSymbol(symbol){
+  if(!openPositionSymbols.has(symbol))return false; // 没有挂着的仓位/追踪记录,不做任何工作
+  const m=market.get(symbol);
+  if(!m||m.price==null)return false;
+  const px=m.price;
+  const now=Date.now();
+  let anyChange=false;
+
+  // ① 固定周期持仓(4H/1D/1W) — 与 evaluateOpenPositions 同一套判定条件
+  CYCLE_TFS.forEach(tf=>{
+    const cur=loadCycleCurrent(tf);
+    if(!cur)return;
+    let changed=false;
+    cur.positions.forEach(p=>{
+      if(p.status!=="OPEN"||p.symbol!==symbol)return;
+      if(p.dir>0){
+        if(px>=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";changed=true;}
+        else if(px<=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";changed=true;}
+      }else{
+        if(px<=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";changed=true;}
+        else if(px>=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";changed=true;}
+      }
+    });
+    if(changed){saveCycleCurrent(tf,cur);anyChange=true;}
+  });
+
+  // ② 推荐追踪日志(awaiting/filled) — 与 settleTrackLog 同一套判定条件
+  const log=getTrackLog();
+  let logChanged=false;
+  log.forEach(r=>{
+    if(r.symbol!==symbol)return;
+    if(r.status!=="awaiting"&&r.status!=="filled")return;
+    if(r.status==="awaiting"){
+      const invalidated=r.dir>0?px<=r.invalidatePrice:px>=r.invalidatePrice;
+      if(invalidated){r.status="invalidated";r.resolvedAt=now;r.resolvedPrice=px;logChanged=true;return;}
+      const filled=r.dir>0?px<=r.entry:px>=r.entry;
+      if(filled){r.status="filled";r.filledAt=now;r.filledPrice=px;r.mfe=px;logChanged=true;}
+      return;
+    }
+    if(r.mfe==null)r.mfe=r.filledPrice;
+    r.mfe=r.dir>0?Math.max(r.mfe,px):Math.min(r.mfe,px);
+    const hitSL=r.dir>0?px<=r.sl:px>=r.sl;
+    if(hitSL){r.status="loss";r.resolvedAt=now;r.resolvedPrice=px;logChanged=true;return;}
+    const tpsHitDesc=r.tps.filter(t=>r.dir>0?px>=t.price:px<=t.price).sort((a,b)=>Math.abs(b.price-r.entry)-Math.abs(a.price-r.entry));
+    if(tpsHitDesc.length){r.status="win";r.resolvedAt=now;r.resolvedPrice=px;r.resolvedLabel=tpsHitDesc[0].label;logChanged=true;}
+  });
+  if(logChanged){saveTrackLog(log);anyChange=true;}
+
+  return anyChange;
+}
+// 一批价格更新(一次!ticker@arr推送/一次REST轮询)里,可能同时有好几个持仓中的symbol都更新了价格——
+// 逐个调用checkImmediateHitsForSymbol后,只要有任意一个真的发生状态变化,统一重绘一次面板,
+// 不在checkImmediateHitsForSymbol内部各自重绘,避免同一批tick里被平仓的多个symbol触发多次重复渲染。
+let immediateHitRenderScheduled=false;
+function scheduleImmediateHitRender(){
+  if(immediateHitRenderScheduled)return;
+  immediateHitRenderScheduled=true;
+  // 用一个0ms的setTimeout而不是直接同步renderTrackPanel(),让同一批价格更新里剩余的
+  // forEach循环先跑完(避免在遍历中途插入一次可能较重的DOM重绘),但仍在这一轮事件循环
+  // 结束前(下一次浏览器绘制前)就完成,用户感知不到延迟。
+  setTimeout(()=>{immediateHitRenderScheduled=false;try{renderTrackPanel();}catch(e){}},0);
 }
 
 /* ── WEBSOCKET ── */
@@ -4268,7 +4445,20 @@ function connectWS(){
 function scheduleReconnect(){wsReconnectAttempt++;const delay=Math.min(RECONNECT_BASE_MS*wsReconnectAttempt,15000);setTimeout(connectWS,delay);}
 function subscribeAggTrade(symbol){const stream=symbol.toLowerCase()+"@aggTrade";if(subscribedStreams.has(stream))return;subscribedStreams.add(stream);if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({method:"SUBSCRIBE",params:[stream],id:Date.now()}));}
 function unsubscribeAggTrade(symbol){const stream=symbol.toLowerCase()+"@aggTrade";if(!subscribedStreams.has(stream))return;subscribedStreams.delete(stream);if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({method:"UNSUBSCRIBE",params:[stream],id:Date.now()}));}
-function handleTickerArr(arr){lastWsTickAt=Date.now();arr.forEach(t=>{const m=market.get(t.s);if(!m)return;const prev=m.price;m.price=+t.c;m.pct=+t.P;m.quoteVolume=+t.q;if(prev!=null&&m.price!==prev)flashQueue.set(t.s,m.price>prev?"up":"down");});patchCryptoRows();}
+function handleTickerArr(arr){
+  lastWsTickAt=Date.now();
+  let anyHit=false;
+  arr.forEach(t=>{
+    const m=market.get(t.s);if(!m)return;
+    const prev=m.price;m.price=+t.c;m.pct=+t.P;m.quoteVolume=+t.q;
+    if(prev!=null&&m.price!==prev)flashQueue.set(t.s,m.price>prev?"up":"down");
+    // 2026-09-22: 价格一到就立刻查一次这个symbol的TP/SL/失效价,不用等20秒定时器
+    // (见上方 checkImmediateHitsForSymbol 顶部的完整说明)。
+    if(checkImmediateHitsForSymbol(t.s))anyHit=true;
+  });
+  if(anyHit)scheduleImmediateHitRender();
+  patchCryptoRows();
+}
 function handleMarkPriceArr(arr){arr.forEach(t=>{const m=market.get(t.s);if(m)m.funding=+t.r*100;});}
 /* REST fallback poller — Binance WS market streams can be geo-restricted (e.g. from SG),
    so this keeps price/24h%/vol/funding fresh via REST even if the WS never delivers a tick. */
@@ -4277,7 +4467,15 @@ function startRestFallbackPoller(){
   const poll=async()=>{
     try{
       const tick24=await fetchJSON(REST+"/fapi/v1/ticker/24hr");
-      tick24.forEach(t=>{const m=market.get(t.symbol);if(m){m.price=+t.lastPrice;m.pct=+t.priceChangePercent;m.quoteVolume=+t.quoteVolume;}});
+      let anyHit=false;
+      tick24.forEach(t=>{
+        const m=market.get(t.symbol);
+        if(m){m.price=+t.lastPrice;m.pct=+t.priceChangePercent;m.quoteVolume=+t.quoteVolume;}
+        // 2026-09-22: WS不可用退回REST轮询时,同样每次价格更新立刻查一次TP/SL,而不是
+        // 只靠20秒定时器(见 checkImmediateHitsForSymbol 顶部说明)。
+        if(checkImmediateHitsForSymbol(t.symbol))anyHit=true;
+      });
+      if(anyHit)scheduleImmediateHitRender();
       clearError("crypto_rest");
     }catch(e){showError("crypto_rest","REST 行情轮询失败: "+e.message);}
     try{
@@ -6803,7 +7001,7 @@ votes.push(macroDominanceVote(symbol));
 
   // 之前这张表漏了 "1d"(以及现在新增的 "1w"),选中日线/周线时会静默 fallback 到 ||5,
   // 也就是拿"5分钟"去算ETA/ATR时间窗——这是一个真实存在的既有bug,不是本次新增周期才引入的。
-  const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440,"1w":10080}[intervalLabel]||5;
+  const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080}[intervalLabel]||5;
   // dirSign===0 → 未形成方向共识,不构建挂在"某一侧结构位"上的限价单/TP/SL(那样做等于替一个
   // 没有方向依据的判断硬点一个假装有依据的价位)。改为返回 noSetup 占位对象,渲染层据此
   // 显示"无方向·不构成交易机会"而不是一整套看似煞有介事的交易计划。
@@ -6886,7 +7084,7 @@ votes.push(macroDominanceVote(symbol));
    最直接的方式:不是嘴上说"是",而是回测和实盘物理上调用的是同一个函数。
    ══════════════════════════════════════════════════════════════════════════════ */
 
-const BT_INTERVAL_MINUTES={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440,"1w":10080};
+const BT_INTERVAL_MINUTES={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080};
 
 function backtestWeightFor(regime,cat){
   if(regime==="trend")return cat==="trend"?1.4:cat==="meanrev"?0.6:1.0;
