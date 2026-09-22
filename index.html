@@ -3332,7 +3332,40 @@ function findConfirmedSwing(dirSign,entry,atrVal,highs,lows){
   candidates.sort((a,b)=>a.distAtr-b.distAtr);
   return candidates[0];
 }
-/* 止损构建(三级退化,需求六): ①被确认过的摆动点(最优,buffer按周期缩放) → ②聚类结构位里
+/* 2026-09-22追加(用户实盘反馈: 按结构位挂的SL被精准插针扫到后行情立即反向,"像被狙击一样"):
+   根因不是止损位算错了,是止损缓冲对"这个位置有多少人在看"完全不敏感——一个被摆动点验证过的
+   位置,如果恰好又是斐波那契回撤/趋势线/POC/VWAP等其它方法共振到的同一档价位,那它就不只是
+   "一个摆动点",而是全市场技术派交易者会一起看到、一起把止损堆在附近的地方。止损扎堆的地方,
+   插针深度在统计上天然比孤立位置更大——这不是阴谋论式的"庄家针对你",是"止损单本身构成了
+   一层可被清扫的流动性,价格有统计倾向去够到它再反转"这个市场结构事实。之前的buf只按周期
+   (tfCfg.slBufAtrMult)和市场状态(regimeSlMult)缩放,同一周期下"孤立摆动点"和"四种方法在
+   同一档共振"套用完全一样的缓冲比例,后者被扫穿的概率明显更高,却没有被多留出安全边际。
+   修复: 用confluenceWeightNear把"确认过的摆动点"和已经聚类好的结构位(structure.supports/
+   resistances,权重来自多少种方法共振于此)做价位比对,共振越强,缓冲按confluenceBufMult
+   分段加宽(孤立位不变,避免无谓牺牲R:R;强共振位最多放宽到1.7倍)。structure-cluster这一档
+   本身就是聚类结果,直接读weight即可,不需要再比对一次。ATR兜底档没有结构信息可比对,维持
+   原样——这一档本来就是"附近无有效区结构确认位"时的保守退化,不存在"共振位"的问题。
+   诚实边界: 这降低的是"被扫止损后价格立刻反向,而这一冲本可避免"的概率,不是把止损变得
+   "不会被碰到"——降低胜率意义上的"必然确定"在物理上不存在(与斐波那契/江恩等位置本身的
+   精确计算是两回事,见上方止损构建说明),缓冲扩大只是把止损放到统计上更不容易恰好卡在
+   扎堆流动性正中间的位置,不是消灭止损的可能性。 */
+function confluenceWeightNear(refPrice,structure,atrVal){
+  if(!structure||!refPrice||!atrVal)return 0;
+  const tol=Math.max(refPrice*0.004,atrVal*0.15);
+  const pool=[...(structure.supports||[]),...(structure.resistances||[])];
+  let best=0;
+  pool.forEach(c=>{if(Math.abs(c.price-refPrice)<=tol)best=Math.max(best,c.weight||0);});
+  return best;
+}
+function confluenceBufMult(weight){
+  // weight量级参考(见buildStructureLevels): 单一摆动点/单一Fib档≈0.5~1; POC/VWAP主线≈1.3~1.6;
+  // 三四种方法叠加到同一档时weight可到3起。分段线性映射,1.2以下视为"孤立位"不加宽,4.0封顶
+  // 到1.7倍,避免极端共振位把缓冲拉到不合理的量级、反过来侵蚀R:R。
+  if(!weight||weight<=1.2)return 1.0;
+  if(weight>=4.0)return 1.7;
+  return 1.0+(weight-1.2)*(0.7/2.8);
+}
+/* 止损构建(三级退化,需求六): ①被确认过的摆动点(最优,buffer按周期缩放+共振缩放) → ②聚类结构位里
    "有效区"内离入场最近的一档(共振聚类本身已是多重技术位叠加,只是没有走过后续验证这一步,
    如实标注) → ③纯ATR倍数兜底(仍按周期缩放,标注"无结构确认位")。任何情况下最终止损距离
    都不会小于 tfCfg.slAtrMin×ATR×regimeSlMult(需求二的周期化硬下限)。*/
@@ -3340,9 +3373,12 @@ function buildStructuralSL(dirSign,entry,atrVal,structure,tfCfg,regimeSlMult,hig
   const confirmed=findConfirmedSwing(dirSign,entry,atrVal,highs,lows);
   let slPrice,slSources,slBasis;
   if(confirmed){
-    const buf=atrVal*tfCfg.slBufAtrMult*regimeSlMult;
+    const cw=confluenceWeightNear(confirmed.price,structure,atrVal);
+    const cMult=confluenceBufMult(cw);
+    const buf=atrVal*tfCfg.slBufAtrMult*regimeSlMult*cMult;
     slPrice=dirSign>0?confirmed.price-buf:confirmed.price+buf;
-    slSources=[`已确认摆动${dirSign>0?"低点":"高点"}(该点之后价格已创出反向新${dirSign>0?"高":"低"},证明当时方向判断为真,而非任意噪音pivot)`];
+    slSources=[`已确认摆动${dirSign>0?"低点":"高点"}(该点之后价格已创出反向新${dirSign>0?"高":"低"},证明当时方向判断为真,而非任意噪音pivot)`
+      +(cMult>1.05?` · 该位置同时与其它结构位共振(权重${cw.toFixed(1)}),止损扎堆概率更高,缓冲已加宽${((cMult-1)*100).toFixed(0)}%`:"")];
     slBasis="confirmed-swing";
   }else{
     const pool=(dirSign>0?structure.supports:structure.resistances)||[];
@@ -3350,9 +3386,10 @@ function buildStructuralSL(dirSign,entry,atrVal,structure,tfCfg,regimeSlMult,hig
       .filter(l=>{const distAtr=Math.abs(entry-l.price)/atrVal,favorable=dirSign>0?l.price<entry:l.price>entry;return favorable&&classifyZone(distAtr)==="effective";})
       .sort((a,b)=>Math.abs(a.price-entry)-Math.abs(b.price-entry));
     if(effective[0]){
-      const buf=atrVal*tfCfg.slBufAtrMult*regimeSlMult;
+      const cMult=confluenceBufMult(effective[0].weight);
+      const buf=atrVal*tfCfg.slBufAtrMult*regimeSlMult*cMult;
       slPrice=dirSign>0?effective[0].price-buf:effective[0].price+buf;
-      slSources=effective[0].sources;
+      slSources=cMult>1.05?[...effective[0].sources,`共振权重${(effective[0].weight||0).toFixed(1)},缓冲已加宽${((cMult-1)*100).toFixed(0)}%`]:effective[0].sources;
       slBasis="structure-cluster";
     }else{
       const atrSlDefMult=Math.max(P('atrSlDefaultMult'),tfCfg.slAtrMin);
@@ -4319,6 +4356,7 @@ function renderTrackPanel(){
     <div class="sig-note" style="margin-top:10px;line-height:1.7;">
       <b>固定周期策略(${cfg.label})是什么</b>: 每期开始时,按当时的信号强度自动选出Top${CYCLE_TOP_N},按当时的实时价开仓——这是一份自动记录的观察日志,不是帮你下单,只用来验证"这套方法到底准不准"。
       <br><b>止盈止损怎么算的</b>: 不是所有币种套同一个百分比。每个币种的止损放在它自己当下最近的支撑/压力位外侧(来自斐波那契回撤/扩展、回归拟合趋势线、K线摆动高低点、成交量密集区、VWAP这几类结构共振出来的价位),加一点ATR缓冲防止被插针扫到;止盈同理,优先找同一套结构里最近的目标位,只有附近没有合格的结构位时才退回按ATR波动率估算。方向本身(做多/做空)和当前是趋势市还是震荡市,则由MACD、RSI、EMA等一整套指标动态投票决定——震荡市止损收紧、止盈更保守,趋势市反之。点开任意一笔卡片,"止盈依据""止损依据"两行会写清楚这一笔具体用的是哪个价位、为什么。
+      <br><b>止损缓冲不是固定比例</b>: 如果这个止损位恰好和斐波那契/趋势线/成交密集区/VWAP等其它方法算出的位置重叠(说明很多人可能都在这附近挂止损),缓冲会按重叠程度自动加宽(最多放宽到1.7倍),而不是所有止损位不分孤立/拥挤一律套用同一个缓冲比例——"止损依据"里会标注"缓冲已加宽XX%"。这降低的是止损恰好卡在扎堆止损单正中间、被插针精准扫到后立刻反向的概率,不是让止损变得不会被碰到——没有任何方法能做到后者,声称能做到的都不可信。
       <br><b>怎么判断该不该信</b>: 别只看单笔的"模型自评把握度"。每笔卡片上的EV,是用"这个把握度档过去历史上的真实胜率"反推出来的预期值(样本不够会如实标"样本不足",不硬凑数字);面板顶部的整体胜率(带95%置信区间)是判断"这套方法现在整体灵不灵"最该看的数字。开仓后到结算前中途不会改判、不会挪价,到期不论有没有摸到止盈止损一律强制平仓入账。
       <br><b>其它</b>: 4H/1D/1W三条时间维度各自独立开仓、独立记录,互不影响,只是共用同一套引擎按各自的K线重新计算;数据存在本机浏览器里,不跨设备同步,换设备/清缓存会看到各自独立算出的结果,理应接近但不保证逐笔一致。
     </div>`;
