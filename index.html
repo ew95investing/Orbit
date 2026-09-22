@@ -1168,6 +1168,12 @@
   .lp-grid span:nth-child(even){text-align:right;color:var(--text);font-variant-numeric:tabular-nums;}
   .lp-state{margin-top:7px;font-size:11px;line-height:1.5;padding:3px 6px;border-radius:3px;}
   .lp-state.ok{color:var(--up);background:var(--up-bg);} .lp-state.warn{color:var(--down);background:var(--down-bg);} .lp-state.neutral{color:var(--dim2);background:#171d29;}
+  /* 此刻(而非信号发出时)是否仍建议入场——单独一行,比lp-state更醒目(带左边框),因为这是用户
+     真正要看的"现在能不能动手"结论,不该被埋进一堆明细数字里。 */
+  .lp-verdict{margin-top:5px;font-size:11.5px;font-weight:600;line-height:1.5;padding:4px 7px;border-radius:3px;border-left:3px solid transparent;}
+  .lp-verdict.ok{color:var(--up);background:var(--up-bg);border-left-color:var(--up);}
+  .lp-verdict.warn{color:var(--down);background:var(--down-bg);border-left-color:var(--down);}
+  .lp-verdict.neutral{color:var(--amber);background:var(--amber-bg);border-left-color:var(--amber);}
   .lp-fresh{margin-top:4px;font-size:10px;color:var(--dim2);text-align:right;}
 </style>
 </head>
@@ -3245,7 +3251,7 @@ function pickCycleTopN(tf){
     .map(([symbol,r])=>({symbol,dir:r.sig.dirSign,strength:Math.abs(r.sig.score)/(r.sig.maxScore||1),
       conviction:r.sig.outlook?r.sig.outlook.conviction:null,techNote:cycleTechNote(r.sig),
       atr:r.sig.atr,structure:r.sig.structure,regime:r.sig.regime,regimeLabel:r.sig.regimeLabel,
-      highs:r.sig.highs,lows:r.sig.lows}));
+      highs:r.sig.highs,lows:r.sig.lows,sigma:r.sig.sigma,drift:r.sig.drift}));
   items.sort((a,b)=>b.strength-a.strength);
   // 2026-09-18: buildCyclePositions现在会把"目标距离低于该周期最小有效目标%"或"EV<0"的候选
   // 过滤掉(见buildStructureTargets的noSetup),取比CYCLE_TOP_N更大的候选池(3倍余量)送过去,
@@ -3453,7 +3459,8 @@ function evaluateEdge(raceWinProbPct,rr){
   if(ev<0.15)return{ev,evTier:"marginal",evNote:`预期值 EV=${ev.toFixed(2)}R,低于0.15R的边际门槛(先达胜率${raceWinProbPct}%×RR${rrNum.toFixed(2)}),扣除双边手续费+滑点后接近盈亏平衡,已标记为边际机会,建议降低仓位`};
   return{ev,evTier:"ok",evNote:`预期值 EV=${ev.toFixed(2)}R(先达胜率${raceWinProbPct}%×RR${rrNum.toFixed(2)})`};
 }
-function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMinutes,highs,lows){
+function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMinutes,highs,lows,sigmaVal,driftPerBarRaw){
+  const driftFav=(driftPerBarRaw||0)*dirSign;
   const regimeSlMult=regime==="trend"?1.25:regime==="range"?1.05:1.0;
   const regimeTpMult=regime==="trend"?1.15:regime==="range"?0.8:1.0;
   const tfCfg=tfTpslConfig(intervalMinutes||240);
@@ -3465,7 +3472,7 @@ function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMin
   const reward=Math.abs(tp-entry);
   const rr=riskDist>0?reward/riskDist:null;
   const logSl=Math.abs(Math.log(slPrice/entry)),logTp=Math.abs(Math.log(tp/entry));
-  const raceWinProb=Math.round(raceProbability(logTp,logSl)*100);
+  const raceWinProb=Math.round(raceProbability(logTp,logSl,driftFav,sigmaVal)*100);
   // 需求四: 该周期下这个目标%够不够"值得等" — 低于门槛不强行凑计划,交给上层判定为noSetup。
   const atrPct=entry>0?atrVal/entry:0;
   const minMeaningfulPct=Math.max(tfCfg.softMinPct,tfCfg.softAtrMult*atrPct);
@@ -3477,7 +3484,7 @@ function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMin
     ?`目标距离仅${(tp1DistPct*100).toFixed(2)}%,低于该周期"值得等待"的最小目标${(minMeaningfulPct*100).toFixed(2)}%,判定为无有效交易机会`
     :(edge.evTier==="reject"?edge.evNote:null);
   return{sl:slPrice,slSources,slBasis,tp,tpSources,cappedByLevel,levelSkippedTooClose,rr,raceWinProb,regimeSlMult,regimeTpMult,
-    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,noSetup,noSetupReason};
+    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,noSetup,noSetupReason,sigma:sigmaVal,driftPerBar:driftFav};
 }
 const CYCLE_TF_MINUTES={"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080};
 function buildCyclePositions(tf,topN){
@@ -3486,10 +3493,14 @@ function buildCyclePositions(tf,topN){
   // "期望值EV<0"(需求五)而返回noSetup——这类币种不该被硬塞进本期持仓列表凑数,直接过滤掉
   // (而不是像单symbol深度视图那样渲染一张"无方向"卡片,固定周期复盘列表本身就是"选出来的Top N",
   // 过滤掉不合格的候选是这个列表天然该做的事)。
+  // 2026-09-23: 同样在这里补上信号冷却门槛——固定周期复盘之前没有这道闸,同一symbol+方向
+  // 刚被上一期结算证伪成SL,下一期选股仍可能因为强度分高而再次入选,和单symbol深度视图那边
+  // 已经堵上的漏洞是同一个问题,这里一并堵上。
   return topN.map(x=>{
     const m=market.get(x.symbol);
     const entry=m.price;
-    const t=buildStructureTargets(x.dir,entry,x.atr,x.structure,x.regime,intervalMinutes,x.highs,x.lows);
+    if(cooldownRemainingMs(x.symbol,x.dir,intervalMinutes)>0)return null;
+    const t=buildStructureTargets(x.dir,entry,x.atr,x.structure,x.regime,intervalMinutes,x.highs,x.lows,x.sigma,x.drift);
     if(t.noSetup)return null;
     return{symbol:x.symbol,dir:x.dir,entry,tp:t.tp,sl:t.sl,
       tpPct:Math.abs((t.tp-entry)/entry*100),slPct:Math.abs((t.sl-entry)/entry*100),
@@ -3498,7 +3509,7 @@ function buildCyclePositions(tf,topN){
       cappedByLevel:t.cappedByLevel,levelSkippedTooClose:t.levelSkippedTooClose,
       raceWinProb:t.raceWinProb,regime:x.regime,regimeLabel:x.regimeLabel,
       strength:x.strength,conviction:x.conviction,techNote:x.techNote,
-      ev:t.ev,evTier:t.evTier,evNote:t.evNote,
+      ev:t.ev,evTier:t.evTier,evNote:t.evNote,sigma:t.sigma,driftPerBar:t.driftPerBar,
       status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
   }).filter(Boolean).slice(0,CYCLE_TOP_N);
 }
@@ -3532,10 +3543,10 @@ function evaluateOpenPositions(cur){
     const px=m.price;
     if(p.dir>0){
       if(px>=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";}
-      else if(px<=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";}
+      else if(px<=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";recordCooldownLoss(p.symbol,p.dir);}
     }else{
       if(px<=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";}
-      else if(px>=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";}
+      else if(px>=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";recordCooldownLoss(p.symbol,p.dir);}
     }
   });
 }
@@ -3955,7 +3966,7 @@ function settleTrackLog(){
     if(r.mfe==null)r.mfe=r.filledPrice;
     r.mfe=r.dir>0?Math.max(r.mfe,price):Math.min(r.mfe,price);
     const hitSL=r.dir>0?price<=r.sl:price>=r.sl;
-    if(hitSL){r.status="loss";r.resolvedAt=now;r.resolvedPrice=price;changed=true;return;}
+    if(hitSL){r.status="loss";r.resolvedAt=now;r.resolvedPrice=price;changed=true;recordCooldownLoss(r.symbol,r.dir);return;}
     const tpsHitDesc=r.tps.filter(t=>r.dir>0?price>=t.price:price<=t.price).sort((a,b)=>Math.abs(b.price-r.entry)-Math.abs(a.price-r.entry));
     if(tpsHitDesc.length){r.status="win";r.resolvedAt=now;r.resolvedPrice=price;r.resolvedLabel=tpsHitDesc[0].label;changed=true;return;}
     if(now-r.filledAt>TRACK_MAX_HOLD_MS){r.status="timeout";r.resolvedAt=now;r.resolvedPrice=price;changed=true;}
@@ -4411,10 +4422,10 @@ function checkImmediateHitsForSymbol(symbol){
       if(p.status!=="OPEN"||p.symbol!==symbol)return;
       if(p.dir>0){
         if(px>=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";changed=true;}
-        else if(px<=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";changed=true;}
+        else if(px<=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";changed=true;recordCooldownLoss(p.symbol,p.dir);}
       }else{
         if(px<=p.tp){p.status="TP";p.exitPrice=p.tp;p.exitAt=now;p.outcome="win";changed=true;}
-        else if(px>=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";changed=true;}
+        else if(px>=p.sl){p.status="SL";p.exitPrice=p.sl;p.exitAt=now;p.outcome="loss";changed=true;recordCooldownLoss(p.symbol,p.dir);}
       }
     });
     if(changed){saveCycleCurrent(tf,cur);anyChange=true;}
@@ -4436,7 +4447,7 @@ function checkImmediateHitsForSymbol(symbol){
     if(r.mfe==null)r.mfe=r.filledPrice;
     r.mfe=r.dir>0?Math.max(r.mfe,px):Math.min(r.mfe,px);
     const hitSL=r.dir>0?px<=r.sl:px>=r.sl;
-    if(hitSL){r.status="loss";r.resolvedAt=now;r.resolvedPrice=px;logChanged=true;return;}
+    if(hitSL){r.status="loss";r.resolvedAt=now;r.resolvedPrice=px;logChanged=true;recordCooldownLoss(r.symbol,r.dir);return;}
     const tpsHitDesc=r.tps.filter(t=>r.dir>0?px>=t.price:px<=t.price).sort((a,b)=>Math.abs(b.price-r.entry)-Math.abs(a.price-r.entry));
     if(tpsHitDesc.length){r.status="win";r.resolvedAt=now;r.resolvedPrice=px;r.resolvedLabel=tpsHitDesc[0].label;logChanged=true;}
   });
@@ -5034,6 +5045,34 @@ function barLogReturnSigma(closes){
   const varc=w.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(w.length-1);
   return Math.sqrt(varc)||null;
 }
+/* 2026-09-23 新增: 同一窗口(近100根)算出的"已实现对数收益均值",即raceProbability此前完全
+   忽略的趋势漂移项。这条均值本身噪音极大(短窗口均值的标准误通常和均值本身同量级),直接拿来用
+   比不用还危险,所以做强收缩(shrinkage×0.35)——只当一个温和的方向性修正,不当成精确估计。 */
+function barLogReturnDrift(closes){
+  const rets=[];
+  for(let i=1;i<closes.length;i++){if(closes[i-1]>0&&closes[i]>0)rets.push(Math.log(closes[i]/closes[i-1]));}
+  const w=rets.slice(-100);
+  if(w.length<12)return 0;
+  const mean=w.reduce((a,b)=>a+b,0)/w.length;
+  return mean*0.35;
+}
+/* 2026-09-23 新增: 信号冷却记录。symbol+方向 → 最近一次被track记录证实止损的时间戳。
+   只影响"是否重新推荐同一方向",不影响已经在追踪中的持仓判定(那部分逻辑不变)。 */
+const SIGNAL_COOLDOWN_KEY="orbit_signal_cooldown_v1";
+function loadCooldownMap(){try{const o=JSON.parse(localStorage.getItem(SIGNAL_COOLDOWN_KEY)||"{}");return(o&&typeof o==="object")?o:{};}catch(e){return{};}}
+function saveCooldownMap(m){try{localStorage.setItem(SIGNAL_COOLDOWN_KEY,JSON.stringify(m));}catch(e){}}
+function recordCooldownLoss(symbol,dir){
+  const m=loadCooldownMap();
+  m[symbol+"|"+dir]=Date.now();
+  saveCooldownMap(m);
+}
+const SIGNAL_COOLDOWN_BARS_MULT=3; // 冷却时长≈该周期K线×3根
+function cooldownRemainingMs(symbol,dir,intervalMinutes){
+  const m=loadCooldownMap();const t=m[symbol+"|"+dir];if(!t)return 0;
+  const windowMs=(intervalMinutes||5)*60000*SIGNAL_COOLDOWN_BARS_MULT;
+  const remain=t+windowMs-Date.now();
+  return remain>0?remain:0;
+}
 /* n 根K线内,价格至少触碰一次"对数距离 logDist"目标位的概率(反射原理,双边触碰) */
 function touchProbability(logDist,sigma,bars){
   if(!(sigma>0)||!(bars>0)||!(logDist>=0))return 0;
@@ -5047,11 +5086,27 @@ function barsForTouchProbability(logDist,sigma,targetProb){
   for(let i=0;i<60;i++){const mid=(lo+hi)/2;if(touchProbability(logDist,sigma,mid)<targetProb)lo=mid;else hi=mid;}
   return (lo+hi)/2;
 }
-/* 赌徒破产公式: 从入场价出发,先摸到止盈还是先摸到止损的概率(与时间无关,鞅的最优停时定理精确解) */
-function raceProbability(logDistToTP,logDistToSL){
+/* 赌徒破产公式: 从入场价出发,先摸到止盈还是先摸到止损的概率。
+   2026-09-23 修复: 原公式是"无漂移鞅"的最优停时定理精确解——数学上等价于假设行情涨跌概率
+   对称、没有趋势,只看距离比例。这是实盘45%理论胜率却只打出14%真实胜率的核心原因之一:
+   逆势单和顺势单在这套公式下会算出一样的"胜率",但真实行情有动能延续性,逆势单的真实
+   胜率系统性地低于对称假设。这里换成带漂移的布朗运动双边吸收边界精确解(scale function
+   法),driftPerBar/sigma都缺失时数学上精确退化为原公式(k→0极限),不影响任何旧调用方;
+   同时对漂移的影响幅度封顶±25个百分点——漂移本身是弱信号、估计噪音大,不能让它把胜率
+   推得离"看距离"的基础解太远,那样等于用一个不可靠的数字去压过另一个更稳健的数字。 */
+function raceProbability(logDistToTP,logDistToSL,driftPerBar,sigma){
   const tot=logDistToTP+logDistToSL;
   if(!(tot>0))return 0.5;
-  return Math.max(0.02,Math.min(0.98,logDistToSL/tot));
+  const base=Math.max(0.02,Math.min(0.98,logDistToSL/tot));
+  if(!driftPerBar||!(sigma>0))return base;
+  const k=2*driftPerBar/(sigma*sigma);
+  if(Math.abs(k)<1e-9)return base;
+  const num=1-Math.exp(k*logDistToSL);
+  const den=Math.exp(-k*logDistToTP)-Math.exp(k*logDistToSL);
+  if(!(Math.abs(den)>1e-12))return base;
+  const p=num/den;
+  const capped=Math.max(base-0.25,Math.min(base+0.25,p));
+  return Math.max(0.02,Math.min(0.98,capped));
 }
 
 /* 混沌指标 Choppiness Index — 100·log10(ΣTR / (最高-最低)) / log10(period). ≥61.8 视为震荡(chop),
@@ -5949,7 +6004,11 @@ function computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinute
     invalidatePrice,invalidateNote};
 }
 
-function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability,regime,highs,lows){
+function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability,regime,highs,lows,driftPerBarRaw){
+  // driftPerBarRaw是"原始方向"(即上涨为正)的已收缩漂移估计;转成"交易方向"坐标——
+  // 正值=有利于本单方向(顺势),负值=不利(逆势),这样raceProbability不用关心多空,只看
+  // "朝目标走"还是"朝止损走"。
+  const driftFav=(driftPerBarRaw||0)*dirSign;
   // entry = 限价回调入场价(非当前市价) — 所有后续 TP/SL/RR 均以此为基准计算
   const entryInfo=computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinutes,sigmaVal,reliability);
   const entry=entryInfo.price;
@@ -5994,7 +6053,7 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
       if(touchProbability(logDist,sigmaVal,etaMin/intervalMinutes)*100<15)etaMin=null;
     }
     const logTpDist=Math.abs(Math.log(tpPrice/entry));
-    const raceWinProb=Math.round(raceProbability(logTpDist,logSlDist)*100);
+    const raceWinProb=Math.round(raceProbability(logTpDist,logSlDist,driftFav,sigmaVal)*100);
     const rr=riskDist>0?(Math.abs(tpPrice-entry)/riskDist).toFixed(2):"–";
     return{label:hz.label,price:tpPrice,sources:t.sources,basis:t.basis,weight,eta:etaMin,prob,horizon:hz.hint,horizonMins,raceWinProb,rr};
   });
@@ -6015,7 +6074,7 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
     return{dir:dirSign,noSetup:true,noSetupReason,entry:null,entryInfo:null,marketPrice:price,sl:null,slSources:[],tps:[],
       rr:"–",sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult,ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote};
   }
-  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,slBasis,tps,rr,sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult,
+  return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,slBasis,tps,rr,sigma:sigmaVal,driftPerBar:driftFav,reliability,regime,regimeSlMult,regimeTpMult,
     ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,slLadder:buildSlLadder(dirSign,entry,slPrice,tps,atrVal)};
 }
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -6839,6 +6898,7 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
 
   const votes=[];
   const sigmaVal=barLogReturnSigma(closes); // 该周期下的真实已实现波动率(近100根对数收益标准差)——
+  const driftPerBarRaw=barLogReturnDrift(closes); // 同窗口、已强收缩的趋势漂移(原始方向,未按多空转换)
   // 提到最前面统一算一次: 既驱动下面新增的动量/波动率因子,也驱动下方TP/SL的时间与概率估算(反射原理),
   // 避免同一个数字被算两遍、两处还可能因为窗口不同而对不上。
   votes.push({name:`EMA${adaptEmaFast}/50 趋势(自适应)`,cat:"trend",dir:(eFast!=null&&e50!=null)?(price>eFast&&eFast>e50?1:price<eFast&&eFast<e50?-1:0):0,
@@ -7040,10 +7100,19 @@ votes.push(macroDominanceVote(symbol));
   // 之前这张表漏了 "1d"(以及现在新增的 "1w"),选中日线/周线时会静默 fallback 到 ||5,
   // 也就是拿"5分钟"去算ETA/ATR时间窗——这是一个真实存在的既有bug,不是本次新增周期才引入的。
   const intervalMinutes={"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080}[intervalLabel]||5;
+  // 2026-09-23 新增: 信号冷却门槛。同一symbol+同一方向最近一次被市场验证为误判(track记录
+  // 止损收场)之后,短时间内不再重新推荐同一方向——这正对应用户反馈的"一买就跌、越买越跌":
+  // 相当一部分重复亏损,不是新证据支持的新判断,而是换了个入场价对同一个刚被证伪的方向
+  // 又下了一注。冷却窗口=该周期K线×3根的时间,给市场足够时间走出独立于上一次误判的新证据。
+  const cooldownMs=dirSign!==0?cooldownRemainingMs(symbol,dirSign,intervalMinutes):0;
   // dirSign===0 → 未形成方向共识,不构建挂在"某一侧结构位"上的限价单/TP/SL(那样做等于替一个
   // 没有方向依据的判断硬点一个假装有依据的价位)。改为返回 noSetup 占位对象,渲染层据此
   // 显示"无方向·不构成交易机会"而不是一整套看似煞有介事的交易计划。
-  const freshPlan=dirSign!==0?buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability,regime,highs,lows):null;
+  const freshPlan=dirSign===0?null
+    :(cooldownMs>0
+      ?{dir:dirSign,noSetup:true,reliability,entry:null,entryInfo:null,marketPrice:price,sl:null,slSources:[],tps:[],rr:"–",sigma:sigmaVal,
+         noSetupReason:`该方向(${dirSign>0?"多":"空"})在${lpDur(intervalMinutes*3*60000)}内已被止损验证为误判,冷却中(还需约${Math.ceil(cooldownMs/60000)}分钟),暂不重复推荐同方向,避免刚被打脸又立刻反复下注`}
+      :buildTradePlan(dirSign,price,a,structure,intervalMinutes,confluence,vwapVal,sigmaVal,reliability,regime,highs,lows,driftPerBarRaw));
   // 2026-09-18: noSetup(无论是"目标距离低于该周期时间预算"还是"EV<0")不走钉住机制——钉住是为了
   // 让一个已经生成的挂单价位在页面刷新间保持稳定,而noSetup根本没有挂单价位可钉,每次都应该按
   // 最新数据重新判断,不能把上一次算出来的"不该做"强行钉在页面上,让用户看到一个已经过期的拒绝理由。
@@ -7098,7 +7167,7 @@ votes.push(macroDominanceVote(symbol));
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
     highs,lows, // 2026-09-18新增: 供机会雷达/固定周期复盘路径(pickCycleTopN→buildStructureTargets)复用,
     // 做"被后续价格确认过的摆动点"止损判断(见findConfirmedSwing),不用在那条路径里重新拉K线/重新findPivots。
-    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,mtfDetail,gate,bbU,bbL,bbM,breakout,sigma:sigmaVal,
+    regime,regimeLabel,ciVal,er,adaptRsiPeriod,adaptEmaFast,vwapArr,avwap,stLine:st.line,stTrend:st.trend,topBottom:tbs,reliability,outlook,cycleAnchor,cycleConflict,mtfDir,mtfDetail,gate,bbU,bbL,bbM,breakout,sigma:sigmaVal,drift:driftPerBarRaw,
     dirChanged,dirChangedAt,dirStableSince,previousDirSign,stability};
 }
 
@@ -7224,10 +7293,11 @@ function backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState){
   const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,voteTotal,regime);
   const closesTail=pre.closesFull.slice(Math.max(0,idx-105),idx+1);
   const sigmaVal=barLogReturnSigma(closesTail);
+  const driftPerBarRaw=barLogReturnDrift(closesTail);
   const intervalMinutes=BT_INTERVAL_MINUTES[intervalLabel]||60;
   let plan=null;
   if(dirSign!==0){
-    plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,clusterRes.confluence,vwapVal,sigmaVal,reliability,regime,highs,lows);
+    plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,clusterRes.confluence,vwapVal,sigmaVal,reliability,regime,highs,lows,driftPerBarRaw);
   }
   return{dirSign,plan,reliability};
 }
@@ -10550,7 +10620,34 @@ function lpCalc(d){
   else if(d.origRR>0&&remRR/d.origRR<0.45){state="追进去性价比已明显变差(剩余R:R不足原计划的45%)";cls="warn";}
   else if(d.origRR>0&&remRR/d.origRR<0.85){state="现价已离入场价有一段,剩余R:R处于边缘";cls="neutral";}
   else{state="现价与入场价接近,剩余空间基本完整";cls="ok";}
-  return{chg,rNow,toTP,toSL,remRR,pos,pxPos:pos(px),over:px<L?"◂":px>R?"▸":"",state,cls};
+  /* ── 此刻是否仍建议入场(而不是只展示信号发出那一刻的静态快照)。
+     用户可能是信号发出后10分钟、30分钟才第一次看到这张卡——这时候该回答的不是"当初建议什么",
+     而是"现在这一刻,以现价为起点,这笔单还值不值得进"。
+     做法: 复用与原信号完全同一套"先达胜率"模型raceProbability(不额外编一套主观打分),
+     只把距离的起点从entry换成当下现价px,对TP/SL这两个已经定好的绝对价位重新量距离;
+     再喂给和原信号一模一样的evaluateEdge()门槛(<0拒绝、<0.15R边际),口径与"信号发出时"完全一致,
+     只是换了个观测时间点,这样两个数字才能放在一起比,而不是两套逻辑各说各话。*/
+  let live=null;
+  if(d.open&&toSL>0&&toTP>0){
+    const logTp=Math.abs(Math.log(d.tp/px)),logSl=Math.abs(Math.log(d.sl/px));
+    // 2026-09-23: 这里原先没接漂移修正,是因为漂移需要K线历史,而这个面板每秒轻量刷新、
+    // 不拉K线。做法是复用"信号生成那一刻"已经算好、随持仓快照存下来的driftPerBar/sigma——
+    // 漂移是趋势强度的慢变量,不需要逐秒重算,用发信号时的快照做近似是合理的,比完全不用漂移
+    // (等于假装市场永远没有趋势)要准确得多。
+    const driftFav=d.origDriftFav||0;
+    const liveWinProb=Math.round(raceProbability(logTp,logSl,driftFav,d.origSigma)*100);
+    const liveEdge=evaluateEdge(liveWinProb,remRR.toFixed(2));
+    let verdict,vcls;
+    // 2026-09-23: 同一个"现价视角期望值"结论,对"还没进场的人"和"已经持有的人"其实是两句话——
+    // 前者是"要不要现在追",后者是"要不要提前离场,不必死扛到硬止损才知道情况已经变了"。
+    // 用户明确要求过不要等到止损才反应,这里就是让已持仓的人在期望值转负的那一刻就被提醒,
+    // 而不是必须等价格物理触及止损线。
+    if(liveEdge.evTier==="reject"){verdict="现价视角:不建议现在进场 · 若已持有,现价起继续持有的期望值也已转负,可考虑提前离场而非死扛到止损";vcls="warn";}
+    else if(liveEdge.evTier==="marginal"){verdict="现价视角:边际机会 · 若已持有,可考虑部分止盈落袋或上移止损锁定";vcls="neutral";}
+    else{verdict="现价视角:条件仍然成立,继续持有/进场均可";vcls="ok";}
+    live={winProb:liveWinProb,ev:liveEdge.ev,evNote:liveEdge.evNote,verdict,vcls};
+  }
+  return{chg,rNow,toTP,toSL,remRR,pos,pxPos:pos(px),over:px<L?"◂":px>R?"▸":"",state,cls,live};
 }
 function lpFields(d){
   const c=lpCalc(d),sg=x=>(x>=0?"+":"−")+Math.abs(x).toFixed(2);
@@ -10560,23 +10657,26 @@ function lpFields(d){
     fresh=lastWsTickAt&&age<20000?"实时":`⚠ 行情推送已 ${lpDur(lastWsTickAt?age:0)||"–"} 未更新,价格来自REST轮询,可能延迟数秒`;
     if(!lastWsTickAt)fresh="行情来自REST轮询,可能延迟数秒";
   }
+  const liveWin=c.live?`${c.live.winProb}%${d.origWinProb!=null?` (发出时 ${d.origWinProb}%)`:""}`:"–";
   return{c,price:fmtPrice(d.px),
     chg:`${sg(c.chg)}% vs 入场 · ${c.rNow>=0?"+":"−"}${Math.abs(c.rNow).toFixed(2)}R`,
     toTP:c.toTP>=0?`还差 ${c.toTP.toFixed(2)}%`:`已越过 ${Math.abs(c.toTP).toFixed(2)}%`,
     toSL:c.toSL>=0?`还差 ${c.toSL.toFixed(2)}%`:`已越过 ${Math.abs(c.toSL).toFixed(2)}%`,
     rr:`${c.remRR.toFixed(2)} : 1${d.origRR>0?`(原计划 ${d.origRR.toFixed(2)} : 1)`:""}`,
     age:d.start?lpDur(Date.now()-d.start):"",
-    tile:`现价 ${fmtPrice(d.px)} · 距TP ${c.toTP>=0?c.toTP.toFixed(2)+"%":"已越过"} · 距SL ${c.toSL>=0?c.toSL.toFixed(2)+"%":"已越过"}`,
+    liveWin,
+    liveVerdictLine:c.live?`${c.live.verdict} · ${c.live.evNote}`:"",
+    tile:`现价 ${fmtPrice(d.px)} · 距TP ${c.toTP>=0?c.toTP.toFixed(2)+"%":"已越过"} · 距SL ${c.toSL>=0?c.toSL.toFixed(2)+"%":"已越过"}${c.live?` · ${c.live.verdict}`:""}`,
     fresh};
 }
 function lpDataAttrs(p,cur,open){
-  return `data-sym="${esc(p.symbol)}" data-dir="${p.dir}" data-entry="${p.entry}" data-tp="${p.tp}" data-sl="${p.sl}" data-start="${cur&&cur.start||0}" data-origrr="${p.slPct?p.tpPct/p.slPct:0}" data-open="${open?1:0}"`;
+  return `data-sym="${esc(p.symbol)}" data-dir="${p.dir}" data-entry="${p.entry}" data-tp="${p.tp}" data-sl="${p.sl}" data-start="${cur&&cur.start||0}" data-origrr="${p.slPct?p.tpPct/p.slPct:0}" data-open="${open?1:0}" data-winprob="${p.raceWinProb!=null?p.raceWinProb:""}" data-drift="${p.driftPerBar!=null?p.driftPerBar:""}" data-sigma="${p.sigma!=null?p.sigma:""}"`;
 }
 function lpBlockHTML(p,cur){
   const open=p.status==="OPEN",m=market.get(p.symbol);
   const px=open?(m&&m.price!=null?m.price:p.entry):p.exitPrice;
   if(px==null||!isFinite(px))return "";
-  const d={dir:p.dir,entry:p.entry,tp:p.tp,sl:p.sl,px,open,start:cur&&cur.start,origRR:p.slPct?p.tpPct/p.slPct:0};
+  const d={dir:p.dir,entry:p.entry,tp:p.tp,sl:p.sl,px,open,start:cur&&cur.start,origRR:p.slPct?p.tpPct/p.slPct:0,origWinProb:p.raceWinProb!=null?p.raceWinProb:null,origDriftFav:p.driftPerBar!=null?p.driftPerBar:null,origSigma:p.sigma!=null?p.sigma:null};
   const f=lpFields(d),c=f.c;
   const zone=(a,b,cl)=>`<i class="lp-z ${cl}" style="left:${Math.min(c.pos(a),c.pos(b)).toFixed(1)}%;width:${Math.abs(c.pos(a)-c.pos(b)).toFixed(1)}%"></i>`;
   const legend=[{n:"止损 SL",v:p.sl,cl:"down"},{n:"入场",v:p.entry,cl:""},{n:"止盈 TP",v:p.tp,cl:"up"}].sort((a,b)=>a.v-b.v)
@@ -10591,27 +10691,36 @@ function lpBlockHTML(p,cur){
       <span>到止盈</span><span data-r="toTP">${f.toTP}</span>
       <span>到止损</span><span data-r="toSL">${f.toSL}</span>
       ${open?`<span>现价视角剩余R:R</span><span data-r="rr">${f.rr}</span>`:""}
+      ${open&&c.live?`<span>现价视角先达胜率</span><span data-r="winprob">${esc(f.liveWin)}</span>`:""}
       ${open?`<span>距信号发出</span><span data-r="age">${f.age}</span>`:""}
     </div>
     <div class="lp-state ${c.cls}" data-r="state">${esc(c.state)}</div>
+    ${open&&c.live?`<div class="lp-verdict ${c.live.vcls}" data-r="verdict">${esc(f.liveVerdictLine)}</div>`:""}
     ${open?`<div class="lp-fresh" data-r="fresh">${esc(f.fresh)}</div>`:""}
   </div>`;
 }
 function lpTileHTML(p,cur){
   if(p.status!=="OPEN")return "";
   const m=market.get(p.symbol);if(!m||m.price==null)return "";
-  const f=lpFields({dir:p.dir,entry:p.entry,tp:p.tp,sl:p.sl,px:m.price,open:true,start:cur&&cur.start,origRR:p.slPct?p.tpPct/p.slPct:0});
+  const f=lpFields({dir:p.dir,entry:p.entry,tp:p.tp,sl:p.sl,px:m.price,open:true,start:cur&&cur.start,origRR:p.slPct?p.tpPct/p.slPct:0,origDriftFav:p.driftPerBar!=null?p.driftPerBar:null,origSigma:p.sigma!=null?p.sigma:null});
   return `<div class="lp lp-tile lp-live" ${lpDataAttrs(p,cur,true)}><span data-r="tile">${esc(f.tile)}</span></div>`;
 }
 function lpPatchAll(){
   if(typeof document==="undefined"||document.hidden)return;
   document.querySelectorAll(".lp.lp-live[data-sym]").forEach(el=>{
     const m=market.get(el.dataset.sym);if(!m||m.price==null)return;
-    const f=lpFields({dir:+el.dataset.dir,entry:+el.dataset.entry,tp:+el.dataset.tp,sl:+el.dataset.sl,px:m.price,open:true,start:+el.dataset.start,origRR:+el.dataset.origrr});
+    const wpRaw=el.dataset.winprob,drRaw=el.dataset.drift,sgRaw=el.dataset.sigma;
+    const f=lpFields({dir:+el.dataset.dir,entry:+el.dataset.entry,tp:+el.dataset.tp,sl:+el.dataset.sl,px:m.price,open:true,start:+el.dataset.start,origRR:+el.dataset.origrr,origWinProb:wpRaw!==""?+wpRaw:null,origDriftFav:drRaw!==""?+drRaw:null,origSigma:sgRaw!==""?+sgRaw:null});
     const set=(k,v)=>{const n=el.querySelector(`[data-r="${k}"]`);if(n&&n.textContent!==v)n.textContent=v;};
     set("price",f.price);set("chg",f.chg);set("toTP",f.toTP);set("toSL",f.toSL);set("rr",f.rr);set("age",f.age);set("fresh",f.fresh);set("state",f.c.state);set("tile",f.tile);
     const chg=el.querySelector('[data-r="chg"]');if(chg){chg.classList.toggle("up",f.c.chg>=0);chg.classList.toggle("down",f.c.chg<0);}
     const st=el.querySelector('[data-r="state"]');if(st)st.className="lp-state "+f.c.cls;
+    // 现价视角胜率/是否仍建议入场——同一秒轮询里跟着刷新,而不是只在卡片第一次渲染时算一次
+    // (否则用户开着卡片挂10分钟,数字会停在打开那一刻,又变回"过期快照"这同一个问题)。
+    const wpEl=el.querySelector('[data-r="winprob"]');
+    if(wpEl&&f.c.live)wpEl.textContent=f.liveWin;
+    const vEl=el.querySelector('[data-r="verdict"]');
+    if(vEl&&f.c.live){vEl.textContent=f.liveVerdictLine;vEl.className="lp-verdict "+f.c.live.vcls;}
     const now=el.querySelector('[data-r="now"]');if(now){now.style.left=f.c.pxPos.toFixed(1)+"%";now.textContent=f.c.over||"▼";}
   });
 }
