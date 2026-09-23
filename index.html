@@ -405,6 +405,13 @@
   .opp-watch-dir.up{color:var(--up,#2ecc71);}
   .opp-watch-dir.down{color:var(--down,#e05c5c);}
   .opp-watch-note{color:var(--dim);font-size:11px;margin-left:auto;text-align:right;}
+  .risk-row{display:flex;align-items:center;gap:8px;padding:5px 8px;margin-bottom:4px;border-radius:6px;font-size:12px;background:rgba(255,255,255,0.02);flex-wrap:wrap;}
+  .risk-bucket{color:var(--dim2,#8a94a6);font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,0.05);}
+  .risk-pct{font-weight:600;color:var(--amber,#e8a33d);}
+  .risk-capped{color:var(--dim2,#8a94a6);font-size:10px;}
+  .risk-degraded{color:var(--down,#e05c5c);font-size:10px;}
+  .risk-disclaimer{color:var(--dim2,#8a94a6);font-size:10.5px;margin-top:6px;padding:0 2px;line-height:1.5;}
+  .risk-empty{color:var(--dim2,#8a94a6);font-size:11.5px;padding:4px 2px;}
   .opp-status-line b{color:var(--text);font-weight:700;}
   .opp-status-line .up{color:var(--up);font-weight:600;}
   .opp-status-line .amb{color:var(--amber);font-weight:600;}
@@ -808,6 +815,29 @@
   .ticket-copy-btn:hover{background:var(--amber);color:#1a1508;}
   .gate-reasons{font-size:12.5px;color:var(--dim);line-height:1.8;}
   .gate-reasons div{color:var(--down);}
+  /* ── 基本面闸门(FUNDAMENTAL GATE) — 解锁/估值稀释,仅对多头一票否决,见 computeFundamentalGate ── */
+  .fund-card{border-radius:5px;padding:12px 14px;margin-bottom:10px;border:1.5px solid var(--line2);background:var(--panel3);}
+  .fund-metric-row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:4px 0;border-bottom:1px dashed var(--line2);}
+  .fund-metric-row:last-child{border-bottom:none;}
+  .fund-metric-row .k{color:var(--dim);}
+  .fund-metric-row .v{font-family:var(--mono);color:var(--text);font-weight:600;}
+  .fund-badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:700;margin-left:6px;}
+  .fund-badge.ok{color:var(--up);background:var(--up-bg);}
+  .fund-badge.warn{color:var(--amber);background:rgba(240,180,60,.12);}
+  .fund-badge.danger{color:var(--down);background:rgba(184,85,95,.12);}
+  .fund-unlock-item{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:6px 8px;border-radius:4px;background:var(--panel2);margin-bottom:5px;flex-wrap:wrap;}
+  .fund-unlock-item .u-del{flex-shrink:0;color:var(--down);background:none;border:1px solid var(--down);border-radius:3px;font-size:10.5px;padding:2px 7px;}
+  .fund-form{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center;}
+  .fund-form input[type="date"],.fund-form input[type="number"],.fund-form input[type="text"]{
+    background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:4px;padding:5px 7px;font-size:11.5px;font-family:var(--mono);}
+  .fund-form input[type="text"]{flex:1 1 120px;min-width:100px;}
+  .fund-form input[type="date"]{width:118px;}
+  .fund-form input[type="number"]{width:90px;}
+  .fund-add-btn{background:var(--up-bg);border:1px solid var(--up);color:var(--up);border-radius:4px;font-size:11.5px;padding:5px 10px;font-weight:600;}
+  .fund-checklist-row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;}
+  .fund-checklist-row label{cursor:pointer;color:var(--text);}
+  .fund-stale{color:var(--amber);font-size:11.5px;margin-top:6px;}
+  .fund-note-area{width:100%;box-sizing:border-box;background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:4px;padding:6px 8px;font-size:12px;margin-top:6px;min-height:44px;font-family:inherit;}
 
   /* ── SECTOR HEATMAP ── */
   .sector-grid{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
@@ -1271,6 +1301,7 @@
     </div>
     <div class="opp-quality-note">⚡日内脉冲 = 数十分钟~数小时的短线均值回归 · 📈波段趋势 = 1~4日的顺势回调入场 · 🚀主升主跌浪 = 数日~数周的延伸趋势(五重确认,最苛刻) · 🔮结构性拐点 = OI/费率/价格三因子共振的反转机会。四档判定逻辑与止损/仓位/持仓纪律完全独立,不混用。总览按机会质量排序,点击任一行展开该类型专属的入场/止损止盈/仓位/纪律。</div>
     <div class="opp-watchlist" id="oppWatchlist"></div>
+    <div class="opp-watchlist" id="oppRiskPanel"></div>
     <div class="opp-status-line" id="oppStatusLine">–</div>
     <div id="oppNearMiss"></div>
     <div class="opp-table" id="oppOverviewTable"><div class="opp-empty">扫描中…</div></div>
@@ -1504,6 +1535,106 @@ const CG_ID_MAP = {
   ENA:"ethena",NOT:"notcoin",WIF:"dogwifcoin",DYDX:"dydx-chain",
   "1000PEPE":"pepe","1000SHIB":"shiba-inu","1000BONK":"bonk",
 };
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 基本面硬闸门(FUNDAMENTAL GATE) ──
+   来源: 用户与另一模型的"反方立场"复盘——纯技术面系统结构性地对"解锁抛压/估值稀释"这类
+   还没体现在K线里的信息瞎眼(技术面只能在价格已经开始被推动之后才反应,而这一刻恰恰是
+   知情方已经开始行动的那一刻)。结论: 基本面应该是第一层("值不值得持有"),技术面只回答
+   第二层("什么时候进/什么时候不追")——但两者的可数据化程度天差地别,不能混在一起假装
+   同等确定性:
+   · 能扎实数据化、值得直接接进系统的: 解锁时间表(客观日期/数量)、FDV/流通市值/流通比例
+     (客观数字,能算出这个估值定价了多少还没解锁的未来抛压)——这两项做成下面的硬性闸门。
+   · 软、容易变成"看起来有数据支撑其实是自己在编故事"的: 营收能否被token捕获、竞争格局、
+     未来催化剂——这些保留为下方"手动基本面清单",不自动打分,只提醒信息、判断权留给用户,
+     不让整套系统的诚实度被最软的一环拖垮。
+   关键的不对称设计: 解锁/稀释是结构性抛压风险,天然利空,只对多头(dirSign>0)信号一票否决,
+   完全不影响空头或中性——不是"这个币不好",是"现在追多的风险敞口结构性偏高"。
+   数据来源:
+   ① 自动: CoinGecko /coins/markets(与文件里已有的COINGECKO/CG_ID_MAP同一套集成)取
+      market_cap/fully_diluted_valuation/circulating_supply/total_supply,算出 dilutionMult=FDV/MCap
+      ——这是"当前定价了多少还没解锁的未来供给"的客观量化,不需要用户手动维护。
+   ② 手动: 具体解锁事件(哪天/多少/占流通盘百分之几)没有免费且允许跨域调用的公开API
+      (CryptoRank/Tokenomist等均需付费key或服务端调用),诚实起见不伪造、不接不稳定的
+      第三方镜像,改为用户在下方基本面面板里手动登记——录入后立刻计入闸门判定,不是摆设。
+   ══════════════════════════════════════════════════════════════════════════════ */
+const FUND_DILUTION_MULT_GATE=3.0;       // FDV/流通市值 ≥ 该倍数(即流通盘占比≤约33%)→ 视为估值稀释过高
+const FUND_UNLOCK_PCT_GATE=1.2;          // 未来 lookahead 天内单次解锁量 ≥ 流通盘该百分比 → 视为重大解锁
+const FUND_UNLOCK_LOOKAHEAD_DAYS=14;     // 解锁事件的前瞻窗口(天)
+// 这三个不放进 PARAM_CONFIG/参数敏感性面板: 那套面板与"走步式回测引擎"绑定同一份历史K线数据,
+// 而FDV/流通供给/解锁时间表根本没有历史快照可回测(见文件顶部回测引擎"诚实的边界"说明),
+// 把无法诚实回测的东西塞进"敏感性测试"只会制造一种可以被验证的假象。
+
+const FUND_MANUAL_KEY="orbit_fund_manual_v1";
+function loadFundManual(){try{return JSON.parse(localStorage.getItem(FUND_MANUAL_KEY)||"{}");}catch(e){return{};}}
+function saveFundManual(m){try{localStorage.setItem(FUND_MANUAL_KEY,JSON.stringify(m));}catch(e){}}
+let fundManualStore=loadFundManual(); // symbolBase -> {unlocks:[{date,pctCirc,amountUsd,note}],checklist:{competition,catalyst,note,updatedAt}}
+function fundSymbolBase(symbol){return(symbol||"").replace(/USDT$|BUSD$|USDC$/,"");}
+function getFundEntry(symbolBase){
+  if(!fundManualStore[symbolBase])fundManualStore[symbolBase]={unlocks:[],checklist:{competition:false,catalyst:false,note:"",updatedAt:0}};
+  if(!fundManualStore[symbolBase].checklist)fundManualStore[symbolBase].checklist={competition:false,catalyst:false,note:"",updatedAt:0};
+  if(!fundManualStore[symbolBase].unlocks)fundManualStore[symbolBase].unlocks=[];
+  return fundManualStore[symbolBase];
+}
+
+const FUND_AUTO_KEY="orbit_fund_auto_cache_v1";
+const FUND_AUTO_TTL_MS=6*60*60*1000; // 6小时——FDV/流通供给这类数字变化很慢,不需要跟K线一样高频刷新,省CoinGecko免费额度
+function loadFundAutoCache(){try{return JSON.parse(localStorage.getItem(FUND_AUTO_KEY)||"{}");}catch(e){return{};}}
+function saveFundAutoCache(m){try{localStorage.setItem(FUND_AUTO_KEY,JSON.stringify(m));}catch(e){}}
+let fundAutoCache=loadFundAutoCache(); // symbolBase -> {mcap,fdv,circ,total,max,dilutionMult,fetchedAt}
+let fundAutoFetching=false;
+async function refreshFundAutoData(symbolBases){
+  if(fundAutoFetching)return; // 避免重叠请求(30分钟一轮+看门狗都可能触发)
+  const need=[...new Set(symbolBases)].filter(s=>CG_ID_MAP[s]&&(!fundAutoCache[s]||Date.now()-fundAutoCache[s].fetchedAt>FUND_AUTO_TTL_MS));
+  if(!need.length)return;
+  fundAutoFetching=true;
+  try{
+    const idList=[...new Set(need.map(s=>CG_ID_MAP[s]))];
+    for(let i=0;i<idList.length;i+=200){ // CoinGecko /coins/markets 单次最多250个id,留余量切到200
+      const chunk=idList.slice(i,i+200);
+      try{
+        const j=await fetchJSONRaw(COINGECKO+`/coins/markets?vs_currency=usd&ids=${chunk.join(",")}&per_page=250&page=1&sparkline=false`);
+        if(Array.isArray(j)){
+          j.forEach(row=>{
+            const base=Object.keys(CG_ID_MAP).find(k=>CG_ID_MAP[k]===row.id);
+            if(!base)return;
+            const mcap=row.market_cap,fdv=row.fully_diluted_valuation;
+            fundAutoCache[base]={mcap,fdv,circ:row.circulating_supply,total:row.total_supply,max:row.max_supply,
+              dilutionMult:(mcap&&fdv&&mcap>0)?+(fdv/mcap).toFixed(3):null,fetchedAt:Date.now()};
+          });
+          saveFundAutoCache(fundAutoCache);
+        }
+      }catch(e){console.warn("[ORBIT] 基本面自动数据(CoinGecko FDV/流通供给)拉取失败,沿用旧缓存",e);}
+    }
+  }finally{fundAutoFetching=false;}
+}
+
+/* computeFundamentalGate — 纯函数,和 computeExecutionGate 一样不碰UI/网络,方便测试与复用。
+   只在 dirSign>0(多头)时可能否决;dirSign<=0(空头/中性)恒定 pass=true,因为解锁/稀释对空头
+   是利好而非风险,没有理由用同一条闸门去卡它。数据缺失时(没手动录入解锁、也不在CG_ID_MAP里
+   拿不到自动数据)一律 pass=true——"不知道"不等于"有问题",不能靠默认拒绝制造虚假的严格感。 */
+function computeFundamentalGate(symbolBase,dirSign){
+  const auto=fundAutoCache[symbolBase]||null;
+  const manual=getFundEntry(symbolBase);
+  const now=Date.now(),lookaheadMs=FUND_UNLOCK_LOOKAHEAD_DAYS*86400000;
+  const upcoming=(manual.unlocks||[])
+    .map(u=>({...u,ts:Date.parse(u.date+"T00:00:00Z")}))
+    .filter(u=>!isNaN(u.ts)&&u.ts>=now-86400000&&u.ts<=now+lookaheadMs) // 保留"昨天以内"让刚过去的解锁还能在面板里看到,但不参与否决
+    .sort((a,b)=>a.ts-b.ts);
+  const bigUnlock=upcoming.find(u=>u.ts>=now&&u.pctCirc!=null&&u.pctCirc>=FUND_UNLOCK_PCT_GATE);
+  const dilutionHigh=!!(auto&&auto.dilutionMult!=null&&auto.dilutionMult>=FUND_DILUTION_MULT_GATE);
+  if(dirSign>0){
+    if(bigUnlock){
+      return{pass:false,reason:`未来${FUND_UNLOCK_LOOKAHEAD_DAYS}天内解锁 ${bigUnlock.date} · 占流通盘约${bigUnlock.pctCirc}%${bigUnlock.note?"("+bigUnlock.note+")":""} → 仅对多头一票否决,不影响空头`,
+        detail:`解锁占流通盘 ${bigUnlock.pctCirc}% ≥ 阈值${FUND_UNLOCK_PCT_GATE}%`,auto,manual,upcoming,bigUnlock,dilutionHigh};
+    }
+    if(dilutionHigh){
+      return{pass:false,reason:`估值稀释过高: FDV/流通市值=${auto.dilutionMult.toFixed(2)}× ≥ 阈值${FUND_DILUTION_MULT_GATE}× → 仅对多头一票否决,不影响空头`,
+        detail:`流通供给约占总供给的${(100/auto.dilutionMult).toFixed(1)}%,未来抛压结构性存在`,auto,manual,upcoming,bigUnlock,dilutionHigh};
+    }
+  }
+  return{pass:true,reason:null,detail:null,auto,manual,upcoming,bigUnlock,dilutionHigh};
+}
 
 function fetchRaw(url){
   return Promise.race([
@@ -1986,6 +2117,52 @@ function init(){
       if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done).catch(()=>{});
       else done();
     }
+    // ── 基本面面板(见 renderFundamentalsSection) ──
+    const fundAddBtn=e.target.closest("[data-fund-add-unlock]");
+    if(fundAddBtn){
+      const base=fundAddBtn.getAttribute("data-fund-symbol");
+      const dateEl=document.getElementById("fundUnlockDate"),pctEl=document.getElementById("fundUnlockPct"),
+        usdEl=document.getElementById("fundUnlockUsd"),noteEl=document.getElementById("fundUnlockNote");
+      const date=dateEl&&dateEl.value;
+      if(!date){alert("请先选择解锁日期");return;}
+      const pctCirc=pctEl&&pctEl.value!==""?parseFloat(pctEl.value):null;
+      const amountUsd=usdEl&&usdEl.value!==""?parseFloat(usdEl.value):null;
+      const note=(noteEl&&noteEl.value||"").trim();
+      const entry=getFundEntry(base);
+      entry.unlocks.push({date,pctCirc,amountUsd,note});
+      saveFundManual(fundManualStore);
+      renderFundamentalsSectionOnly();
+      return;
+    }
+    const fundDelBtn=e.target.closest("[data-fund-del-unlock]");
+    if(fundDelBtn){
+      const base=fundDelBtn.getAttribute("data-fund-symbol"),idx=parseInt(fundDelBtn.getAttribute("data-fund-del-unlock"),10);
+      const entry=getFundEntry(base);
+      if(entry.unlocks[idx]!=null){entry.unlocks.splice(idx,1);saveFundManual(fundManualStore);renderFundamentalsSectionOnly();}
+      return;
+    }
+    const fundSaveChecklist=e.target.closest("[data-fund-save-checklist]");
+    if(fundSaveChecklist){
+      const base=fundSaveChecklist.getAttribute("data-fund-symbol");
+      const entry=getFundEntry(base);
+      const noteEl=document.getElementById("fundChecklistNote");
+      entry.checklist.note=(noteEl&&noteEl.value||"").trim();
+      entry.checklist.updatedAt=Date.now();
+      saveFundManual(fundManualStore);
+      renderFundamentalsSectionOnly();
+      return;
+    }
+  });
+  document.addEventListener("change",(e)=>{
+    const fundCb=e.target.closest("[data-fund-cb]");
+    if(fundCb){
+      const base=fundCb.getAttribute("data-fund-symbol"),field=fundCb.getAttribute("data-fund-cb");
+      const entry=getFundEntry(base);
+      entry.checklist[field]=fundCb.checked;
+      entry.checklist.updatedAt=Date.now();
+      saveFundManual(fundManualStore);
+      return; // 不整段重渲染(避免checkbox失焦/闪烁),下次打开或其它操作触发的重渲染会带出最新的"上次确认"时间
+    }
   });
   document.addEventListener("change",(e)=>{
     if(e.target&&e.target.id==="btSampleSelect"){
@@ -1998,6 +2175,12 @@ function init(){
   initCrypto();
   loadGlobalCrypto(); setInterval(loadGlobalCrypto,GLOBAL_POLL_MS);
   loadTrendingCoins(); setInterval(loadTrendingCoins,TRENDING_POLL_MS);
+  // 基本面自动数据(FDV/流通供给,见computeFundamentalGate顶部说明): 只对已追踪的symbol拉取,
+  // trackedSet在启动早期可能还是空的(见下方refreshTopN的15秒预热延迟),所以这里延迟10秒
+  // 首次尝试,之后每30分钟刷新一轮(refreshFundAutoData内部按6小时TTL跳过还新鲜的缓存,
+  // 30分钟只是"检查一下有没有过期的",不是真的每30分钟都重新拉全部)。
+  setTimeout(()=>{if(trackedSet.size)refreshFundAutoData([...trackedSet].map(fundSymbolBase));},10000);
+  setInterval(()=>{if(trackedSet.size)refreshFundAutoData([...trackedSet].map(fundSymbolBase));},30*60*1000);
   setInterval(pruneLiquidations,600000);
   loadETF(); setInterval(loadETF,120000);
   renderTrackPanel(); // 先用localStorage里已有的记录渲染一次,不用等第一次扫描/结算跑完
@@ -3071,6 +3254,7 @@ function renderOpportunityRadar(){
       }).join("");
       watchEl.innerHTML=`<div class="opp-watch-head">🎯 今日关注 · ${watchable.length}个候选(每${fmtScanIntervalLabel()}刷新,C档仅观测不建议下场,A/B档仍需看下方是"已确认"还是"确认中")</div>${rowsHtml}`;
     }
+    renderRiskBudget(watchable,activeCycleTf);
   }
   const statusEl=document.getElementById("oppStatusLine");
   if(statusEl){
@@ -3741,6 +3925,101 @@ function cycleWinLoss(c){
   const wins=c.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length;
   const losses=c.positions.filter(p=>p.status==="SL"||p.outcome==="flat_loss").length;
   return{wins,losses};
+}
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 组合风险层(PORTFOLIO RISK LAYER)· 2026-09-23 ──
+   上面所有引擎(DPM/EV/机会雷达/固定周期)解决的都是同一类问题:"这一笔的方向胜率有多少
+   统计依据"。这一层解决一个正交的问题:"就算每一笔的胜率都算对了,把雷达给出的几个机会
+   同时摆在一起下注,会不会因为它们本质上是同一个赌注而一起爆掉"——加密货币里绝大多数
+   非BTC合约短周期方向与BTC高度共振,雷达一次给5个LONG机会,很可能不是5个独立信号,
+   而是同一个"BTC要涨"的判断被下了5遍仓位,BTC一根反向大阴线可以让它们同时止损。
+   真正让收益穿越周期的从来不是"预测更准"(边际收益递减很快,且预测这件事永远有噪音),
+   而是仓位结构本身能扛住"这次判断错了"而不伤筋动骨——错的时候小,对的时候滚雪球,
+   长期靠风险管理而不是靠预测精度取胜。这里加三个机制,完全不改动上面的概率/EV引擎,
+   只读它们已经算好的字段(sig.outlook.conviction / sig.gate.tier / 已有的历史追踪记录),
+   新增一个独立面板展示,出错也不会影响原有的信号计算与追踪逻辑:
+   ① BTC-beta分桶——没有实时相关性矩阵之前,把非BTC合约默认当成"和BTC高度相关"处理,
+      比假装它们互相独立更诚实。同方向、同桶的仓位合并计算风险预算,强制给不相关的机会
+      留出空间,而不是让"看起来很分散"的5笔机会占满整个风险额度。
+   ② 保守打折的仓位分数,而不是理论凯利——理论凯利公式对胜率/赔率的估计误差极其敏感,
+      而这里的胜率本身就是估计值(还没跑过你自己的回测校准),直接套公式会把估计误差
+      放大进仓位规模里。这里用把握度(conviction)与执行闸门档位(tier)换算出一个远低于
+      理论凯利的分数,单笔风险另设硬顶,模型"看起来很有把握"也不能突破这个硬顶。
+   ③ 实盘校准熔断——复用已有的固定周期引擎历史记录(loadCycleHistory),比较"当初给出的
+      把握度均值"与"这批仓位实际的胜率",持续性缺口过大(不是单期噪音,要求样本量先达标)
+      时判定该周期的edge正在衰减,新仓位自动打折——这是"这次只是运气不好"和"模型正在失效"
+      之间唯一站得住脚的区分方式,不是凭感觉喊停。
+   下面这些参数(RISK_CFG)是仓位建议的起点,不是收益承诺,也不是账户能扛多少风险的判断——
+   那是你自己的风险偏好,应该按自己的真实账户情况调整,不应该被硬编码在别人写的默认值里。 */
+const RISK_CFG = {
+  accountRiskPerTradePct: 0.75,  // 单笔风险占账户%的基准上限,机构常见区间0.25~1%,这里取中值,按自己的风险偏好调整
+  maxConcurrentRiskPct: 3.0,     // 同一时刻账户总风险敞口上限(所有当前仓位若同时止损,总亏损占账户的比例)
+  kellyFraction: 0.3,            // 相对"把握度换算出的理论仓位"的打折系数,越低越保守
+  bucketCapRatio: 0.6,           // 同方向+同BTC-beta桶最多占用maxConcurrentRiskPct的比例,强制分散
+  calibDegradeThreshold: -8,     // 把握度均值-实际胜率(百分点),持续低于这个值判定edge衰减
+  calibMinSample: CYCLE_CALIB_MIN_N, // 判定衰减前要求的最少已结算样本量,样本不足时不判定,如实标"证据不足"
+};
+function riskBtcBetaBucket(symbol){
+  return symbol==="BTCUSDT"?"BTC":"BTC_BETA"; // 没有实时相关性矩阵前的默认假设,见上方说明
+}
+// tier+conviction换算成0~1的仓位分数,不直接套用理论凯利公式(理由见上方注释)
+function riskConvictionScore(sig){
+  const conv=(sig.outlook&&sig.outlook.conviction!=null)?sig.outlook.conviction:50;
+  const tier=sig.gate?sig.gate.tier:"C";
+  const tierMult=tier==="A"?1:tier==="B"?0.7:0.4;
+  const c=Math.max(0.05,Math.min(1,conv/100));
+  return c*tierMult;
+}
+// 复用固定周期引擎(CYCLE ENGINE)自己的历史记录做校准熔断,不另起一套数据源,
+// 口径与"把握度校准"面板(cycleCalibrationByBucket)完全一致,只是这里聚合成一个总缺口用于仓位打折。
+function riskCalibMultiplier(tf){
+  const hist=loadCycleHistory(tf);
+  let convSum=0,n=0,wins=0;
+  hist.forEach(c=>c.positions.forEach(p=>{
+    if(p.conviction==null)return;
+    const isWin=p.status==="TP"||p.outcome==="flat_win";
+    const isLoss=p.status==="SL"||p.outcome==="flat_loss";
+    if(!isWin&&!isLoss)return; // 未结算/timeout不计入胜率校准,避免半途而废的仓位污染判定
+    convSum+=p.conviction;n++;if(isWin)wins++;
+  }));
+  if(n<RISK_CFG.calibMinSample)return{mult:1,gap:null,n}; // 样本不够,不判定衰减(证据不足≠模型没问题)
+  const avgPredicted=convSum/n,winRate=wins/n*100,gap=avgPredicted-winRate;
+  return{mult:gap<RISK_CFG.calibDegradeThreshold?0.5:1,gap,n};
+}
+function computeRiskBudget(candidates,tf){
+  const calib=riskCalibMultiplier(tf);
+  const bucketUsed={};
+  const rows=candidates.map(x=>{
+    const sig=x.r.sig;
+    const bucket=riskBtcBetaBucket(x.symbol)+(sig.dirSign>0?"·多头":"·空头");
+    const convScore=riskConvictionScore(sig);
+    let rawPct=RISK_CFG.accountRiskPerTradePct*(convScore*RISK_CFG.kellyFraction/0.3)*calib.mult; // /0.3把kellyFraction=0.3标准化为1倍基准,方便直接调这个参数观察效果
+    rawPct=Math.min(rawPct,RISK_CFG.accountRiskPerTradePct); // 单笔硬顶,把握度分数不能突破
+    const used=bucketUsed[bucket]||0;
+    const bucketCap=RISK_CFG.maxConcurrentRiskPct*RISK_CFG.bucketCapRatio;
+    const room=Math.max(0,bucketCap-used);
+    const finalPct=Math.min(rawPct,room);
+    bucketUsed[bucket]=used+finalPct;
+    return{symbol:x.symbol,dir:sig.dirSign,bucket,rawPct,finalPct,capped:finalPct<rawPct-1e-9};
+  });
+  const totalUsed=rows.reduce((s,r)=>s+r.finalPct,0);
+  return{rows,totalUsed,budgetCap:RISK_CFG.maxConcurrentRiskPct,calib};
+}
+function renderRiskBudget(watchable,tf){
+  const el=document.getElementById("oppRiskPanel");
+  if(!el)return;
+  const executable=(watchable||[]).filter(x=>x.r.sig.gate&&(x.r.sig.gate.tier==="A"||x.r.sig.gate.tier==="B"));
+  if(!executable.length){el.innerHTML=`<div class="opp-watch-head">🧮 组合风险配置</div><div class="risk-empty">当前没有A/B档(可执行)候选,无需配置仓位——C档仅观测,不建议按此分配风险。</div>`;return;}
+  const rb=computeRiskBudget(executable,tf);
+  const rowsHtml=rb.rows.map(r=>{
+    const dirTxt=r.dir>0?"LONG":"SHORT";
+    const cappedNote=r.capped?`<span class="risk-capped" title="同方向且同BTC-beta桶的仓位已合并计算并触及上限,这里被压缩——不是模型不看好,是组合层面不允许把同一个赌注下满">⛔组合上限压缩</span>`:"";
+    return`<div class="risk-row"><span class="opp-watch-sym">${esc(r.symbol.replace("USDT",""))}</span><span class="opp-watch-dir ${r.dir>0?"up":"down"}">${dirTxt}</span><span class="risk-bucket">${esc(r.bucket)}</span><span class="risk-pct">建议风险 ${r.finalPct.toFixed(2)}% 账户</span>${cappedNote}</div>`;
+  }).join("");
+  const calibNote=rb.calib.gap==null?`样本不足(<${RISK_CFG.calibMinSample}笔已结算),暂不启用校准熔断`
+    :rb.calib.mult<1?`<span style="color:var(--down);">⚠ 该周期近期把握度均值比实际胜率高出 ${rb.calib.gap.toFixed(1)}pp,新仓位已按0.5×打折(样本${rb.calib.n}笔)</span>`
+    :`校准正常(样本${rb.calib.n}笔,缺口${rb.calib.gap.toFixed(1)}pp)`;
+  el.innerHTML=`<div class="opp-watch-head">🧮 组合风险配置 · 总敞口 ${rb.totalUsed.toFixed(2)}% / 预算上限 ${rb.budgetCap}% · ${calibNote}</div>${rowsHtml}<div class="risk-disclaimer">这是仓位建议,不是收益承诺——它解决的是"判断错的时候别伤筋动骨",不解决"这次判断准不准"(那仍是上面DPM/EV引擎的事,且尚未经过你本地回测验证)。RISK_CFG里的百分比是起点,按你自己账户的真实风险承受能力调整,不要直接照搬。</div>`;
 }
 /* 等权复利权益曲线: 假设每期把上一期结束时的全部资金平均分给这期Top10,不加杠杆、不加仓、
    不做资金管理优化——只是最朴素的"一直照这套规则做会怎样",用来看长期趋势而不是单期数字。
@@ -6731,7 +7010,12 @@ function computeCycleAnchor(candles){
      (不在教科书式主升浪半山腰硬猜顶/猜底),不要求MTF已经同向。
    · pulse(日内脉冲): 不限制 regime(mixed本来就是它的定义域);MTF 同样只要求"不在相反
      方向的强趋势里逆势摸顶摸底",不要求跟随更大周期。 */
-function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppType,extensionATR){
+/* 2026-09-23 新增第七条闸门"基本面(解锁/估值稀释)"——见上方 computeFundamentalGate 顶部大段
+   注释里的完整背景。放进 checks 硬性组(与direction/rr/extension同组,不进五项软性容错),因为
+   "未来已知的重大抛压事件"和"方向没确认""盈亏比不达标"性质相同: 都是"这笔交易本身是否成立"
+   的问题,不是"信心强不强"可以互相容错抵消的问题。同时严格保持只对多头生效的不对称设计,
+   不通过 checks 里泛化的pass/fail语义悄悄污染空头判定。 */
+function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppType,extensionATR,symbol){
   const hasDirection=outlook.confirmed;
   const entryPx=plan.entry;
   const risk=plan.noSetup?null:Math.abs(entryPx-plan.sl);
@@ -6788,16 +7072,19 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
   // 因为"这波已经涨/跌过头"这件事一旦成立,不应该被其他四项确认"投票"盖过去。
   const extGuardAtr=P('extensionGuardAtr');
   const overExtended=extensionATR!=null&&hasDirection&&(dirSign>0?extensionATR>=extGuardAtr:extensionATR<=-extGuardAtr);
-  const tier=(overExtended&&tierRaw!=="N")?"C":tierRaw;
+  const fundGate=computeFundamentalGate(fundSymbolBase(symbol||""),dirSign);
+  const tier=((overExtended||!fundGate.pass)&&tierRaw!=="N")?"C":tierRaw;
   const checks=[
     {key:"direction",label:"【硬性】已形成方向共识(非中性 NEUTRAL)",pass:hasDirection,detail:hasDirection?"方向已确认":"当前徽章为中性 NEUTRAL,尚未形成方向共识"},
     {key:"rr",label:`【硬性】首选TP1盈亏比≥${rrMinGate.toFixed(2)}`,pass:rrOK,detail:plan.noSetup?(plan.noSetupReason||"无方向,未生成"):`当前 R:R=${rr1!=null?rr1.toFixed(2):"–"}`},
     {key:"extension",label:`【硬性护栏】未追高(偏离EMA50<${extGuardAtr.toFixed(1)}×ATR)`,pass:!overExtended,
       detail:extensionATR!=null?`当前偏离 ${extensionATR>=0?"+":""}${extensionATR.toFixed(2)}×ATR${overExtended?" · 已触发追高护栏,降级为仅观测":""}`:"数据不足,暂不评估"},
+    {key:"fundamental",label:"【硬性·仅限多头】未触发解锁/估值稀释否决",pass:fundGate.pass,
+      detail:fundGate.pass?(dirSign>0?"未检测到解锁/估值稀释风险(或相关数据尚未录入/暂不可用)":"该项只对多头信号生效,当前非多头,不受影响"):fundGate.reason},
     ...softChecks.map(c=>({...c,label:c.label+(GATE_SOFT_MISS_ALLOWED?` [软性,五项允许错${GATE_SOFT_MISS_ALLOWED}项]`:"")})),
   ];
-  const pass=hasDirection&&rrOK&&softOK&&!overExtended;
-  return{pass,tier,overExtended,extensionATR,hasDirection,checks,rr1,oppType,softMissCount,softMissAllowed:GATE_SOFT_MISS_ALLOWED};
+  const pass=hasDirection&&rrOK&&softOK&&!overExtended&&fundGate.pass;
+  return{pass,tier,overExtended,extensionATR,hasDirection,checks,rr1,oppType,softMissCount,softMissAllowed:GATE_SOFT_MISS_ALLOWED,fundGate};
 }
 
 /* 2026-09-10 P1新增: "信号静悄悄变化"——computeSignal 每次被调用(K线WS节流2秒、loadExtras
@@ -7160,7 +7447,7 @@ votes.push(macroDominanceVote(symbol));
   // 达到 extensionGuardAtr(默认4.5×ATR,可在参数面板调)这个量级,即便五重确认都成立,也强制把该
   // 候选降级为C档(仅观测,不给仓位建议)——真实动量交易员看到这种拉伸不会无脑追,而是等回调。
   const extensionATR=(e50!=null&&a)?(price-e50)/a:null;
-  const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppTypeForGate,extensionATR);
+  const gate=computeExecutionGate(plan.main,outlook,confluence,regime,regimeLabel,cycleConflict,cycleAnchor,reliability,mtfDir,mtfDetail,dirSign,oppTypeForGate,extensionATR,symbol);
 
   const stability=computeSignalStability(symbol); // P1-2: {changesLastHour,currentStableMs,avgStableMs}
 
@@ -8716,6 +9003,96 @@ function buildDeskNote(sig){
 }
 
 
+/* ── 基本面面板(FUNDAMENTALS PANEL) ── 展示 sig.gate.fundGate 的判定依据,并提供:
+   ① 手动登记解锁事件(日期/占流通盘%/USD金额/备注),保存后立刻写入本机存储,下一次
+      computeSignal刷新(K线WS节流约2秒,或最长等到下一轮机会雷达扫描)就会代入闸门判定;
+   ② 手动基本面清单(竞争格局/催化剂是否已自行确认过)——这两项刻意不自动打分(见文件顶部
+      computeFundamentalGate大段说明: 这类判断本质是定性的,硬塞进模型只会制造虚假的确定性),
+      只负责提醒"多久没勾过了",判断权完全留给用户。 */
+function renderFundamentalsSection(sig){
+  if(!sig)return"";
+  const symbol=selectedSymbol,base=fundSymbolBase(symbol);
+  const fg=sig.gate.fundGate||computeFundamentalGate(base,sig.dirSign);
+  const auto=fg.auto,manual=fg.manual;
+  const dirSign=sig.dirSign;
+
+  // 自动数据卡: FDV/流通市值/稀释倍数,数据来源CoinGecko(与文件里其它宏观卡片同一套集成)
+  let autoHTML;
+  if(auto&&auto.dilutionMult!=null){
+    const dm=auto.dilutionMult;
+    const badgeCls=dm>=FUND_DILUTION_MULT_GATE?"danger":dm>=FUND_DILUTION_MULT_GATE*0.7?"warn":"ok";
+    const badgeTxt=dm>=FUND_DILUTION_MULT_GATE?"稀释过高":dm>=FUND_DILUTION_MULT_GATE*0.7?"接近阈值":"正常";
+    const ageMin=Math.round((Date.now()-auto.fetchedAt)/60000);
+    autoHTML=`
+      <div class="fund-metric-row"><span class="k">流通市值 Market Cap</span><span class="v">$${fmtUsd(auto.mcap)}</span></div>
+      <div class="fund-metric-row"><span class="k">完全稀释估值 FDV</span><span class="v">$${fmtUsd(auto.fdv)}</span></div>
+      <div class="fund-metric-row"><span class="k">流通供给占比</span><span class="v">${auto.total?(auto.circ/auto.total*100).toFixed(1)+"%":"–"}</span></div>
+      <div class="fund-metric-row"><span class="k">稀释倍数 FDV/MCap</span><span class="v">${dm.toFixed(2)}×<span class="fund-badge ${badgeCls}">${badgeTxt}</span></span></div>
+      <div class="sig-note" style="margin-top:4px;color:var(--dim2);">数据来源 CoinGecko · ${ageMin}分钟前更新 · 阈值${FUND_DILUTION_MULT_GATE}×(仅对多头生效)</div>`;
+  }else{
+    autoHTML=`<div class="fund-metric-row"><span class="k">FDV/流通市值自动数据</span><span class="v" style="color:var(--dim2);">${CG_ID_MAP[base]?"加载中或暂不可用":"该symbol不在CoinGecko映射表内,无自动数据"}</span></div>`;
+  }
+
+  // 手动解锁事件列表 + 录入表单
+  const upcomingAll=(manual.unlocks||[]).slice().sort((a,b)=>a.date<b.date?-1:1);
+  const unlockListHTML=upcomingAll.length?upcomingAll.map((u,idx)=>{
+    const isFuture=Date.parse(u.date+"T00:00:00Z")>=Date.now();
+    const bigFlag=u.pctCirc!=null&&u.pctCirc>=FUND_UNLOCK_PCT_GATE&&isFuture;
+    return `<div class="fund-unlock-item">
+      <span>${bigFlag?"⛔":isFuture?"⏳":"·"} <b>${esc(u.date)}</b>${u.pctCirc!=null?` · 占流通盘 ${esc(u.pctCirc)}%`:""}${u.amountUsd?` · $${fmtUsd(u.amountUsd)}`:""}${u.note?` · ${esc(u.note)}`:""}${bigFlag?'<span class="fund-badge danger">≥阈值·否决多头</span>':""}</span>
+      <button class="u-del" data-fund-del-unlock="${idx}" data-fund-symbol="${esc(base)}">删除</button>
+    </div>`;
+  }).join(""):`<div class="sig-note" style="color:var(--dim2);">尚未录入任何解锁事件——这不代表没有解锁,只代表还没手动登记(见上方"诚实的边界":公开解锁日历API暂不可跨域免费调用)。</div>`;
+
+  const checklist=manual.checklist||{competition:false,catalyst:false,note:"",updatedAt:0};
+  const staleMs=Date.now()-(checklist.updatedAt||0);
+  const staleDays=(staleMs/86400000).toFixed(1);
+  const staleWarn=(checklist.updatedAt&&staleMs>3*86400000)?`<div class="fund-stale">⚠ 距上次确认已 ${staleDays} 天,建议开仓前重新过一遍再确认。</div>`:"";
+  const neverChecked=!checklist.updatedAt;
+
+  return `
+    <div class="section-title">📋 基本面 · FUNDAMENTALS(第一层:值不值得持有)</div>
+    <div class="section-note">技术面只回答"什么时候进/什么时候不追",这一层回答"这个东西现在值不值得持有"。
+      解锁时间表与FDV/流通供给是客观数字,做成下方硬闸门(<b>只对多头一票否决,不影响空头</b>——解锁/稀释是抛压风险,天然利空);
+      竞争格局/未来催化剂本质是定性判断,不该假装成能打分的数字,所以只做成下方手动清单,只提醒信息,不自动介入判定。</div>
+    <div class="fund-card">
+      <div class="fund-metric-row" style="border-bottom:1px solid var(--line2);padding-bottom:8px;margin-bottom:2px;">
+        <span class="k" style="font-weight:600;color:var(--text);">硬闸门判定${dirSign>0?"":"(当前非多头,该闸门不生效)"}</span>
+        <span class="v" style="font-family:inherit;">${fg.pass?'<span class="fund-badge ok">未否决</span>':'<span class="fund-badge danger">已否决多头</span>'}</span>
+      </div>
+      ${autoHTML}
+    </div>
+    <div class="fund-card">
+      <div class="fund-metric-row" style="border-bottom:1px solid var(--line2);padding-bottom:8px;margin-bottom:6px;"><span class="k" style="font-weight:600;color:var(--text);">未来${FUND_UNLOCK_LOOKAHEAD_DAYS}天解锁事件(手动登记)</span></div>
+      ${unlockListHTML}
+      <div class="fund-form">
+        <input type="date" id="fundUnlockDate" placeholder="日期">
+        <input type="number" id="fundUnlockPct" placeholder="占流通盘%" step="0.1" min="0">
+        <input type="number" id="fundUnlockUsd" placeholder="金额USD" step="1000" min="0">
+        <input type="text" id="fundUnlockNote" placeholder="备注(如: 团队/VC归属)">
+        <button class="fund-add-btn" data-fund-add-unlock="1" data-fund-symbol="${esc(base)}">+ 登记解锁</button>
+      </div>
+    </div>
+    <div class="fund-card">
+      <div class="fund-metric-row" style="border-bottom:1px solid var(--line2);padding-bottom:8px;margin-bottom:2px;"><span class="k" style="font-weight:600;color:var(--text);">手动基本面清单(不自动打分,判断权在你)</span></div>
+      <div class="fund-checklist-row">
+        <input type="checkbox" id="fundCbCompetition" data-fund-cb="competition" data-fund-symbol="${esc(base)}" ${checklist.competition?"checked":""}>
+        <label for="fundCbCompetition">竞争格局已复核(是否有更强/更便宜的替代方案正在抢占叙事)</label>
+      </div>
+      <div class="fund-checklist-row">
+        <input type="checkbox" id="fundCbCatalyst" data-fund-cb="catalyst" data-fund-symbol="${esc(base)}" ${checklist.catalyst?"checked":""}>
+        <label for="fundCbCatalyst">未来催化剂已确认(近期是否有上线大所/监管裁决/重大升级等台阶式跳空事件)</label>
+      </div>
+      <textarea class="fund-note-area" id="fundChecklistNote" placeholder="备注(可留空)…">${esc(checklist.note||"")}</textarea>
+      <div class="fund-form" style="margin-top:6px;">
+        <button class="fund-add-btn" data-fund-save-checklist="1" data-fund-symbol="${esc(base)}">💾 保存确认</button>
+        <span class="sig-note" style="color:var(--dim2);">${neverChecked?"尚未确认过":"上次确认: "+new Date(checklist.updatedAt).toLocaleString()}</span>
+      </div>
+      ${staleWarn}
+    </div>`;
+}
+function renderFundamentalsSectionOnly(){const box=document.getElementById("fundSectionBox");if(box&&window.__lastSig)box.innerHTML=renderFundamentalsSection(window.__lastSig);}
+
 function renderStrategySummary(sig){
   if(!sig)return'';
   const m=market.get(selectedSymbol);
@@ -9344,6 +9721,7 @@ function renderModalScrollNow(sig){
     ${buildDeskNote(sig)}
     ${renderSignalGlance(sig)}
     ${renderStrategySummary(sig)}
+    <div id="fundSectionBox">${renderFundamentalsSection(sig)}</div>
     ${renderTradePlanSection(sig)}
     ${renderSignalDetail(sig)}
     ${renderSectorHeatmap(sig)}
