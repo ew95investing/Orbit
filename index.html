@@ -610,6 +610,7 @@
   .trk-badge.awaiting{color:var(--dim2);background:#171d29;}
   .trk-entry-note{font-size:12px;color:var(--dim);line-height:1.5;padding:0 12px 8px 12px;}
   .trk-empty{font-size:12.5px;color:var(--dim2);padding:8px 4px;}
+  .trk-settling-note{font-size:12px;color:var(--warn,#d9a441);padding:6px 4px;margin-bottom:6px;}
   .sig-note{font-size:12px;color:var(--dim2);line-height:1.55;margin-top:3px;padding-left:2px;}
   .mystic-block{font-size:12px;border-top:1px dashed rgba(154,114,240,.3);padding:10px 13px;background:rgba(154,114,240,.04);}
   .mystic-title{font-size:12px;color:var(--purple);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
@@ -1491,8 +1492,13 @@ function domTrendOverMs(ms){
 /* 宏观投票: 对BTC自己而言,占比上升=资金正在向BTC集中(偏多本币);对山寨币而言,
    占比上升=资金从山寨流向BTC(对山寨多单是逆风),占比下降=山寨季迹象(对山寨多单是顺风)。
    样本不足20分钟时不给方向(cat:"neutral",不参与趋势/震荡动态加权,只是加法项)。 */
-function macroDominanceVote(symbol){
+function macroDominanceVote(symbol,assetClass){
   const name="宏观 · BTC占比轮动(CoinGecko,山寨季/BTC季判断)";
+  // 2026-09-24 修复(用户诉求文档缺陷2): 这一票衡量的是"资金在BTC与山寨币之间轮动",
+  // 对股票/ETF/贵金属/外汇完全没有对应的经济学意义,之前却对任何symbol都无条件给出dir,
+  // 变成纯噪音(还占着D簇一个"活跃成员"名额,间接让D簇的死票权重继续计入maxScore分母,
+  // 见computeClusterConsensus的修复)。非crypto资产直接标"不适用",不参与方向判断。
+  if(assetClass&&assetClass!=="CRYPTO")return{name,cat:"neutral",dir:0,detail:"该指标(BTC市值占比轮动)仅适用于crypto资产,对当前资产类别不适用"};
   const trend=domTrendOverMs(60*60*1000);
   if(!trend||trend.spanMin<20)return{name,cat:"neutral",dir:0,detail:"宏观历史数据积累中(需要约20分钟以上的BTC占比走势样本才开始生效)"};
   const domUp=trend.domDelta>0.15,domDown=trend.domDelta<-0.15;
@@ -2292,6 +2298,12 @@ function init(){
   loadETF(); setInterval(loadETF,120000);
   renderTrackPanel(); // 先用localStorage里已有的记录渲染一次,不用等第一次扫描/结算跑完
   setInterval(renderTrackPanel,TRACK_SETTLE_INTERVAL_MS); // 每20秒用实时WS价格重新判定止盈止损+刷新倒计时,不用等5分钟一次的扫描周期
+  // 2026-09-24 新增(P0): 固定周期到期后的"待结算"队列,异步拉取真实K线路径核实,详见
+  // settleOnePendingCycle顶部说明。启动后延迟5秒先跑一次(等WS/市场数据先就位),之后每25秒
+  // 补检查一次——大多数tick什么都不用做(pending队列通常是空的),只有在周期刚跨界的那个
+  // 时间点附近才会真正触发网络请求,成本很低。
+  setTimeout(processCyclePathSettlement,5000);
+  setInterval(processCyclePathSettlement,25000);
   // 2026-09-09 看门狗(第二道保险,不是主路径): 主路径现在是 refreshTopN 在 trackedSet 首次
   // 填充时自己排定15秒后启动(见refreshTopN/initCrypto的2026-09-09修复记录),已经不再依赖
   // initCrypto那次性的固定延迟。这里的60秒轮询留着当兜底——万一 scannerWarmupScheduled 那次
@@ -3175,8 +3187,24 @@ function classifyOpportunityType(sig){
    (疑似趋势末端),历史上追势胜率明显偏低;日内脉冲类如果价格根本不在布林带边界/均值
    回归的极端区、而是在区间中部,那本质是在"中部追单猜方向",正是这类机会最常见的
    假摆动止损来源。任一类型未通过额外确认,一律仅供参考,不计入正式触发/追踪。 */
+/* ORBIT v9 选择性开火: 只放行"有实测edge"的剧本, 拦截逆大势/追价/低概率单 */
+const ORBIT_EDGE={minRace:58,minRR:1.6,maxExtAtr:1.0,dailyCap:3,ledgerMinN:15};
+function orbitTypeEdge(k){const s=typeSampleStats(k);if(s.n<ORBIT_EDGE.ledgerMinN)return{state:"unproven",n:s.n};
+  const w=wilsonCI(s.wins,s.n);if(w[1]<50)return{state:"suspended",n:s.n,wr:s.winRate,hi:w[1]};
+  if(w[0]>=45&&s.winRate>=0.55)return{state:"proven",n:s.n,wr:s.winRate};return{state:"unproven",n:s.n};}
+function orbitEdgeScreen(sig,type){
+  const g=sig.gate,pm=sig.plan&&sig.plan.main;if(!g||!pm||pm.noSetup||!pm.tps||!pm.tps[0])return null;
+  const led=orbitTypeEdge(type),d=sig.dirSign;
+  if(led.state==="suspended")return`该剧本已被自己的追踪记录证伪: ${led.n}笔胜率${(led.wr*100).toFixed(0)}%, 95%置信上界仅${led.hi.toFixed(0)}%<50%, 自动停用`;
+  if((type==="pulse"||type==="turning")&&led.state!=="proven")return"日内脉冲/结构拐点尚无≥15笔且Wilson下界≥45%的实测edge, 默认不出手(只放行波段/主升浪)";
+  if(sig.mtfDir!==0&&sig.mtfDir===-d)return"更大周期方向与信号相反 — 逆大势入场是'一买就跌'的首要来源, 硬性拦截";
+  const rp=+pm.tps[0].raceWinProb;if(!(rp>=ORBIT_EDGE.minRace))return`TP1先于止损的概率${isNaN(rp)?"–":rp.toFixed(0)}% < ${ORBIT_EDGE.minRace}%`;
+  if(g.rr1!=null&&g.rr1<ORBIT_EDGE.minRR)return`TP1盈亏比${g.rr1.toFixed(2)} < ${ORBIT_EDGE.minRR}`;
+  if(g.extensionATR!=null&&d*g.extensionATR>ORBIT_EDGE.maxExtAtr)return`价格已偏离EMA50 ${Math.abs(g.extensionATR).toFixed(2)}ATR, 属追涨/追跌`;
+  return null;}
 function typeGateExtra(sig,type){
   const dirSign=sig.dirSign;
+  const __es=orbitEdgeScreen(sig,type);if(__es)return{pass:false,reason:"ORBIT v9 选择性开火: "+__es};
   const tb=sig.topBottom||{state:"none",dir:0};
   const opposingExhaustion=tb.state!=="none"&&tb.state!=="unknown"&&Math.sign(tb.dir)===-dirSign;
   if((type==="wave"||type==="swing")&&opposingExhaustion){
@@ -3446,7 +3474,7 @@ function renderOpportunityRadar(){
   // 随时可能在下一轮扫描翻回fail甚至反向pending。现在拆成三档,只有bar-confirmed的pass才进
   // headline"已识别机会",pending单独放进"确认中"折叠区(默认收起,想看模型正在酝酿什么可以点开,
   // 但不会被当成已经可以行动的结论),fail仍是"观察中·仅供参考"。
-  const live=withMeta.filter(x=>x.trig.cls==="pass").slice(0,OPP_TOP_N*2);
+  const live=withMeta.filter(x=>x.trig.cls==="pass").slice(0,ORBIT_EDGE.dailyCap); // 每天只出手2-3次: 只留质量最高的前3
   const pending=withMeta.filter(x=>x.trig.cls==="pending").slice(0,OPP_TOP_N*2);
   const ref=withMeta.filter(x=>x.trig.cls==="fail").slice(0,OPP_TOP_N*2);
   // 2026-09-11 新增: 🎯今日关注 — 用户反馈"不知道模型现在到底在盯哪些币,也没有通知,容易错过"。
@@ -3472,6 +3500,17 @@ function renderOpportunityRadar(){
     }
     renderRiskBudget(watchable,activeCycleTf);
   }
+  try{const bn=document.getElementById("oppWatchlist");if(bn){
+    const pxOf=s=>{const m=market.get(s);return m&&m.price!=null?+m.price:null;};
+    const rowsB=live.map(x=>{const s=x.r.sig,p=s.plan.main,d=s.dirSign,now=pxOf(x.symbol)||s.price,risk=Math.abs(p.entry-p.sl),tp=p.tps[0].price;
+      const rem=risk>0?(d>0?(tp-now)/(now-p.sl):(now-tp)/(p.sl-now)):null;
+      const dead=risk>0&&(d>0?now<=p.sl:now>=p.sl);
+      const chased=risk>0&&((d>0?now-p.entry:p.entry-now)>0.5*risk||(rem!=null&&rem<1.2));
+      const st=dead?"❌ 已失效":chased?"⚠️ 已远离入场区 · 不追, 等回踩":"✅ 仍在入场区";
+      return`<div>🟢 <b>${esc(x.symbol.replace("USDT",""))}</b> ${d>0?"做多":"做空"} · ${esc(x.type.label)} · 现价 ${fmtPrice(now)} · 入场 ${fmtPrice(p.entry)} · 止损 ${fmtPrice(p.sl)} · TP1 ${fmtPrice(p.tps[0].price)} · 现价剩余R:R ${rem!=null&&isFinite(rem)?rem.toFixed(1):"–"} · ${st}</div>`;}).join("");
+    const verdict=live.length?`<b>🟢 可执行 ${live.length}</b>(上限${ORBIT_EDGE.dailyCap}/天)`:`<b>⚫ 今日无高胜率机会 — 收手, 不出手也是一种仓位</b>`;
+    bn.insertAdjacentHTML("afterbegin",`<div class="opp-watch-head" style="font-size:13px;border-bottom:1px solid var(--line,#444);padding-bottom:6px">10秒判断: ${verdict} · 🟡 酝酿中 ${pending.length}${rowsB?"<div style='margin-top:6px;line-height:1.7'>"+rowsB+"</div>":""}</div>`);
+  }}catch(e){}
   const statusEl=document.getElementById("oppStatusLine");
   if(statusEl){
     const passN=withMeta.filter(x=>x.trig.cls==="pass").length;
@@ -3575,6 +3614,13 @@ const CYCLE_TF_CONFIG = {
   "1w":{ms:7*24*3600*1000, label:"1周(周线)", logKey:"orbit_cycle_current_1w_v1", histKey:"orbit_cycle_history_1w_v1", histMax:52},
 };
 const CYCLE_TFS=["1h","4h","8h","1d","1w"];
+// 2026-09-24 新增(P0,用户诉求文档缺陷4): 每个固定周期在结算时,需要用一套比自身周期更细的
+// K线去逐根核实"周期内有没有摸到过止盈/止损",而不是只看用户碰巧打开页面那一刻的实时价——
+// 这里给每个周期分配一档明显更细的粒度,详见 settleOnePendingCycle。
+const CYCLE_PATH_INTERVAL={"1h":"1m","4h":"5m","8h":"15m","1d":"30m","1w":"4h"};
+function cyclePendingKey(tf){return CYCLE_TF_CONFIG[tf].logKey+"_pending"+viewKeySuffix();}
+function loadCyclePending(tf){try{return(JSON.parse(localStorage.getItem(cyclePendingKey(tf))||"[]")).map(cycleNormalizeRec);}catch(e){return[];}}
+function saveCyclePending(tf,arr){try{localStorage.setItem(cyclePendingKey(tf),JSON.stringify(arr));}catch(e){}}
 let activeCycleTf="4h"; // 面板tab状态,模块级变量、不写localStorage(与其它opp-collapse-*会话状态同一模式),刷新页面回到默认4H
 
 // 2026-09-22: 1H/4H/8H三档都改为各自独立的真实K线信号源(opportunityResults1h/4h/8h),
@@ -3644,10 +3690,30 @@ function cycleTechNote(sig){
 // 门槛只剩"方向已过阈值"这一条(sig.dirSign!==0),排序本身(取强度最高的10个)就是筛选。
 // 2026-09-17 改: 额外要求sig.structure/sig.atr/sig.regime都已算出来,因为下面buildStructureTargets
 // 要用这三样东西算止盈止损——不再只挑"有方向"的,还要挑"有完整技术面依据"的。
+// 2026-09-24 新增: 非crypto品种要求方向已经稳定至少一整轮扫描周期(OPP_SCAN_INTERVAL_MS,
+// 约5分钟),而不是刚越过阈值的瞬时读数就直接被固定周期引擎收编——对应用户诉求文档缺陷5
+// (dirSign在阈值附近反复穿越,固定周期引擎此前没有任何确认门槛,一瞬间的方向也会被选中)。
+// crypto维持原有行为不变(24票投票池+更高的信息密度,本身抗噪声能力更强,不额外收紧)。
+// v12: 确认窗口按周期分档(非crypto才生效)。v11用\"周期/8且封顶60分钟\",对1d/1w等于没有门槛;
+// 封顶当初是因为稳定起点刷新即归零,现在已持久化(见dirStableByKey),可以放开。
+// 这些数字是可调常量,不是校准结果。要求页面基本保持打开(两次观测间隔>30分钟会重新计时)。
+const DIR_CONFIRM_MS_BY_TF={"1h":15*60*1000,"4h":60*60*1000,"8h":2*3600*1000,"1d":4*3600*1000,"1w":24*3600*1000};
+function dirConfirmMinMs(tf){
+  return DIR_CONFIRM_MS_BY_TF[tf]||OPP_SCAN_INTERVAL_MS;
+}
 function pickCycleTopN(tf){
   const map=cycleResultsMapFor(tf);
+  const now=Date.now();
   const items=[...map.entries()]
-    .filter(([symbol,r])=>r.sig&&r.sig.dirSign!==0&&r.sig.structure&&r.sig.atr!=null&&market.get(symbol)&&market.get(symbol).price!=null)
+    .filter(([symbol,r])=>{
+      if(!(r.sig&&r.sig.dirSign!==0&&r.sig.structure&&r.sig.atr!=null&&market.get(symbol)&&market.get(symbol).price!=null))return false;
+      const ac=market.get(symbol).assetClass;
+      if(ac&&ac!=="CRYPTO"){
+        const stableFor=r.sig.dirStableSince?now-r.sig.dirStableSince:0;
+        if(stableFor<dirConfirmMinMs(tf))return false;
+      }
+      return true;
+    })
     .map(([symbol,r])=>({symbol,dir:r.sig.dirSign,strength:Math.abs(r.sig.score)/(r.sig.maxScore||1),
       conviction:r.sig.outlook?r.sig.outlook.conviction:null,techNote:cycleTechNote(r.sig),
       atr:r.sig.atr,structure:r.sig.structure,regime:r.sig.regime,regimeLabel:r.sig.regimeLabel,
@@ -3719,6 +3785,57 @@ const ASSET_CLASS_GEOM_MULT={
   FX:{sl:0.85,tp:0.9},
   OTHER:{sl:1,tp:1},
 };
+/* v12: 资产类别止损乘数校准工具(只诊断,不自动采用——与runParamSensitivity同一原则:拿回测去反向挑
+   \"样本内最优\"本身就是过拟合)。对指定资产类别,取若干品种的真实K线,在SL乘数网格上逐点重跑同一套
+   runBacktest(含v12的非crypto方向裁决),汇总:已分胜负数/胜率/止损被扫率/每笔期望R。
+   用法(浏览器控制台,需联网): await runAssetClassCalibration("EQUITY",null,"1h",800)
+   第二个参数为品种数组,null=自动取market里该类别的前8个。返回并console.table输出结果表。
+   实现细节: 用私有键"__CAL"顶替ASSET_CLASS_GEOM_MULT,不改动真实类别的乘数,期间live信号不受影响。 */
+const CAL_SL_GRID=[0.85,1.0,1.15,1.3,1.5,1.75];
+async function runAssetClassCalibration(assetClass,symbols,interval,sampleSize,onProgress){
+  if(!assetClass||assetClass==="CRYPTO")throw new Error("crypto是基准(乘数=1),无需校准;请传 EQUITY / COMMODITY / FX 等非crypto类别");
+  const iv=interval||"1h",size=sampleSize||800;
+  const syms=(symbols&&symbols.length)?symbols:[...market.entries()].filter(([s,m])=>m&&m.assetClass===assetClass).slice(0,8).map(([s])=>s);
+  if(!syms.length)throw new Error("market里没有该资产类别的品种");
+  const data=[];
+  for(const sym of syms){
+    try{
+      const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${sym}&interval=${iv}&limit=1500`);
+      const candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+      if(candles.length>=210)data.push({sym,candles});
+    }catch(e){}
+  }
+  if(!data.length)throw new Error("没有拉到足够的K线(每个品种至少210根)");
+  const base=ASSET_CLASS_GEOM_MULT[assetClass]||{sl:1,tp:1};
+  const rows=[];
+  try{
+    for(let gi=0;gi<CAL_SL_GRID.length;gi++){
+      const slMult=CAL_SL_GRID[gi];
+      ASSET_CLASS_GEOM_MULT.__CAL={sl:slMult,tp:base.tp};
+      let resolved=0,wins=0,losses=0,timeouts=0,sumWinR=0;
+      for(const d of data){
+        const res=await runBacktest(d.candles,iv,Math.min(size,d.candles.length-210),()=>{},"__CAL");
+        res.trades.forEach(t=>{
+          if(t.outcome.status==="timeout"){timeouts++;return;}
+          if(t.outcome.status!=="resolved")return;
+          resolved++;
+          if(t.outcome.win){wins++;sumWinR+=parseFloat(t.rr||1);}else losses++;
+        });
+      }
+      rows.push({slMult,resolved,winRate:resolved?+(wins/resolved*100).toFixed(1):null,
+        slSweptRate:resolved?+(losses/resolved*100).toFixed(1):null,
+        expectancyR:resolved?+((sumWinR-losses)/resolved).toFixed(3):null,timeouts});
+      if(onProgress)onProgress(gi+1,CAL_SL_GRID.length);
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }finally{
+    delete ASSET_CLASS_GEOM_MULT.__CAL;
+  }
+  const out={assetClass,interval:iv,symbols:data.map(d=>d.sym),currentSlMult:base.sl,rows,
+    note:"止损被扫率随乘数增大而下降是必然的,单看它没意义;应结合期望R与已分胜负样本数(建议每档≥60笔)选一个期望R开始走平、而不是最高的那一档,不要直接采用样本内最优。"};
+  try{console.table(rows);}catch(e){}
+  return out;
+}
 function tfTpslConfig(intervalMinutes,assetClass){
   const table=[[1,"1m"],[5,"5m"],[15,"15m"],[60,"1h"],[240,"4h"],[480,"8h"],[1440,"1d"],[10080,"1w"]];
   let best=table[0];
@@ -3922,7 +4039,7 @@ function buildCyclePositions(tf,topN){
   // 2026-09-23: 同样在这里补上信号冷却门槛——固定周期复盘之前没有这道闸,同一symbol+方向
   // 刚被上一期结算证伪成SL,下一期选股仍可能因为强度分高而再次入选,和单symbol深度视图那边
   // 已经堵上的漏洞是同一个问题,这里一并堵上。
-  return topN.map(x=>{
+  const built=topN.map(x=>{
     const m=market.get(x.symbol);
     const entry=m.price;
     if(cooldownRemainingMs(x.symbol,x.dir,intervalMinutes)>0)return null;
@@ -3937,28 +4054,35 @@ function buildCyclePositions(tf,topN){
       strength:x.strength,conviction:x.conviction,techNote:x.techNote,
       ev:t.ev,evTier:t.evTier,evNote:t.evNote,sigma:t.sigma,driftPerBar:t.driftPerBar,
       status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
-  }).filter(Boolean).slice(0,CYCLE_TOP_N);
+  }).filter(Boolean);
+  // 2026-09-24 新增(用户诉求文档缺陷6): 方向集中度上限。固定周期引擎选出的Top10如果清一色
+  // 同一方向,本质是同一个宏观赌注被拆成10笔挂着"分散"的假象,一旦方向错,10笔一起亏——
+  // 这不是新增相关性计算(那需要额外的历史收益率数据,超出当前候选池自带的信息),只做
+  // "人多的一侧最多留几个名额"的最小改动: 同一方向最多占CYCLE_TOP_N的80%(10个名额里最多8个
+  // 同向)。如果对侧根本没有任何合格候选(不是"让位后没人补",而是一开始就没有),就如实减少
+  // 总仓位数量,不再为了凑够10笔而虚构分散(对应文档原文"减少总仓位到5笔,而不是硬凑10笔"的
+  // 精神——这里按候选池实际情况自然减少,不是固定砍到5)。
+  // v11: 全部为非crypto品种时,同向上限收紧到50%(5笔)——TradFi相关性更高,8笔同向本质是同一个赌注。
+  const allNonCrypto=built.length>0&&built.every(p=>{const a=(market.get(p.symbol)||{}).assetClass;return a&&a!=="CRYPTO";});
+  const capOneSide=Math.ceil(CYCLE_TOP_N*(allNonCrypto?0.5:0.8));
+  const longs=built.filter(p=>p.dir>0),shorts=built.filter(p=>p.dir<0);
+  const balanced=[...longs.slice(0,capOneSide),...shorts.slice(0,capOneSide)];
+  balanced.sort((a,b)=>b.strength-a.strength);
+  return balanced.slice(0,CYCLE_TOP_N);
 }
-// 强制结算一期已经越过截止时间的记录(不论中途有没有摸到止盈止损),归档进历史
-function settleCycleIfDue(tf,cur){
-  const now=Date.now();
-  if(!cur||now<cur.end)return false;
-  cur.positions.forEach(p=>{
-    if(p.status==="OPEN"){
-      const m=market.get(p.symbol);
-      const px=m&&m.price!=null?m.price:p.entry;
-      p.exitPrice=px;p.exitAt=cur.end;p.status="EOC"; // end-of-cycle,到期强制平仓,不是TP也不是SL
-      p.outcome=(p.dir>0?px>=p.entry:px<=p.entry)?"flat_win":"flat_loss";
-    }
-    delete p._srr; // 只是渲染期间用来防抖的临时平滑值,结算归档后没有意义,不留进历史记录
-  });
-  cur.settledAt=now;
-  const hist=loadCycleHistory(tf);
-  hist.push(cur);
-  saveCycleHistory(tf,hist);
-  return true;
-}
-// 实时检查当前周期里所有OPEN仓位是否摸到止盈/止损——摸到就按TP/SL的价位锁定,不会中途改判/挪价
+// 2026-09-24 重写(P0,用户诉求文档缺陷4——最致命的bug):
+// 旧版settleCycleIfDue在"周期越过截止时间"的那一刻,直接用market.get(symbol)的实时价把所有
+// 还OPEN的仓位结算成EOC,并把exitAt写成周期理论结束时间(如18:00)——但如果用户不是刚好在
+// 18:00那一刻打开页面(比如隔了16小时才回来看),这笔仓位其实是被"18:00到现在之间的任意
+// 价格"结算的,却对外显示成"18:00平仓",PnL数字因此完全不可信。旧版evaluateOpenPositions
+// 同样只用"当前一个价格点"判断是否摸到TP/SL,无法察觉"周期内价格路径其实已经摸到过TP/SL、
+// 之后又走回来"的情况。
+// 新版分两层: ①ensureCycle仍然同步、即时返回当前周期供渲染,对仍在进行中的OPEN仓位继续用
+// 实时价做"摸到就锁定"的即时响应(不改变这部分体验,只是不再用它做EOC最终结算);②周期越过
+// 截止时间时,不再立刻用实时价强行结算,而是把这一期放进"待结算"队列,交给下面的
+// settleOnePendingCycle异步去拉该周期实际经过的K线路径,逐根核实TP/SL先后触发顺序,真到期
+// 未触发的才用"周期最后一根已收盘K线的收盘价"结算——如果某个symbol这一轮拉取失败,该笔仓位
+// 保留待结算状态、整期先不归档,宁可显示"结算中",也不用一个错误的价格填充。
 function evaluateOpenPositions(cur){
   if(!cur)return;
   const now=Date.now();
@@ -3976,15 +4100,17 @@ function evaluateOpenPositions(cur){
     }
   });
 }
-// 主入口(按tf调用): ①若当前周期已越过截止时间→强制结算归档+尝试开新一期 ②若从没开过一期→
-// 尝试开一期 ③实时评估所有OPEN仓位止盈止损 ④返回当前周期供渲染。三个tf各自独立的localStorage键,
-// 互不覆盖、互不影响。
+// 主入口(按tf调用): ①若当前周期已越过截止时间→放进待结算队列(不再用实时价直接结算)、
+// 尝试开新一期 ②若从没开过一期→尝试开一期 ③实时评估所有OPEN仓位止盈止损(即时响应,非最终
+// 结算) ④返回当前周期供渲染。三个tf各自独立的localStorage键,互不覆盖、互不影响。
 function ensureCycle(tf){
   let cur=loadCycleCurrent(tf);
   const start=cycleStartOf(Date.now(),tf);
   if(cur&&cur.start!==start){
-    settleCycleIfDue(tf,cur);
+    const pending=loadCyclePending(tf);
+    if(!pending.some(x=>x.start===cur.start)){pending.push(cur);saveCyclePending(tf,pending);}
     cur=null;
+    saveCycleCurrent(tf,null);
   }
   if(!cur){
     const topN=pickCycleTopN(tf);
@@ -3996,6 +4122,104 @@ function ensureCycle(tf){
   evaluateOpenPositions(cur);
   saveCycleCurrent(tf,cur);
   return cur;
+}
+// 异步结算一期已经越过截止时间的记录: 对每笔仍OPEN的仓位,用比自身周期更细的粒度K线
+// (CYCLE_PATH_INTERVAL)逐根核实high/low是否先摸到TP还是先摸到SL——同一根细K线内TP/SL都
+// 被摸到(OHLC数据无法判断分钟级先后顺序)时,保守判定止损优先(与回测引擎simulateTradeOutcome
+// "宁可低估胜率,不能高估"的同一条原则保持一致)。真的走完整段周期都没摸到,才按"周期最后
+// 一根已收盘K线的收盘价"结算为EOC——不是用户打开页面那一刻的实时价。
+// checkpoint(p._pathCheckedThrough/_lastPathClose)存在仓位对象上并随pending队列持久化,
+// 下次重试从上次拉到的地方继续,不用每次都从周期开始重新拉一遍K线。任何symbol这一轮拉取失败,
+// 只让这一笔仓位保持待结算,不影响同一期里其它已经核实完的仓位。
+// v11 修订(在v10路径核实基础上补三处真实缺陷):
+// ①起点: v10从rec.start(周期开始)拉K线,但仓位是在rec.builtAt(页面首次选出Top N的那一刻)按当时价入场的,
+//   中途才打开页面/才选出仓位是常态——builtAt之前的K线不属于这笔仓位,会把入场前的高低点误判成TP/SL。
+//   现在从builtAt起算(Binance的startTime按K线开盘时间过滤,包含入场那一刻的半根K线会被跳过,偏保守)。
+// ②到期判定: v10要求"拉到的最后一根K线收盘时间>=周期末-1"才允许EOC结算。TradFi在休市/节假日/
+//   周期末尾无成交时,周期末尾就是没有K线,该条件永远不满足,整期卡在待结算队列里永不归档。
+//   现在改为"请求成功、返回数量没撞limit、且已过周期截止+2分钟宽限"即视为窗口已完整覆盖,用窗口内最后一根
+//   已收盘K线的收盘价结算;窗口内一根K线都没有,则记为void(无数据,不计盈亏、不计入胜负与校准)。
+// ③重试上限: 拉取一直失败/无数据的仓位,累计失败>=40次(每25秒一轮)且已越过截止6小时,才放弃并记为void。
+//   两个条件同时满足才放弃,避免短暂断网把仓位误判成"无数据"。void不是入场价"平仓":
+//   不能让它落进flat_win(long下px>=entry恒为真),所以用独立的outcome并在所有统计口径里排除。
+const PATH_GIVEUP_ATTEMPTS=40;
+const PATH_GIVEUP_AGE_MS=6*3600*1000;
+const PATH_END_GRACE_MS=2*60*1000;
+async function settleOnePendingCycle(tf,rec){
+  const interval=CYCLE_PATH_INTERVAL[tf]||"5m";
+  let allResolved=true;
+  const nowMs=Date.now();
+  const entryFrom=Math.max(rec.start,rec.builtAt||rec.start);
+  const voidPos=(p,why)=>{p.status="EOC";p.outcome="void";p.exitPrice=p.entry;p.exitAt=rec.end;p.settlementFallback=why;};
+  for(const p of rec.positions){
+    if(p.status!=="OPEN")continue; // 已经在实时评估阶段摸到过TP/SL,不需要再走路径核实
+    const from=p._pathCheckedThrough?p._pathCheckedThrough+1:entryFrom;
+    if(from>rec.end)continue;
+    let candles=null,fetched=false;
+    try{
+      candles=await fetchJSON(REST+`/fapi/v1/klines?symbol=${p.symbol}&interval=${interval}&startTime=${from}&endTime=${rec.end}&limit=1500`);
+      fetched=Array.isArray(candles);
+    }catch(e){candles=null;fetched=false;} // 这轮拉取失败: 保留OPEN,下一轮重试,不用错误价格填充
+    const gotCandles=fetched&&candles.length>0;
+    if(gotCandles){
+      p._pathAttempts=0;
+      for(const k of candles){
+        if(p.status!=="OPEN")break;
+        const high=+k[2],low=+k[3],close=+k[4],closeTime=k[6];
+        const hitTp=p.dir>0?high>=p.tp:low<=p.tp;
+        const hitSl=p.dir>0?low<=p.sl:high>=p.sl;
+        if(hitTp&&hitSl){p.status="SL";p.exitPrice=p.sl;p.exitAt=closeTime;p.outcome="loss";p.ambiguousBothHit=true;recordCooldownLoss(p.symbol,p.dir);}
+        else if(hitSl){p.status="SL";p.exitPrice=p.sl;p.exitAt=closeTime;p.outcome="loss";recordCooldownLoss(p.symbol,p.dir);}
+        else if(hitTp){p.status="TP";p.exitPrice=p.tp;p.exitAt=closeTime;p.outcome="win";}
+        p._lastPathClose=close;p._pathCheckedThrough=closeTime;
+      }
+    }
+    if(p.status!=="OPEN")continue;
+    const windowComplete=fetched&&candles.length<1500&&nowMs>=rec.end+PATH_END_GRACE_MS;
+    if(windowComplete){
+      if(p._lastPathClose!=null){
+        const px=p._lastPathClose; // 真到期未触发TP/SL——用窗口内最后一根已收盘K线的收盘价,不是实时价
+        p.exitPrice=px;p.exitAt=rec.end;p.status="EOC";
+        p.outcome=(p.dir>0?px>=p.entry:px<=p.entry)?"flat_win":"flat_loss";
+      }else{
+        voidPos(p,"入场后至周期结束,该品种没有任何K线(休市/无成交),未计盈亏");
+      }
+    }else{
+      if(!gotCandles)p._pathAttempts=(p._pathAttempts||0)+1;
+      if((p._pathAttempts||0)>=PATH_GIVEUP_ATTEMPTS&&nowMs-rec.end>=PATH_GIVEUP_AGE_MS){
+        voidPos(p,"K线数据长期拉取失败,已放弃核实,未计盈亏");
+      }else{
+        allResolved=false; // 还没追到周期末尾,下一轮继续追
+      }
+    }
+  }
+  if(!allResolved)return false;
+  rec.positions.forEach(p=>{delete p._srr;delete p._pathCheckedThrough;delete p._lastPathClose;delete p._pathAttempts;});
+  rec.settledAt=Date.now();
+  const hist=loadCycleHistory(tf);
+  hist.push(rec);
+  saveCycleHistory(tf,hist);
+  return true;
+}
+async function settlePendingCycles(tf){
+  const pending=loadCyclePending(tf);
+  if(!pending.length)return;
+  const remaining=[];
+  let anySettled=false;
+  for(const rec of pending){
+    let done=false;
+    try{done=await settleOnePendingCycle(tf,rec);}catch(e){console.warn("[ORBIT] 周期路径结算异常:",tf,rec.start,e);}
+    if(done)anySettled=true;else remaining.push(rec);
+  }
+  // 无论有没有整期结算完成,都要把这一轮已经追到的checkpoint存下来(见上方_pathCheckedThrough),
+  // 下次重试从断点继续,不重新拉一遍已经核实过的K线。
+  saveCyclePending(tf,remaining);
+  if(anySettled)renderTrackPanel(); // 结算落地后立刻刷新面板,不用等下一次20秒定时器
+}
+async function processCyclePathSettlement(){
+  for(const tf of CYCLE_TFS){
+    try{await settlePendingCycles(tf);}catch(e){console.warn("[ORBIT] 周期路径结算队列异常:",tf,e);}
+  }
 }
 function cyclePnlPct(p){
   const m=market.get(p.symbol);
@@ -4019,7 +4243,7 @@ function cycleCalibrationByBucket(tf){
   const hist=loadCycleHistory(tf);
   const buckets={};
   hist.forEach(c=>c.positions.forEach(p=>{
-    if(p.conviction==null||p.status==="OPEN")return;
+    if(p.conviction==null||p.status==="OPEN"||p.outcome==="void")return;
     const b=cycleConvictionBucket(p.conviction);
     if(!buckets[b])buckets[b]={wins:0,total:0};
     buckets[b].total++;
@@ -4040,7 +4264,7 @@ function cycleBucketStat(buckets,conv){
 function cycleOverallStats(tf){
   const hist=loadCycleHistory(tf).slice(-30);
   const wins=hist.reduce((s,c)=>s+cycleWinLoss(c).wins,0);
-  const total=hist.reduce((s,c)=>s+c.positions.length,0);
+  const total=hist.reduce((s,c)=>s+cycleCounted(c).length,0);
   const[lo,hi]=wilsonCI(wins,total);
   return{wins,total,rate:total?wins/total*100:null,lo,hi,cycles:hist.length};
 }
@@ -4083,6 +4307,7 @@ function cycleActionHint(p){
   return{cls:"ok",text:`${rrTxt} · 现价与建议入场价接近,若要参考,滑点很小,可按原计划跟进`};
 }
 function cycleStatusBadge(p){
+  if(p.outcome==="void")return`<span class="trk-badge" style="color:#8a8f98;background:rgba(138,143,152,.12);" title="${esc(p.settlementFallback||"")}">⚪ 无K线数据·未计盈亏</span>`;
   if(p.status==="OPEN")return`<span class="trk-badge" style="color:var(--amber);background:var(--amber-bg);">持仓中</span>`;
   if(p.status==="TP")return`<span class="trk-badge win">✅ 止盈 TP</span>`;
   if(p.status==="SL")return`<span class="trk-badge loss">❌ 止损 SL</span>`;
@@ -4162,7 +4387,9 @@ function renderCycleHeatmap(tf,cur){
 }
 /* 每期整体盈亏%(等权10笔平均),供趋势图/复利权益曲线/历史表共用同一口径,避免各处
    各算各的导致数字对不上。 */
-function cycleAvgPnl(c){return c.positions.reduce((s,p)=>s+cyclePnlPct(p),0)/c.positions.length;}
+// v11: void(无K线数据、未计盈亏)不参与任何胜率/均值分母
+function cycleCounted(c){return c.positions.filter(p=>p.outcome!=="void");}
+function cycleAvgPnl(c){const arr=cycleCounted(c);return arr.length?arr.reduce((s,p)=>s+cyclePnlPct(p),0)/arr.length:0;}
 function cycleWinLoss(c){
   const wins=c.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length;
   const losses=c.positions.filter(p=>p.status==="SL"||p.outcome==="flat_loss").length;
@@ -4280,7 +4507,12 @@ function computeCycleEquityCurve(hist){
 function renderCycleReview(tf){
   const cfg=CYCLE_TF_CONFIG[tf];
   const hist=loadCycleHistory(tf);
-  if(!hist.length)return`<div class="trk-empty">还没有已结算的${cfg.label}周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。${CYCLE_TF_CONFIG[tf].ms>CYCLE_TF_CONFIG["4h"].ms?`${cfg.label}周期较长,积累样本会比1H/4H慢很多,请耐心等待。`:""}</div>`;
+  // 2026-09-24 新增(P0): 有一期已经越过截止时间、正在等待"真实K线路径核实"异步结算完成
+  // (见settleOnePendingCycle)时,如实提示"结算中",不要在它彻底核实完之前就用旧的复盘数字
+  // 顶替——这正是本次要修的"结算价不是周期末价、而是用户碰巧打开页面那一刻的价"的bug本身。
+  const pendingCount=loadCyclePending(tf).length;
+  const pendingNote=pendingCount?`<div class="trk-settling-note">⏳ 上一期正在核实真实K线路径中,结算完成后会更新到这里(通常在下一次网络轮询内完成,如果该品种数据源暂时缺失可能稍久)</div>`:"";
+  if(!hist.length)return pendingNote+`<div class="trk-empty">还没有已结算的${cfg.label}周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。${CYCLE_TF_CONFIG[tf].ms>CYCLE_TF_CONFIG["4h"].ms?`${cfg.label}周期较长,积累样本会比1H/4H慢很多,请耐心等待。`:""}</div>`;
   const last=hist[hist.length-1];
   const rows=last.positions.map(p=>{
     const pnl=cyclePnlPct(p);
@@ -4300,7 +4532,7 @@ function renderCycleReview(tf){
   // 近30期趋势(有多少算多少),用于看这套固定策略长期是否稳定,而不是只看最近一期
   const trend=hist.slice(-30);
   const trendWins=trend.reduce((s,c)=>s+cycleWinLoss(c).wins,0);
-  const trendTotal=trend.reduce((s,c)=>s+c.positions.length,0);
+  const trendTotal=trend.reduce((s,c)=>s+cycleCounted(c).length,0);
   const trendWinRate=trendTotal?(trendWins/trendTotal*100).toFixed(1):"–";
   const equityCurve=computeCycleEquityCurve(hist);
   const finalEquity=equityCurve.length?equityCurve[equityCurve.length-1]:100;
@@ -4316,7 +4548,7 @@ function renderCycleReview(tf){
       <td>${eq.toFixed(1)}</td>
     </tr>`;
   }).join("");
-  return`<div class="trk-cycle-head">上一期 ${fmtTrkDateTime(last.start)} → ${fmtTrkDateTime(last.end)} · ${wins}胜${losses}负 · 本期平均${avgPnl>=0?"+":""}${avgPnl.toFixed(2)}% · 近${trend.length}期累计胜率 ${trendWinRate}%(n=${trendTotal}) ${ciLabel(trendWins,trendTotal)}</div>
+  return pendingNote+`<div class="trk-cycle-head">上一期 ${fmtTrkDateTime(last.start)} → ${fmtTrkDateTime(last.end)} · ${wins}胜${losses}负 · 本期平均${avgPnl>=0?"+":""}${avgPnl.toFixed(2)}% · 近${trend.length}期累计胜率 ${trendWinRate}%(n=${trendTotal}) ${ciLabel(trendWins,trendTotal)}</div>
     <table class="trk-calib-table">
       <thead><tr><th>币种</th><th>方向</th><th>入场价</th><th>结算价</th><th>结果</th><th>结算时间</th><th>盈亏%</th><th>技术分析(斐波/趋势线/K线/月相)</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -7151,8 +7383,12 @@ function trackVoteAvailability(symbol,votes){
   });
   return structural;
 }
-function computeClusterConsensus(votes,weightForFn,symbol){
+function computeClusterConsensus(votes,weightForFn,symbol,opts){
   const structuralSet=trackVoteAvailability(symbol,votes);
+  // v11: 簇要"有观点"至少需要minActive个真正给出方向的成员。默认1(crypto,与旧行为完全一致);
+  // 非crypto传2——TradFi下D簇(衍生品资金流)只剩谐波/艾略特这类价格形态票,单票就让整簇满权重
+  // 入账并撑起分母,不是"簇共识",只是一个形态票的独奏。
+  const minActive=(opts&&opts.minActive)||1;
   const groups={};
   votes.forEach(v=>{
     const c=clusterOfVoteName(v.name);
@@ -7160,14 +7396,17 @@ function computeClusterConsensus(votes,weightForFn,symbol){
     (groups[c]=groups[c]||[]).push(v);
   });
   const clusters=[];
-  let totalUnavailable=0,totalVotesAll=0,totalStructural=0;
+  let totalUnavailable=0,totalVotesAll=0,totalStructural=0,totalNotApplicable=0;
   Object.keys(groups).forEach(c=>{
-    const all=groups[c],members=all.filter(v=>v.dir!==0);
+    // v12: v.notApplicable=该资产类别下这类衍生品数据本就不存在(见computeSignal里的标记),
+    // 不是\"这一轮没读到\",不应把它算进\"应有指标数\"的分母,否则数据覆盖度被人为压低。
+    const all=groups[c].filter(v=>!v.notApplicable),members=all.filter(v=>v.dir!==0);
+    totalNotApplicable+=groups[c].length-all.length;
     const unavailable=all.filter(voteIsUnavailable).length;
     const structural=all.filter(v=>structuralSet.has(v.name)).length;
     totalUnavailable+=unavailable;totalVotesAll+=all.length;totalStructural+=structural;
     let dir=0,strength=0,agreePct=null;
-    if(members.length){
+    if(members.length>=minActive){
       const bull=members.filter(v=>v.dir>0).length,bear=members.filter(v=>v.dir<0).length;
       const majority=Math.max(bull,bear);
       agreePct=Math.round(majority/members.length*100);
@@ -7183,7 +7422,17 @@ function computeClusterConsensus(votes,weightForFn,symbol){
   });
   clusters.sort((a,b)=>a.id.localeCompare(b.id));
   const score=clusters.reduce((s,c)=>s+c.dir*c.strength*c.weight,0);
-  const maxScore=clusters.reduce((s,c)=>s+c.weight,0)||1;
+  // 2026-09-24 修复(用户诉求文档缺陷1): 一个簇如果连一票"真正给出方向"的成员都没有
+  // (activeCount===0——членов全是"数据不可用"或"算出来就是真中性"),它对score的贡献恒为0,
+  // 但之前仍会把weight算进maxScore分母。这在TradFi品种上尤其严重: D簇(衍生品资金流)/
+  // E簇(拥挤度反向)里几乎全是Binance TradFi永续合约接口本就不提供的加密货币专属数据
+  // (资金费率历史/OI/CVD/多空比),死票把分母撑大、score/maxScore被人为压低,dirSign反而
+  // 更容易被A簇(趋势跟随)单方面在低阈值附近推过线——这正是"TradFi下8~9/10笔清一色同向"
+  // 的根源之一。修复: maxScore只累加"至少有一票真实参与了方向判断"的簇的权重,没有任何
+  // 有效投票的死簇不计入分母,避免用一个"其实没有证据"的簇去稀释真正有证据的簇的占比。
+  // (对crypto几乎不改变现有行为——crypto下五个簇通常都有活跃成员,只有极偶发的"这一刻
+  // 整簇都恰好读到真中性"的瞬间才会被排除,且排除掉一个全无信息的簇本身也更合理。)
+  const maxScore=clusters.reduce((s,c)=>s+(c.activeCount>=minActive?c.weight:0),0)||1;
   const confluence=Math.round(((score+maxScore)/(2*maxScore))*100);
   const clusterBull=clusters.filter(c=>c.dir>0).length,clusterBear=clusters.filter(c=>c.dir<0).length;
   // dataAvailablePct: 剔除"不可用"票之后,剩下的原始指标里有多少真正参与了计算(不管最后算出
@@ -7192,7 +7441,32 @@ function computeClusterConsensus(votes,weightForFn,symbol){
   // 缺数据(不是这轮偶发);totalUnavailable-totalStructural则是"这轮偶发,不代表以后也没有"。
   const dataAvailablePct=totalVotesAll?Math.round((totalVotesAll-totalUnavailable)/totalVotesAll*100):100;
   return{clusters,score,maxScore,confluence,clusterBull,clusterBear,totalClusters:clusters.length,
-    totalVotesAll,totalUnavailable,totalStructural,dataAvailablePct};
+    totalVotesAll,totalUnavailable,totalStructural,totalNotApplicable,dataAvailablePct};
+}
+
+/* ── v11: 方向裁决单点化(live 与 回测共用) ──
+   此前 live 的 computeSignal 与 回测的 backtestSnapshotAt 各写一份 dirSign 判定,且 v10 只改了 live
+   (TradFi 0.30),回测仍是 0.15,导致"用回测去校准 TradFi"校准的是另一套规则。这里合并成一个函数。
+   crypto: 阈值0.15,行为与旧版逐字节一致。
+   非crypto: 阈值0.30,并额外要求 ①至少2个独立簇同向 ②反向簇数量必须少于同向簇数量。
+   理由: 分母只统计有活跃成员的簇后(v10),TradFi 下 A/B/C 三簇权重和恒为3.0,趋势市里 A 簇一个簇
+   (1.4/3.0≈0.47)就足以单独越过0.30——"清一色同向"的真正机制是单簇独裁,而不是分母缩小。 */
+const DERIV_ONLY_VOTE_RE=/^资金流|CVD背离|量能挤压|持仓量变化率|多空比|吃单买卖比|资金费率连续性|顶\/底部结构预警|清算流向|Deribit|期权|宏观 · BTC占比/;
+const NONCRYPTO_MIN_AGREE_CLUSTERS=2;
+const NONCRYPTO_MIN_ACTIVE_PER_CLUSTER=2;
+function clusterOptsFor(assetClass){
+  return(!assetClass||assetClass==="CRYPTO")?null:{minActive:NONCRYPTO_MIN_ACTIVE_PER_CLUSTER};
+}
+function resolveDirSign(score,maxScore,clusterRes,assetClass){
+  const isCrypto=!assetClass||assetClass==="CRYPTO";
+  const th=isCrypto?0.15:0.30;
+  let d=score>maxScore*th?1:score<-maxScore*th?-1:0;
+  if(!isCrypto&&d!==0){
+    const agree=d>0?clusterRes.clusterBull:clusterRes.clusterBear;
+    const oppose=d>0?clusterRes.clusterBear:clusterRes.clusterBull;
+    if(agree<NONCRYPTO_MIN_AGREE_CLUSTERS||oppose>=agree)d=0;
+  }
+  return d;
 }
 
 /* ── REGIME 滞后带(HYSTERESIS) ── Choppiness Index 在38.2/61.8临界值附近逐根小幅波动是常态,
@@ -7384,7 +7658,34 @@ function computeExecutionGate(plan,outlook,confluence,regime,regimeLabel,cycleCo
    ① lastDirSignBySymbol: 只记"上一次"与"变化时间点",驱动P1-1的"⚠方向刚变"即时提示;
    ② dirSignChangeLog: 记过去1小时"变化发生的时间戳"事件日志,驱动P1-2的"信号稳定性"统计
    (过去1小时变了几次/当前方向已经稳定了多久),两者职责不同,故意分开存,不要合并成一个。 */
-const lastDirSignBySymbol=new Map();   // symbol -> {dirSign, previousDirSign, changedAt, stableSince}
+const lastDirSignBySymbol=new Map();   // symbol -> {dirSign, previousDirSign, changedAt}(v12: 去掉stableSince,稳定时长统一见dirStableByKey)
+// v11: 固定周期的"方向稳定时长"必须按 symbol|周期 分开记。同一个symbol会被1h/4h/8h/1d/1w各调一次
+// computeSignal,若共用 lastDirSignBySymbol(只按symbol),各周期方向不一致时会互相把对方的
+// stableSince重置,稳定时长就不是任何一个周期自己的稳定时长。
+const dirStableByKey=new Map();        // "symbol|interval" -> {dirSign, since, seen, persist}
+// v12: 稳定起点此前只在内存里,刷新即归零,所以确认窗口不得不封顶。现在非crypto的记录落localStorage:
+// 刷新页面/短暂关闭后计时不丢;但两次\"亲眼观测\"之间隔了超过DIR_STABLE_MAX_GAP_MS(默认30分钟,
+// 正常扫描间隔5分钟)就视为中间没看着(方向可能翻过又翻回),计时重新开始,不把\"没观测到的时段\"算成稳定。
+// 代价: 长窗口(4h/1d/1w)仍要求页面基本保持打开,这是不可能绕开的——没人观测就不存在\"已确认稳定\"。
+const DIR_STABLE_LS_KEY="orbit_dirstable_v1";
+const DIR_STABLE_MAX_GAP_MS=30*60*1000;
+const DIR_STABLE_KEEP_MS=48*3600*1000;
+let __dirStableDirty=false,__dirStableSavedAt=0;
+(function loadDirStable(){
+  try{
+    const o=JSON.parse(localStorage.getItem(DIR_STABLE_LS_KEY)||"{}");
+    Object.keys(o).forEach(k=>{const e=o[k];if(e&&typeof e.d==="number"&&e.s&&e.l)dirStableByKey.set(k,{dirSign:e.d,since:e.s,seen:e.l,persist:true});});
+  }catch(e){}
+})();
+function persistDirStable(now){
+  if(!__dirStableDirty||now-__dirStableSavedAt<30000)return;
+  __dirStableDirty=false;__dirStableSavedAt=now;
+  try{
+    const o={};
+    dirStableByKey.forEach((v,k)=>{if(v.persist&&now-v.seen<=DIR_STABLE_KEEP_MS)o[k]={d:v.dirSign,s:v.since,l:v.seen};});
+    localStorage.setItem(DIR_STABLE_LS_KEY,JSON.stringify(o));
+  }catch(e){}
+}
 // 2026-09-10 P1-2修复: 最初版本用 dirSignHistoryBySymbol:[{ts,dirSign}] 数组存变化历史,但数组
 // 只在"方向变化时"才push一条(避免同一方向每2秒重复调用把数组撑爆),这导致数组里相邻两条的
 // dirSign必然不同——于是"if(hist[i].dirSign!==hist[i-1].dirSign)"这个条件永远为真,算出来的
@@ -7434,6 +7735,9 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
   const closes=candles.map(c=>c.close);
   const last=candles[candles.length-1],price=last.close;
   const li=closes.length-1;
+  // 2026-09-24 新增: 提前取一次资产类别,供下面macroDominanceVote屏蔽与dirSign阈值分档共用,
+  // 不用等到后面market.get(symbol)那次才知道(见用户诉求文档缺陷1/2/5的修复)。
+  const assetClassForSig=(market.get(symbol)||{}).assetClass||"CRYPTO";
 
   // 自适应周期选择: 效率比 ER(10) 越接近1(趋势干净)周期越短更灵敏; 越接近0(噪音/震荡)周期越长更平滑。
   // RSI: 8(趋势) ~ 21(震荡) · EMA快线: 12(趋势) ~ 26(震荡)
@@ -7543,7 +7847,7 @@ function computeSignal(candles,intervalLabel,symbol,ctx){
 votes.push(chartPatternVote(candles));
 votes.push(harmonicPatternVote(candles));
 votes.push(elliottWaveVote(candles));
-votes.push(macroDominanceVote(symbol));
+votes.push(macroDominanceVote(symbol,assetClassForSig));
   // 三通: 批量扫描路径用 ctx.santong(见fetchSignalContext,已用该symbol自己的日线+周线算好);
   // 单symbol深度视图没有ctx,退回原有的全局 cycleAnchorForSymbol/weeklyAnchorForSymbol 路径,
   // 只有当前modal打开的正是这个symbol、且日线+周线锚定数据都已就绪时才算,否则显示"未就绪"
@@ -7634,14 +7938,28 @@ votes.push(macroDominanceVote(symbol));
   }
 
   votes.forEach(v=>{v.w=weightFor(v.cat);});
-  const clusterRes=computeClusterConsensus(votes,weightFor,symbol);
+  // v12: 非crypto下,纯衍生品数据依赖的票(资金费率/OI/CVD/多空比/清算/期权/BTC占比)若没有给出方向,
+  // 标记为\"不适用\"而不是从votes里删除(UI仍可展开查看),只是不再计入数据覆盖度的分母。
+  // 只标dir===0的:如果某个品种这类接口真的有数据、给出了方向,说明对它是适用的,照常计入。
+  if(assetClassForSig!=="CRYPTO"){
+    votes.forEach(v=>{if(v.dir===0&&DERIV_ONLY_VOTE_RE.test(v.name))v.notApplicable=true;});
+  }
+  const clusterRes=computeClusterConsensus(votes,weightFor,symbol,clusterOptsFor(assetClassForSig));
   const score=clusterRes.score,maxScore=clusterRes.maxScore,confluence=clusterRes.confluence;
   let biasLabel="中性 NEUTRAL",biasCls="neutral";
   if(score>=maxScore*0.30){biasLabel="偏多 BULLISH";biasCls="bull";}
   if(score>=maxScore*0.52){biasLabel="强烈偏多 STRONG BULL";biasCls="bull";}
   if(score<=-maxScore*0.30){biasLabel="偏空 BEARISH";biasCls="bear";}
   if(score<=-maxScore*0.52){biasLabel="强烈偏空 STRONG BEAR";biasCls="bear";}
-  const dirSign=score>maxScore*0.15?1:score<-maxScore*0.15?-1:0;
+  // 2026-09-24 修复(用户诉求文档缺陷5): 0.15的方向确认阈值是按crypto的24票投票池校准的。
+  // 非crypto资产在剔除死簇分母后(见computeClusterConsensus的修复)score的绝对值分布也会
+  // 变化,且低阈值+无二次确认会让score在阈值附近来回穿越、方向频繁翻转,又被固定周期引擎
+  // (pickCycleTopN)不做确认地直接收编——这是TradFi清一色同向持仓的另一个根源。这里把
+  // 非crypto的阈值提高到0.30(与现有"偏多/偏空 BULLISH/BEARISH"文案标签本来就用的0.30
+  // 分界一致,不是新拍一个数字),crypto维持原有0.15不变。多根K线方向确认见下方
+  // pickCycleTopN对dirStableSince的过滤。
+  // v11: 判定逻辑抽到 resolveDirSign(live/回测共用;非crypto另加"≥2个独立簇同向"的佐证要求)。
+  const dirSign=resolveDirSign(score,maxScore,clusterRes,assetClassForSig);
 
   // Update table badge
   if(m)m.signalDir=dirSign;
@@ -7653,9 +7971,14 @@ votes.push(macroDominanceVote(symbol));
   const __dsPrev=lastDirSignBySymbol.get(symbol);
   const dirChanged=!!(__dsPrev&&__dsPrev.dirSign!==0&&dirSign!==__dsPrev.dirSign);
   const dirChangedAt=dirChanged?__dsNow:(__dsPrev?__dsPrev.changedAt:null);
-  const dirStableSince=dirChanged?__dsNow:(__dsPrev&&__dsPrev.dirSign===dirSign?__dsPrev.stableSince:__dsNow);
+  const __stKey=symbol+"|"+intervalLabel,__stPrev=dirStableByKey.get(__stKey);
+  const __stContinuous=!!(__stPrev&&__stPrev.dirSign===dirSign&&(__dsNow-(__stPrev.seen||0))<=DIR_STABLE_MAX_GAP_MS);
+  const dirStableSince=__stContinuous?__stPrev.since:__dsNow;
+  const __stPersist=assetClassForSig!=="CRYPTO"; // 只有非crypto的固定周期选币用得到稳定时长,crypto不落盘
+  dirStableByKey.set(__stKey,{dirSign,since:dirStableSince,seen:__dsNow,persist:__stPersist});
+  if(__stPersist){__dirStableDirty=true;persistDirStable(__dsNow);}
   const previousDirSign=__dsPrev?__dsPrev.dirSign:0;
-  lastDirSignBySymbol.set(symbol,{dirSign,previousDirSign:dirChanged?__dsPrev.dirSign:previousDirSign,changedAt:dirChangedAt,stableSince:dirStableSince});
+  lastDirSignBySymbol.set(symbol,{dirSign,previousDirSign:dirChanged?__dsPrev.dirSign:previousDirSign,changedAt:dirChangedAt});
   recordDirSignChange(symbol, dirSign);
 
   // 突破确认分档: 参考位取"最近一个摆动高点(LONG)/摆动低点(SHORT)"——如果价格还没越过它,
@@ -7742,7 +8065,7 @@ votes.push(macroDominanceVote(symbol));
   const stability=computeSignalStability(symbol); // P1-2: {changesLastHour,currentStableMs,avgStableMs}
 
   return{symbol,price,votes,clusters:clusterRes.clusters,score,maxScore,confluence,
-    totalVotesAll:clusterRes.totalVotesAll,totalUnavailable:clusterRes.totalUnavailable,dataAvailablePct:clusterRes.dataAvailablePct,totalStructural:clusterRes.totalStructural,
+    totalVotesAll:clusterRes.totalVotesAll,totalUnavailable:clusterRes.totalUnavailable,dataAvailablePct:clusterRes.dataAvailablePct,totalStructural:clusterRes.totalStructural,totalNotApplicable:clusterRes.totalNotApplicable,
     biasLabel,biasCls,dirSign,intervalLabel,plan,structure,volProfile,atr:a,moon,solarTerms,wuxing,mercury,
     highs,lows, // 2026-09-18新增: 供机会雷达/固定周期复盘路径(pickCycleTopN→buildStructureTargets)复用,
     // 做"被后续价格确认过的摆动点"止损判断(见findConfirmedSwing),不用在那条路径里重新拉K线/重新findPivots。
@@ -7865,9 +8188,9 @@ function backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState,assetClass
   votes.push({name:"斐波那契位置",cat:"neutral",dir:fibDir});
 
   votes.forEach(v=>{v.w=backtestWeightFor(regime,v.cat);});
-  const clusterRes=computeClusterConsensus(votes,cat=>backtestWeightFor(regime,cat));
+  const clusterRes=computeClusterConsensus(votes,cat=>backtestWeightFor(regime,cat),undefined,clusterOptsFor(assetClass));
   const score=clusterRes.score,maxScore=clusterRes.maxScore;
-  const dirSign=score>maxScore*0.15?1:score<-maxScore*0.15?-1:0;
+  const dirSign=resolveDirSign(score,maxScore,clusterRes,assetClass); // v11: 与live同一裁决函数
   const voteBull=clusterRes.clusterBull,voteBear=clusterRes.clusterBear,voteTotal=clusterRes.totalClusters;
   const reliability=assessSetupReliability(dirSign,score,maxScore,voteBull,voteBear,voteTotal,regime);
   const closesTail=pre.closesFull.slice(Math.max(0,idx-105),idx+1);
@@ -9182,7 +9505,7 @@ function drawCycleWinRateCanvas(tf){
   if(emptyEl)emptyEl.style.display="none";
   const pad=6,n=hist.length,barW=(w-pad*2)/n;
   let totalWins=0,totalN=0;
-  hist.forEach(c=>{const{wins}=cycleWinLoss(c);totalWins+=wins;totalN+=c.positions.length;});
+  hist.forEach(c=>{const{wins}=cycleWinLoss(c);totalWins+=wins;totalN+=cycleCounted(c).length;});
   const overallRate=totalN?totalWins/totalN*100:0;
   const[ciLo,ciHi]=totalN?wilsonCI(totalWins,totalN):[0,100];
   const yFor=v=>h-pad-(Math.max(0,Math.min(100,v))/100)*(h-pad*2);
@@ -9194,7 +9517,8 @@ function drawCycleWinRateCanvas(tf){
   ctx.strokeStyle="rgba(255,255,255,0.08)";ctx.lineWidth=1;ctx.stroke();
   hist.forEach((c,i)=>{
     const{wins}=cycleWinLoss(c);
-    const rate=c.positions.length?wins/c.positions.length*100:0;
+    const cn=cycleCounted(c).length;
+    const rate=cn?wins/cn*100:0;
     const x=pad+i*barW,y=yFor(rate);
     ctx.fillStyle=rate>=50?"#5a9b78":"#b8555f";
     ctx.fillRect(x+barW*0.15,y,Math.max(1,barW*0.7),(h-pad)-y);
@@ -9252,7 +9576,7 @@ function buildDeskNote(sig){
     sentences.push(`<b class="down">⚠ 本币种信号方向刚刚发生变化(从 ${dirTxt(sig.previousDirSign)} 变为 ${dirTxt(sig.dirSign)})。如果你此前据旧方向下单,请立即重新评估该仓位。</b>`);
   }
   // 1) Headline bias + regime + confluence
-  sentences.push(`<b class="${sig.biasCls}">${esc(sig.biasLabel)}</b>,${esc(sig.intervalLabel)}级别信号共振度 <b>${sig.confluence}%</b>(${sig.votes.length}项原始指标聚合为${sig.clusters?sig.clusters.length:5}个独立信息簇,${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore.toFixed(1)}簇分${sig.totalUnavailable>0?`,其中${sig.totalUnavailable}项因数据不可用未参与计算`:``}),当前处于<b>${esc(sig.regimeLabel)}</b>(Choppiness ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"})。`);
+  sentences.push(`<b class="${sig.biasCls}">${esc(sig.biasLabel)}</b>,${esc(sig.intervalLabel)}级别信号共振度 <b>${sig.confluence}%</b>(${sig.votes.length-(sig.totalNotApplicable||0)}项适用的原始指标聚合为${sig.clusters?sig.clusters.length:5}个独立信息簇,${sig.score>0?"+":""}${sig.score.toFixed(1)}/${sig.maxScore.toFixed(1)}簇分${sig.totalUnavailable>0?`,其中${sig.totalUnavailable}项因数据不可用未参与计算`:``}),当前处于<b>${esc(sig.regimeLabel)}</b>(Choppiness ${sig.ciVal!=null?sig.ciVal.toFixed(1):"–"})。`);
   // 2) Top 2-3 driving indicators (highest weighted-conviction, non-zero)
   const drivers=[...sig.votes].filter(v=>v.dir!==0).sort((a,b)=>Math.abs(b.dir*b.w)-Math.abs(a.dir*a.w)).slice(0,3);
   if(drivers.length){
@@ -10477,7 +10801,7 @@ async function dpmComputeTf(symbol,cfg,bars,htfBars,btcBars,fundRecs,nowMs){
     fundRecs:fundRecs?fundRecs.length:0};
   if(n<DPM_WARMUP+H+50){
     res.grade="D";res.gradeWhy=`仅有 ${n} 根已收盘K线(至少需要约 ${DPM_WARMUP+H+50} 根才能做样本外验证)`;
-    return dpmFillTheory(res,null,geo);
+    return dpmFillTheory(res,null,geo,null,null);
   }
   // 因果对齐的辅助序列
   const aux={htf:null,btc:null,fund:null,flowOk:true};
@@ -10623,6 +10947,7 @@ function dpmFinishDir(res,p,nEffDir,geo,cnt,nLabDir){
 }
 /* 数据不足: 只给理论基准(无漂移赌徒破产解),明确标注非经验概率 */
 function dpmFillTheory(res,ds,geo,fNow,aux){
+  if(!res.dirs)res.dirs={}; // v11 防御性加固(实测 dpmComputeTf 里 res.dirs 初始即 {},此前并不会崩)
   ["long","short"].forEach(k=>{
     res.dirs[k]={p:geo.p0,lo:null,hi:null,edge:0,ev:0,evNet:0,tier:0,nEff:0,nRes:0,resolvedRate:null,contribs:[],base:{p0:geo.p0,neutral:null,neutralSh:geo.p0,pEmp:null,pBase:geo.p0,nEff:0,nRes:0,driftPP:0,statePP:0,dev:0},theoryOnly:true};
   });
@@ -10702,7 +11027,7 @@ async function dpmGetKlines(symbol,cfg){
   }
   const bars=dpmParseKlines(all,Date.now());
   dpmKl.set(key,{bars,ts:Date.now()});
-  if(dpmKl.size>40){const oldest=[...dpmKl.entries()].sort((a,b)=>a[1].ts-b[1].ts)[0];if(oldest)dpmKl.delete(oldest[0]);}
+  if(dpmKl.size>40){[...dpmKl.entries()].sort((a,b)=>a[1].ts-b[1].ts).slice(0,dpmKl.size-32).forEach(([k])=>dpmKl.delete(k));} // v12: 超上限一次淘汰到32条(80%)
   return bars;
 }
 async function dpmGetFunding(symbol){
