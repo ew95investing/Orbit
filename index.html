@@ -1352,6 +1352,7 @@
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
       <button class="trk-reset-btn" id="trkExportBtn" title="导出全部追踪记录为CSV文件(含入场/止损/止盈/结算结果),方便自己在Excel里存档或另行统计">⬇ 导出CSV</button>
       <button class="trk-reset-btn" id="trkTgBtn" title="设置Telegram推送: 有新的推荐信号被记录时自动推送到你的Telegram,不用一直盯着屏幕">📨 Telegram推送</button>
+      <button class="trk-reset-btn" id="trkCloudSyncBtn" title="设置跨设备云同步: 用免费的jsonbin.io当中转,让手机和电脑共用同一份追踪记录/持仓/闸门确认状态,不再是两份互不相通的本机存档">☁ 云同步</button>
     </div>
     <div class="trk-body" id="trkBody">加载中…</div>
   </div>
@@ -2020,6 +2021,168 @@ function promptTelegramSetup(){
     });
   }
 }
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── 2026-09-25 新增: 跨设备云同步 ──
+   本工具原本所有状态(推荐追踪日志/固定周期持仓/闸门确认计时/冷却期/手动持仓标记/资金曲线
+   /DPM账本等)只写在当前这台设备浏览器自己的localStorage——手机和电脑是两份完全独立的
+   存档,这是"手机0笔/电脑85笔"的根本原因,不是显示bug。
+   本来最干净的方案是用Claude网页版自带的账号级云存储,但放弃了: 这个工具的核心功能
+   (Binance实时WS行情/Deribit/CoinGecko/Telegram推送)全部要直接对外部网站发请求,
+   一旦把它发布成Claude的托管网页,那个环境的安全策略只放行几个前端脚本CDN,会把这些
+   请求全部静默挡掉——等于把工具的心脏关掉。所以继续保持"下载到本地浏览器直接打开"这个
+   形态不变,自己加一层同步。
+   做法: 用 jsonbin.io(免费,支持跨域,不需要自己搭后端)当两台设备共用的一个云端小盒子。
+   本机每次写入 orbit 开头的记录(Telegram Token/本身的同步凭证除外,那是密钥,永远只留在
+   本机,不参与同步)时,顺手异步推一份最新版本上去(2秒防抖);同时每30秒轮询一次盒子里
+   有没有被另一台设备更新过。合并规则是"按每个字段自己的更新时间戳"取新的一份
+   (last-write-wins,不是整份互相覆盖)——比如手机在结算一笔持仓、电脑在标记另一笔手动
+   入场,两边各自的改动都保得住,不会谁覆盖谁。
+   任何一步失败(没配置/网络问题/免费额度用完)都静默退回"只用本机存储",不影响任何原有
+   功能——这套同步是纯增量的,不改一行原有的业务判定逻辑。 */
+const CLOUD_CFG_KEY="orbit_cloud_sync_cfg";          // 同步凭证本身,只留本机,不参与同步
+const CLOUD_SYNC_META_KEY="orbit_cloud_sync_meta_v1"; // 每个key"最后一次本机写入"的时间戳,只留本机,不参与同步
+const CLOUD_SYNC_BLOCKLIST=new Set([TG_CFG_KEY,CLOUD_CFG_KEY,CLOUD_SYNC_META_KEY]);
+function cloudCfg(){try{return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)||"null")||{apiKey:"",binId:"",enabled:false};}catch(e){return{apiKey:"",binId:"",enabled:false};}}
+function saveCloudCfg(c){try{localStorage.setItem(CLOUD_CFG_KEY,JSON.stringify(c));}catch(e){}}
+function cloudSyncMeta(){try{return JSON.parse(localStorage.getItem(CLOUD_SYNC_META_KEY)||"{}");}catch(e){return{};}}
+function cloudSyncMetaSave(m){try{localStorage.setItem(CLOUD_SYNC_META_KEY,JSON.stringify(m));}catch(e){}}
+function cloudSyncableKeys(){
+  const out=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&k.indexOf("orbit")===0&&!CLOUD_SYNC_BLOCKLIST.has(k))out.push(k);
+  }
+  return out;
+}
+async function cloudBinRead(cfg){
+  const res=await fetch(`https://api.jsonbin.io/v3/b/${cfg.binId}/latest`,{headers:{"X-Master-Key":cfg.apiKey}});
+  if(!res.ok)throw new Error("云同步读取失败 HTTP "+res.status);
+  const j=await res.json();
+  return (j&&j.record)?j.record:{};
+}
+async function cloudBinWrite(cfg,record){
+  const res=await fetch(`https://api.jsonbin.io/v3/b/${cfg.binId}`,{method:"PUT",
+    headers:{"Content-Type":"application/json","X-Master-Key":cfg.apiKey},body:JSON.stringify(record)});
+  if(!res.ok)throw new Error("云同步写入失败 HTTP "+res.status);
+}
+async function cloudBinCreate(cfg,record){
+  const res=await fetch("https://api.jsonbin.io/v3/b",{method:"POST",
+    headers:{"Content-Type":"application/json","X-Master-Key":cfg.apiKey,"X-Bin-Private":"true"},body:JSON.stringify(record)});
+  if(!res.ok)throw new Error("云同步创建失败 HTTP "+res.status);
+  const j=await res.json();
+  return j&&j.metadata?j.metadata.id:null;
+}
+// 正在把远端拉下来的数据合并进本机的这一刻,不要让下面的localStorage写入钩子把这次
+// "合并动作"误当成"本机产生了新变更"又反手推回云端——否则pull和push会互相触发,无限循环。
+let __cloudApplyingRemote=false;
+function cloudApplyRemoteEntry(key,entry,meta){
+  if(!entry)return false;
+  const localTs=meta[key]||0;
+  if(entry.updatedAt<=localTs)return false; // 本机这份不比远端旧,不覆盖(local-write-wins的另一半)
+  __cloudApplyingRemote=true;
+  try{if(entry.deleted)localStorage.removeItem(key);else if(entry.value!=null)localStorage.setItem(key,entry.value);}
+  finally{__cloudApplyingRemote=false;}
+  meta[key]=entry.updatedAt;
+  return true;
+}
+let cloudSyncBusy=false;
+async function cloudSyncPull(){
+  const cfg=cloudCfg();
+  if(!cfg.enabled||!cfg.apiKey||!cfg.binId||cloudSyncBusy)return;
+  cloudSyncBusy=true;
+  try{
+    const record=await cloudBinRead(cfg);
+    const remoteKeys=record.keys||{};
+    const meta=cloudSyncMeta();
+    let changed=false;
+    Object.keys(remoteKeys).forEach(k=>{if(cloudApplyRemoteEntry(k,remoteKeys[k],meta))changed=true;});
+    if(changed){
+      cloudSyncMetaSave(meta);
+      // gatePendingConfirm/planPins是启动时从localStorage读一次、之后常驻内存的const Map,
+      // 云端合并只改了localStorage本身,这两个内存里的Map要跟着换新——不能整体reassign
+      // (是const),用clear()+重新灌入entries()。冷却期(SIGNAL_COOLDOWN_KEY)没有常驻内存的
+      // 拷贝,每次用到都直接loadCooldownMap()现读localStorage,合并完不用额外处理。
+      try{gatePendingConfirm.clear();loadGateConfirm().forEach((v,k)=>gatePendingConfirm.set(k,v));}catch(e){}
+      try{planPins.clear();loadPlanPins().forEach((v,k)=>planPins.set(k,v));}catch(e){}
+      renderTrackPanel();
+      try{renderOpportunityRadar();}catch(e){}
+    }
+  }catch(e){console.error("[ORBIT][云同步] 拉取失败,本次跳过,不影响本机功能",e);}
+  cloudSyncBusy=false;
+}
+let __cloudPushPending=false;
+function cloudQueuePush(){
+  const cfg=cloudCfg();
+  if(!cfg.enabled||!cfg.apiKey||!cfg.binId||__cloudPushPending)return;
+  __cloudPushPending=true;
+  setTimeout(async()=>{
+    __cloudPushPending=false;
+    try{
+      const meta=cloudSyncMeta();
+      const record=await cloudBinRead(cfg).catch(()=>({keys:{}}));
+      const remoteKeys=record.keys||{};
+      const now=Date.now();
+      cloudSyncableKeys().forEach(k=>{
+        const val=localStorage.getItem(k);
+        const localTs=meta[k]||now;
+        const remoteEntry=remoteKeys[k];
+        // 只推"本机比远端新"或"远端还没有"的key,避免把另一台设备刚推上去、自己还没pull
+        // 下来的更新反手覆盖掉。
+        if(!remoteEntry||localTs>remoteEntry.updatedAt){
+          remoteKeys[k]=val==null?{deleted:true,updatedAt:localTs}:{value:val,updatedAt:localTs};
+        }
+      });
+      await cloudBinWrite(cfg,{keys:remoteKeys,updatedAt:now});
+    }catch(e){console.error("[ORBIT][云同步] 推送失败,本次跳过,不影响本机保存",e);}
+  },2000); // 2秒防抖,避免同一批扫描连续写好几个key时触发好几次网络请求
+}
+(function(){
+  // 拦截localStorage的写入,只对orbit开头且不在黑名单里的key顺手触发上面的同步——原有的
+  // "写入本机localStorage"这个行为本身完全不变,只是多了一步"顺手也排队推云端"。
+  const rawSet=localStorage.setItem.bind(localStorage);
+  const rawRemove=localStorage.removeItem.bind(localStorage);
+  localStorage.setItem=function(k,v){
+    rawSet(k,v);
+    if(__cloudApplyingRemote||!k||k.indexOf("orbit")!==0||CLOUD_SYNC_BLOCKLIST.has(k))return;
+    const m=cloudSyncMeta();m[k]=Date.now();cloudSyncMetaSave(m);
+    cloudQueuePush();
+  };
+  localStorage.removeItem=function(k){
+    rawRemove(k);
+    if(__cloudApplyingRemote||!k||k.indexOf("orbit")!==0||CLOUD_SYNC_BLOCKLIST.has(k))return;
+    const m=cloudSyncMeta();m[k]=Date.now();cloudSyncMetaSave(m);
+    cloudQueuePush();
+  };
+})();
+function promptCloudSyncSetup(){
+  const cfg=cloudCfg();
+  const apiKey=prompt("设置跨设备云同步 — 第1步:\n前往 jsonbin.io 免费注册,在 API Keys 页面复制你的 Master Key(留空并确定=关闭云同步):",cfg.apiKey||"");
+  if(apiKey===null)return;
+  if(!apiKey.trim()){saveCloudCfg({apiKey:"",binId:"",enabled:false});alert("已关闭云同步,继续只使用本机存储。");return;}
+  const binIdInput=prompt("设置跨设备云同步 — 第2步:\n如果这是第一台设备,直接留空,确定后自动创建;如果是第二台/后续设备,粘贴第一台设备创建成功时给你看的Bin ID,两台设备就接上同一份云端存档了:",cfg.binId||"");
+  if(binIdInput===null)return;
+  const binId=binIdInput.trim();
+  (async()=>{
+    try{
+      const newCfg={apiKey:apiKey.trim(),binId,enabled:true};
+      if(!binId){
+        const id=await cloudBinCreate(newCfg,{keys:{},updatedAt:Date.now()});
+        if(!id)throw new Error("未拿到Bin ID,请检查API Key是否正确");
+        newCfg.binId=id;
+        saveCloudCfg(newCfg);
+        try{await navigator.clipboard.writeText(id);}catch(e){}
+        alert("云同步已开启。这是本次自动创建的 Bin ID(已尝试复制到剪贴板),记下来在其它设备上设置第2步时粘贴用:\n\n"+id);
+      }else{
+        await cloudBinRead(newCfg); // 校验Key/BinId确实有效且读得到,无效会在这里抛错
+        saveCloudCfg(newCfg);
+        alert("云同步已开启,正在与另一台设备的存档合并…");
+        await cloudSyncPull();
+      }
+    }catch(e){
+      alert("设置失败: "+(e.message||e)+"\n请检查API Key/Bin ID是否输入正确。");
+    }
+  })();
+}
 function fmtTimeSgt(ms){
   const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(new Date(ms));
   const p={};parts.forEach(x=>p[x.type]=x.value);
@@ -2206,6 +2369,8 @@ function init(){
     if(trkExport){exportCycleLogCSV();return;}
     const trkTg=e.target.closest("#trkTgBtn");
     if(trkTg){promptTelegramSetup();return;}
+    const trkCloud=e.target.closest("#trkCloudSyncBtn");
+    if(trkCloud){promptCloudSyncSetup();return;}
     const btn=e.target.closest(".bt-run-btn");
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
@@ -3512,6 +3677,14 @@ function renderOpportunityRadar(){
   if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 数据每${fmtScanIntervalLabel()}刷新 · 决策以4小时K线为基准,需持续45分钟以上且跨越一次4H收盘才计入正式清单`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
+  // 2026-09-25 根因修复: recordTrackSignals 此前定义了但从未被任何地方调用过,导致
+  // gatePendingConfirm(下面 oppTriggerState 用它判断 trig.cls 是否能到"pass")永远是空的——
+  // 不是"这一小时行情差、10个候选全被过滤掉",而是"已确认"这一档在代码层面永远不可能被命中,
+  // 不论市场状况多好。同理,推荐追踪日志(TRACK_LOG_KEY)也永远不会新增记录,Telegram也永远
+  // 不会推送,"上次扫描"诊断也永远是"从未成功过"。补上这一行,让它在每次面板刷新时先跑,
+  // 后面 withMeta/oppTriggerState 才能读到刚更新过的 gatePendingConfirm。用 try/catch 兜底,
+  // 避免这里出错拖垮整个 renderOpportunityRadar(其余UI仍要能正常渲染)。
+  try{recordTrackSignals(rows);}catch(e){console.error("recordTrackSignals failed",e);}
   CYCLE_TFS.forEach(tf=>ensureCycle(tf)); // 三个时间维度(4H/1D/1W)的周期引擎都要在后台随扫描刷新/结算,不只是当前展示的那个tab
   const withMeta=rows.map(x=>{
     const type=classifyOpportunityType(x.r.sig);
@@ -12380,6 +12553,11 @@ function lpPatchAll(){
   });
 }
 setInterval(lpPatchAll,1000);
+
+// 云同步: 每30秒轮询一次远端有没有别的设备写入的新版本;先用本机现有数据正常渲染
+// (不等网络),pull回来的合并结果由cloudSyncPull内部按需重绘,不阻塞首屏。
+setInterval(cloudSyncPull,30000);
+cloudSyncPull();
 
 init();
 })();
