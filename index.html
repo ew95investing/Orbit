@@ -502,6 +502,19 @@
     .opp-body{grid-template-columns:1fr;}
     .opp-col+.opp-col{border-left:none;border-top:1px solid var(--line);}
   }
+  /* ── v21: 每日交易灵感 (DAILY TRADE IDEA) ── */
+  .daily-idea-panel{background:var(--panel);border:1px solid var(--amber);border-radius:6px;margin:0 20px 14px;overflow:hidden;}
+  @media(max-width:640px){.daily-idea-panel{margin:0 0 14px;}}
+  .di-head{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);}
+  .di-title{font-size:12px;letter-spacing:1.5px;color:var(--amber);text-transform:uppercase;font-weight:700;}
+  .di-sub{margin-left:auto;font-size:11px;color:var(--dim2);}
+  .di-body{padding:12px 14px;}
+  .di-row{border-bottom:1px dashed var(--line);padding:8px 0;font-size:13px;line-height:1.7;}
+  .di-row:last-child{border-bottom:none;}
+  .di-row b{margin-right:8px;}
+  .di-dim{display:block;color:var(--dim2);font-size:12px;margin-top:2px;}
+  .di-src{color:var(--dim2);font-size:11.5px;margin-top:3px;}
+  .di-empty{color:var(--dim2);font-size:13px;padding:4px 0;}
   /* ── TRACK RECORD (推荐追踪) — visually a sibling of .opp-panel, reuses its shell ── */
   .trk-panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;margin:0 20px 14px;overflow:hidden;}
   @media(max-width:640px){.trk-panel{margin:0 0 14px;}}
@@ -534,6 +547,33 @@
   .trk-tech-cell{font-size:11.5px;color:var(--dim2);max-width:260px;line-height:1.4;}
   .trk-detail-tech span:last-child{max-width:60%;text-align:right;color:var(--dim2);font-size:12px;line-height:1.4;}
   /* 持仓热力图: 卡片式而非文字行,一眼看清方向/浮盈亏,颜色深浅=盈亏幅度 */
+
+  /* v25: 推荐追踪全屏(仅桌面) + 下轮锁定卡片 */
+  .trk-fs-btn{display:none}
+  @media(min-width:900px){.trk-fs-btn{display:inline-block}}
+  body.trk-fs-lock{overflow:hidden}
+  .trk-panel.trk-fs{position:fixed;inset:0;z-index:9000;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;background:var(--bg,var(--panel));}
+  .trk-fs .trk-head{flex:0 0 auto;padding:12px 28px;}
+  .trk-fs .trk-body{flex:1 1 auto;overflow:auto;padding:18px 28px 40px;}
+  .trk-fs .trk-heatmap{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;}
+  .trk-fs .trk-tile-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:40px;row-gap:2px;}
+  .trk-fs .trk-detail-row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;align-items:start;}
+  .trk-fs .trk-detail-row>span:last-child{text-align:left;}
+  .trk-fs .trk-detail-tech,.trk-fs .trk-tile-gotomodal{grid-column:1/-1;}
+  .trk-fs .nc-grid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));}
+  .nc-box{border:1px solid var(--line2);border-radius:7px;padding:10px 12px;margin:0 0 12px;background:var(--panel2);}
+  .nc-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-bottom:8px;font-size:13px;}
+  .nc-stat{font-size:11px;color:var(--dim2);}
+  .nc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;}
+  .nc-card{border:1px dashed var(--line2);border-radius:7px;padding:8px 10px;font-size:12px;}
+  .nc-top{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px;}
+  .nc-top .up{color:var(--up)}.nc-top .down{color:var(--down)}
+  .nc-tag,.nc-chip{font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--line2);color:var(--dim2);}
+  .nc-chip.ok{color:var(--up)}.nc-chip.bad{color:var(--down)}.nc-chip.amb{color:var(--amber)}
+  .nc-row{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:2px 0;color:var(--dim2);}
+  .nc-row>span:last-child{text-align:right;color:var(--fg);}
+  .nc-tech{font-size:10.5px;line-height:1.5;color:var(--dim2);margin-top:4px;}
+  .nc-note{font-size:10.5px;color:var(--dim2);margin-top:8px;line-height:1.6;}
   .trk-heatmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:8px;}
   .trk-tile{border:1px solid var(--line2);border-radius:7px;padding:10px 11px;cursor:pointer;transition:border-color .15s,transform .1s;}
   .trk-tile-w{border-style:dashed;}
@@ -1357,6 +1397,31 @@
 
   </div></div>
 
+  <!-- v21: 每日交易灵感——放在饼图正下方,不论机会雷达/推荐追踪是否折叠都始终可见,当前
+       appView(crypto/tradfi)是哪个视图,这里就自动显示哪个视图4H/1D两条时间维度各自的
+       "现在最值得看的一笔"(没有够格候选时会诚实说明,不硬凑)。 -->
+  <div class="daily-idea-panel" id="dailyIdeaPanel">
+    <div class="di-head">
+      <span class="di-title">📌 今日焦点 · DAILY TRADE IDEA</span>
+      <span class="di-sub" id="dailyIdeaViewTag">–</span>
+    </div>
+    <div class="di-body" id="dailyIdeaBody"><div class="di-empty">扫描中,稍候…</div></div>
+  </div>
+
+  <div class="trk-panel" id="trkPanel">
+    <div class="trk-head">
+      <span class="trk-title">推荐追踪 · TRACK RECORD</span>
+      <span class="trk-sub">多周期策略追踪(1H/4H/8H/1D/1W) · 每期Top10按信号强度选出,止盈止损按各自周期的真实K线结构与ATR波动率单独计算(不是固定百分比,入场后周期内不改判),到期强制结算 · 只是观察日志,不影响任何实盘决策</span>
+      <span class="trk-status" id="trkStatus">–</span>
+      <button class="trk-reset-btn" id="trkScanNowBtn" title="不等定时器,立刻手动跑一轮扫描(诊断/验证扫描引擎是否还在正常工作用)">▶ 立即扫描一次</button>
+      <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
+      <button class="trk-reset-btn" id="trkExportBtn" title="导出全部追踪记录为CSV文件(含入场/止损/止盈/结算结果),方便自己在Excel里存档或另行统计">⬇ 导出CSV</button>
+      <button class="trk-reset-btn trk-fs-btn" id="trkFsBtn" title="桌面端全屏查看推荐追踪(自动重排版式,Esc退出)">⛶ 全屏</button>
+      <button class="trk-reset-btn" id="trkTgBtn" title="设置Telegram推送: 有新的推荐信号被记录时自动推送到你的Telegram,不用一直盯着屏幕">📨 Telegram推送</button>
+    </div>
+    <div class="trk-body" id="trkBody">加载中…</div>
+  </div>
+
   <div class="opp-panel" id="oppPanel">
     <div class="opp-head">
       <span class="opp-title">机会雷达 · 主流币最佳机会</span>
@@ -1381,19 +1446,6 @@
       </div>
       <div class="opp-collapse-body" id="oppFutureScanBody"><div class="opp-empty">扫描中…</div></div>
     </div>
-  </div>
-
-  <div class="trk-panel" id="trkPanel">
-    <div class="trk-head">
-      <span class="trk-title">推荐追踪 · TRACK RECORD</span>
-      <span class="trk-sub">多周期策略追踪(1H/4H/8H/1D/1W) · 每期Top10按信号强度选出,止盈止损按各自周期的真实K线结构与ATR波动率单独计算(不是固定百分比,入场后周期内不改判),到期强制结算 · 只是观察日志,不影响任何实盘决策</span>
-      <span class="trk-status" id="trkStatus">–</span>
-      <button class="trk-reset-btn" id="trkScanNowBtn" title="不等定时器,立刻手动跑一轮扫描(诊断/验证扫描引擎是否还在正常工作用)">▶ 立即扫描一次</button>
-      <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
-      <button class="trk-reset-btn" id="trkExportBtn" title="导出全部追踪记录为CSV文件(含入场/止损/止盈/结算结果),方便自己在Excel里存档或另行统计">⬇ 导出CSV</button>
-      <button class="trk-reset-btn" id="trkTgBtn" title="设置Telegram推送: 有新的推荐信号被记录时自动推送到你的Telegram,不用一直盯着屏幕">📨 Telegram推送</button>
-    </div>
-    <div class="trk-body" id="trkBody">加载中…</div>
   </div>
 
   <div class="controls">
@@ -3603,7 +3655,9 @@ function renderOpportunityRadar(){
       const st=dead?"❌ 已失效":chased?"⚠️ 已远离入场区 · 不追, 等回踩":"✅ 仍在入场区";
       return`<div>🟢 <b>${esc(x.symbol.replace("USDT",""))}</b> ${d>0?"做多":"做空"} · ${esc(x.type.label)} · 现价 ${fmtPrice(now)} · 入场 ${fmtPrice(p.entry)} · 止损 ${fmtPrice(p.sl)} · TP1 ${fmtPrice(p.tps[0].price)} · 现价剩余R:R ${rem!=null&&isFinite(rem)?rem.toFixed(1):"–"} · ${st}</div>`;}).join("");
     const verdict=live.length?`<b>🟢 可执行 ${live.length}</b>(上限${ORBIT_EDGE.dailyCap}/天)`:`<b>⚫ 今日无高胜率机会 — 收手, 不出手也是一种仓位</b>`;
-    bn.insertAdjacentHTML("afterbegin",`<div class="opp-watch-head" style="font-size:13px;border-bottom:1px solid var(--line,#444);padding-bottom:6px">10秒判断: ${verdict} · 🟡 酝酿中 ${pending.length}${rowsB?"<div style='margin-top:6px;line-height:1.7'>"+rowsB+"</div>":""}</div>`);
+    // v21: 原来是常驻展开的<div>,常年占屏幕最上方一块。用户明确要求默认收起——用原生<details>
+    // 折叠,summary里保留最关键的一句判断结论(不点开也看得到"能不能动手"),点开才看酝酿中清单。
+    bn.insertAdjacentHTML("afterbegin",`<details class="opp-watch-head opp-10s-toggle" style="font-size:13px;border-bottom:1px solid var(--line,#444);padding-bottom:6px"><summary style="cursor:pointer;">10秒判断: ${verdict} · 🟡 酝酿中 ${pending.length}</summary>${rowsB?"<div style='margin-top:6px;line-height:1.7'>"+rowsB+"</div>":"<div style='margin-top:6px;color:var(--dim2)'>暂无酝酿中的候选</div>"}</details>`);
   }}catch(e){}
   const statusEl=document.getElementById("oppStatusLine");
   if(statusEl){
@@ -3796,7 +3850,10 @@ function cycleTechNote(sig){
 // v12: 确认窗口按周期分档(非crypto才生效)。v11用\"周期/8且封顶60分钟\",对1d/1w等于没有门槛;
 // 封顶当初是因为稳定起点刷新即归零,现在已持久化(见dirStableByKey),可以放开。
 // 这些数字是可调常量,不是校准结果。要求页面基本保持打开(两次观测间隔>30分钟会重新计时)。
-const DIR_CONFIRM_MS_BY_TF={"1h":10*60*1000,"4h":20*60*1000,"8h":40*60*1000,"1d":2*3600*1000,"1w":12*3600*1000}; // v16: 放宽(原15m/60m/2h/4h/24h),仍防止方向瞬间翻转
+// v21 (2026-09-29): 1D/1W原为2h/12h不中断确认,相对5分钟一轮的扫描节奏几乎不可能达标(用户反馈
+// "TradFi每个周期都是空的",headless回放证实几乎100%卡在这一步)。收窄到与扫描节奏更匹配的档位,
+// 且不再是"过不了就没有"——见pickCycleTopN/buildCyclePositions,过不了只降级为W(观察)档而非剔除。
+const DIR_CONFIRM_MS_BY_TF={"1h":10*60*1000,"4h":15*60*1000,"8h":25*60*1000,"1d":45*60*1000,"1w":90*60*1000};
 function dirConfirmMinMs(tf){
   return DIR_CONFIRM_MS_BY_TF[tf]||OPP_SCAN_INTERVAL_MS;
 }
@@ -3854,14 +3911,20 @@ function cycleHorizonSim(a,b,sigma,mu,H,dir,tpPct,slPct,seed){
 function cycleFrictionPct(sym){const rt=EXECUTION_FRICTION[assetClassOfSymbol(sym)]||EXECUTION_FRICTION.DEFAULT;return(rt.feeRoundTrip+rt.slippageRoundTrip)*100;}
 // 单笔候选: 把结构位算出的TP/SL收窄到"剩余周期时间内可达"的范围,再用MC算扣费后净期望
 function cycleHorizonPlan(x,t,entry,tf,remainMs,assetClass,sym,seedKey){
+  /* v25 根因修复: 旧版把TP/SL收窄到"本期剩余时间"的σ(H最低clamp到0.05根),周期后段才建仓时
+     4H的TP只剩0.24%、日线只剩2%,且R:R<1。现在: 价位尺寸=该周期"一根完整K线"的波幅σ(4H用4H σ、
+     日线用日线σ,不随建仓早晚缩水);剩余时间只用于蒙特卡洛估算真实概率——建仓太晚(剩余<35%)
+     则如实降为W(观察),不再靠缩小TP/SL来"凑"出一个能碰到的目标。 */
   const barMs=(CYCLE_TF_MINUTES[tf]||240)*60000;
   const H=Math.max(0.05,remainMs/barMs);
-  const sigBar=(x.sigma>0&&isFinite(x.sigma))?x.sigma:(x.atr>0?x.atr/entry/1.4:null);
+  let sigBar=(x.sigma>0&&isFinite(x.sigma))?x.sigma:(x.atr>0?x.atr/entry/1.4:null);
   if(!(sigBar>0))return null;
-  const sigH=sigBar*Math.sqrt(H),dir=x.dir;
+  if(x.atr>0)sigBar=Math.max(sigBar,x.atr/entry/2.0); // 防σ被低估: 至少≈ATR%/2
+  const sigH=sigBar,dir=x.dir;
   const lnTp0=Math.abs(Math.log(t.tp/entry)),lnSl0=Math.abs(Math.log(t.sl/entry));
-  let a=Math.min(lnTp0,CYCLE_TP_SIGMA_CAP*sigH);a=Math.max(a,0.6*sigH);
-  const b=Math.max(CYCLE_SL_SIGMA_MIN*sigH,Math.min(lnSl0,CYCLE_SL_SIGMA_MAX*sigH));
+  let a=Math.min(Math.max(lnTp0,0.9*sigH),1.6*sigH);           // TP: 0.9~1.6σ(整根周期K线)
+  let b=Math.min(Math.max(lnSl0,0.8*sigH),1.3*sigH);           // SL: 0.8~1.3σ
+  if(a<b)b=Math.max(0.8*sigH,a);                               // 保证R:R≥1
   const tpAdj=Math.abs(a-lnTp0)>1e-9,slAdj=Math.abs(b-lnSl0)>1e-9;
   const tp=entry*Math.exp(dir*a),sl=entry*Math.exp(-dir*b);
   const tpPct=Math.abs((tp-entry)/entry*100),slPct=Math.abs((sl-entry)/entry*100);
@@ -3870,7 +3933,7 @@ function cycleHorizonPlan(x,t,entry,tf,remainMs,assetClass,sym,seedKey){
   const sim=cycleHorizonSim(a,b,sigBar,mu,H,dir,tpPct,slPct,cycleHashStr(sym+"|"+tf+"|"+(seedKey!=null?seedKey:cycleStartOf(Date.now(),tf))));
   const fr=cycleFrictionPct(sym);
   const evNet=sim.evPct-fr,evR=slPct>0?evNet/slPct:-9;
-  return{tp,sl,tpPct,slPct,a,b,lnTp0,lnSl0,tpAdj,slAdj,sigH,H,sim,fr,evNet,evR,
+  return{tp,sl,tpPct,slPct,a,b,lnTp0,lnSl0,tpAdj,slAdj,sigH,H,sim,fr,evNet,evR,late:remainMs/barMs<0.35,
     pct:v=>(v*100).toFixed(0)+"%"};
 }
 // 胜负口径: 已平仓(非void)一律按扣费后净盈亏>0算胜;全部入选仓位都计入统计(不挑样本),合格/边际不足只做对照
@@ -4050,6 +4113,14 @@ function pickCycleTopN(tf){
   const now=Date.now();
   const st={total:map.size,dead:0,closed:0,unstable:0,noSig:0};
   pickCycleTopN.lastStats=pickCycleTopN.lastStats||{};pickCycleTopN.lastStats[tf]=st;
+  // v21 (2026-09-29) 根因修复: 非crypto方向连续稳定确认此前是"硬性剔除"——5分钟一轮扫描,
+  // dirStableSince一旦被噪音打断就清零重算,1D/1W要求2h/12h不中断达标,现实中概率趋近于零,
+  // 导致TradFi固定周期几乎永远选不出任何候选(见pickCycleTopN.lastStats里unstable占比长期
+  // 接近total)。改成"降级为观察(W档),不再直接剔除"——方向已经算出来但还没稳定够久的候选
+  // 仍然进入候选池,只是在下面buildCyclePositions里被强制标成W(仅观察)、不会被判定为可执行的
+  // Q档,这样面板不会再"每期都是0",用户能看到"模型现在倾向哪个方向、还差多久确认",而不是
+  // 一片空白猜测引擎是不是没在跑。
+  const unstableSyms=new Set();
   const items=[...map.entries()]
     .filter(([symbol,r])=>{
       if(!(r.sig&&r.sig.dirSign!==0&&r.sig.structure&&r.sig.atr!=null&&market.get(symbol)&&market.get(symbol).price!=null)){st.noSig++;return false;}
@@ -4060,14 +4131,15 @@ function pickCycleTopN(tf){
         // 才不建1H/4H/8H仓;盘前盘后只要在真实波动就照常出信号。1D/1W、黄金白银、外汇不受影响。
         if(ac==="EQUITY"&&(tf==="1h"||tf==="4h"||tf==="8h")&&r.sig.recentAct!=null&&r.sig.recentAct<0.3){st.dead++;return false;}
         const stableFor=r.sig.dirStableSince?now-r.sig.dirStableSince:0;
-        if(stableFor<dirConfirmMinMs(tf)){st.unstable++;return false;}
+        if(stableFor<dirConfirmMinMs(tf)){st.unstable++;unstableSyms.add(symbol);}
       }
       return true;
     })
     .map(([symbol,r])=>({symbol,dir:r.sig.dirSign,strength:Math.abs(r.sig.score)/(r.sig.maxScore||1),
       conviction:r.sig.outlook?r.sig.outlook.conviction:null,techNote:cycleTechNote(r.sig),
       atr:r.sig.atr,structure:r.sig.structure,regime:r.sig.regime,regimeLabel:r.sig.regimeLabel,
-      highs:r.sig.highs,lows:r.sig.lows,sigma:r.sig.sigma,drift:r.sig.drift}));
+      highs:r.sig.highs,lows:r.sig.lows,sigma:r.sig.sigma,drift:r.sig.drift,
+      unstableNonCrypto:unstableSyms.has(symbol)}));
   items.sort((a,b)=>b.strength-a.strength);
   // 2026-09-18: buildCyclePositions现在会把"目标距离低于该周期最小有效目标%"或"EV<0"的候选
   // 过滤掉(见buildStructureTargets的noSetup),取比CYCLE_TOP_N更大的候选池(3倍余量)送过去,
@@ -4432,6 +4504,7 @@ function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMin
   return{sl:slPrice,slSources,slBasis,tp,tpSources,cappedByLevel,levelSkippedTooClose,rr,raceWinProb,regimeSlMult,regimeTpMult,
     ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,noSetup,noSetupReason,sigma:sigmaVal,driftPerBar:driftFav};
 }
+const CYCLE_PLAN_VER=25;
 const CYCLE_TF_MINUTES={"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080};
 function buildCyclePositions(tf,topN){
   const intervalMinutes=CYCLE_TF_MINUTES[tf]||240;
@@ -4455,12 +4528,16 @@ function buildCyclePositions(tf,topN){
     if(!t||!(t.tp>0)||!(t.sl>0)||!isFinite(t.tp)||!isFinite(t.sl)){stats.badGeom++;return null;}
     const h=cycleHorizonPlan(x,t,entry,tf,remainMs,m.assetClass,x.symbol);
     if(!h){stats.badGeom++;return null;}
-    const gate=v22EvGate(x,calib);const tier=h.evR>=gate.th?"Q":"W";
+    const gate=v22EvGate(x,calib);let tier=h.evR>=gate.th?"Q":"W";
+    // v21: 方向还在非crypto稳定确认窗口内的候选,强制降级为W(仅观察),不允许被算作Q(可执行)——
+    // 宁可先展示"倾向哪个方向、差多久确认"当观察项,也不让它直接消失导致面板空白,但也不让还没
+    // 站稳的方向被当成正式推荐。
+    if(x.unstableNonCrypto||h.late)tier="W"; // v25: 建仓太晚(本期剩余<35%)同样只观察
     const baseTp=t.tpSources&&t.tpSources[0]?t.tpSources[0]:null,baseSl=t.slSources&&t.slSources[0]?t.slSources[0]:null;
-    const tpSrc=h.tpAdj?`${baseTp?baseTp+" — ":""}原结构目标距离${(h.lnTp0*100).toFixed(2)}%,超出本期剩余时间内可达范围(剩余1σ≈${(h.sigH*100).toFixed(2)}%),已收窄到≈${CYCLE_TP_SIGMA_CAP}σ`:baseTp;
-    const slSrc=h.slAdj?`${baseSl?baseSl+" — ":""}原止损距离${(h.lnSl0*100).toFixed(2)}%,按剩余波动预算调整到${(h.b*100).toFixed(2)}%(约${(h.b/h.sigH).toFixed(2)}σ)`:baseSl;
+    const tpSrc=h.tpAdj?`${baseTp?baseTp+" — ":""}原结构目标距离${(h.lnTp0*100).toFixed(2)}%,已校准到${cfg.label}一根K线的典型波幅范围(1σ≈${(h.sigH*100).toFixed(2)}%,TP≈${(h.a/h.sigH).toFixed(2)}σ)`:baseTp;
+    const slSrc=h.slAdj?`${baseSl?baseSl+" — ":""}原止损距离${(h.lnSl0*100).toFixed(2)}%,已按${cfg.label}波幅校准到${(h.b*100).toFixed(2)}%(约${(h.b/h.sigH).toFixed(2)}σ)`:baseSl;
     const S=h.sim,pc=v=>Math.round(v*100);
-    const evNote=`时间预算内模拟: 止盈${pc(S.pTP)}% / 止损${pc(S.pSL)}% / 到期未触发${pc(S.pTO)}% · 扣往返费用${h.fr.toFixed(2)}%后净期望${h.evNet>=0?"+":""}${h.evNet.toFixed(3)}%(${h.evR>=0?"+":""}${h.evR.toFixed(2)}R)${tier==="Q"?"":" · 扣费后净期望≤0,边际不足"}`;
+    const evNote=`${h.late?"⏱ 本期已过大半才建仓(剩余"+Math.round(h.H*100)+"%),TP/SL仍按整根周期尺寸,只观察不计入可执行;下一轮见'下轮锁定' · ":""}${x.unstableNonCrypto?"⏳ 方向尚在确认窗口内,暂列观察,不计入可执行 · ":""}时间预算内模拟: 止盈${pc(S.pTP)}% / 止损${pc(S.pSL)}% / 到期未触发${pc(S.pTO)}% · 扣往返费用${h.fr.toFixed(2)}%后净期望${h.evNet>=0?"+":""}${h.evNet.toFixed(3)}%(${h.evR>=0?"+":""}${h.evR.toFixed(2)}R)${tier==="Q"?"":" · 扣费后净期望≤0,边际不足"}`;
     return{symbol:x.symbol,dir:x.dir,entry,tp:h.tp,sl:h.sl,tier,evR:h.evR,atr:x.atr,gate:gate.tier,
       tpPct:h.tpPct,slPct:h.slPct,tpSrc,slSrc,
       cappedByLevel:!h.tpAdj&&t.cappedByLevel,levelSkippedTooClose:!h.tpAdj&&t.levelSkippedTooClose,
@@ -4469,7 +4546,7 @@ function buildCyclePositions(tf,topN){
       regime:x.regime,regimeLabel:x.regimeLabel,
       strength:x.strength,conviction:x.conviction,techNote:x.techNote,
       ev:h.evR,evTier:tier==="Q"?(h.evR>=0.15?"ok":"marginal"):"reject",evNote,sigma:x.sigma,driftPerBar:(x.drift||0)*x.dir,
-      status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
+      status:"OPEN",exitPrice:null,exitAt:null,outcome:null,late:!!h.late,planVer:CYCLE_PLAN_VER};
   }).filter(Boolean);
   // 方向集中度: 同向最多占60%(非crypto 50%)。8笔全LONG本质是同一个BTC贝塔赌注,不是分散。
   const allNonCrypto=built.length>0&&built.every(p=>{const a=(market.get(p.symbol)||{}).assetClass;return a&&a!=="CRYPTO";});
@@ -4547,9 +4624,16 @@ function ensureCycle(tf){
   if(!cur){
     const topN=pickCycleTopN(tf);
     if(topN.length===0)return null; // 扫描引擎还没跑出第一轮结果(刚打开页面时的短暂状态)
-    cur={start,end:start+CYCLE_TF_CONFIG[tf].ms,builtAt:Date.now(),lateMs:Date.now()-start,positions:buildCyclePositions(tf,topN),lastTry:Date.now()};
+    cur={start,end:start+CYCLE_TF_CONFIG[tf].ms,builtAt:Date.now(),lateMs:Date.now()-start,positions:buildCyclePositions(tf,topN),lastTry:Date.now(),planVer:CYCLE_PLAN_VER};
     saveCycleCurrent(tf,cur);
     return cur;
+  }
+  if(cur.planVer!==CYCLE_PLAN_VER){ // v25: 旧尺寸(按剩余时间缩水)的本期计划,若还没有任何结算就重建
+    if(cur.positions.length&&cur.positions.every(p=>p.status==="OPEN")){
+      const tn=pickCycleTopN(tf);
+      if(tn.length){const ps=buildCyclePositions(tf,tn);if(ps.length){cur.positions=ps;cur.builtAt=Date.now();cur.lateMs=cur.builtAt-cur.start;}}
+    }
+    cur.planVer=CYCLE_PLAN_VER;saveCycleCurrent(tf,cur);
   }
   // v20: 这一期若是空的(旧版会被\"周期内不改判\"锁死到下一期,手机端热力图长期空白的根因之一),每60秒重新尝试建仓
   if(!cur.positions.length&&Date.now()<cur.end&&Date.now()-(cur.lastTry||0)>60000){
@@ -4796,7 +4880,7 @@ function renderCycleHeatmap(tf,cur){
       <div class="trk-tile-more">${expanded?"▾ 收起明细":"▸ 入场/止盈/止损/信心依据"}</div>
     </div>${expanded?`<div class="trk-tile-detail" data-id="${esc(id)}">
       <div class="trk-detail-row"><span>方向</span><span>${p.dir>0?"LONG 多":"SHORT 空"}</span></div>
-      <div class="trk-detail-row"><span>建议时间 Signal</span><span>${fmtTrkDateTime(cur.start)}</span></div>
+      <div class="trk-detail-row"><span>建议时间 Signal</span><span>${fmtTrkDateTime(cur.lateMs>120000&&cur.builtAt?cur.builtAt:cur.start)}${cur.lateMs>120000?` <span class="dim">(本期开始于${fmtTrkDateTime(cur.start)},此单建仓较晚)</span>`:""}</span></div>
       <div class="trk-detail-row"><span>入场价 Entry</span><span>${fmtPrice(p.entry)}</span></div>
       <div class="trk-detail-row"><span>止盈 TP(${p.tpPct.toFixed(2)}%)</span><span>${fmtPrice(p.tp)}</span></div>
       <div class="trk-detail-row trk-detail-tech"><span>止盈依据</span><span>${p.tpSrc?(p.cappedByLevel?`价格离场前更可能先撞上这个真实${p.dir>0?"压力位":"支撑位"}: ${esc(p.tpSrc)}`:p.levelSkippedTooClose?`附近有${p.dir>0?"压力位":"支撑位"}(${esc(p.tpSrc)}),但太近了会让盈亏比不划算,已改用波动率目标`:esc(p.tpSrc)):"– (旧版记录,无结构依据字段)"}</span></div>
@@ -6027,7 +6111,114 @@ function renderTrackJournal(log){
   const moreNote=allDays.length>TRK_JOURNAL_MAX_DAYS?`<div class="trk-empty">仅显示最近${TRK_JOURNAL_MAX_DAYS}天,更早的记录仍保留在本地存储中。</div>`:"";
   return html+moreNote;
 }
+// v21: 每日交易灵感——从4H与1D两条固定周期轨道里各挑一笔"当前排名最高的Q档(可执行)候选"
+// (buildCyclePositions已经把Q档按净期望排过序、放在positions数组最前面,这里不重新计算,只读取
+// 已有结果,避免出现"这里说的和推荐追踪面板里说的不一致"的两套口径)。crypto/tradfi各自的
+// localStorage key本就按appView分裂(见viewKeySuffix),所以切换视图时这里会自动换成对应视图
+// 自己的今日焦点,不需要额外传参。没有够格候选时如实说明,不为了"有内容"硬凑一个弱信号出来——
+// 这正是用户反复强调的"宁可没有,不能乱给方向"。
+function dailyIdeaRow(tf,label){
+  const cur=loadCycleCurrent(tf);
+  if(!cur||!cur.positions||!cur.positions.length)
+    return `<div class="di-empty"><b>${esc(label)}</b>: 引擎还没选出结果,稍候…</div>`;
+  const q=cur.positions.find(p=>p.tier==="Q");
+  if(!q)return `<div class="di-empty"><b>${esc(label)}</b>: 今天没有够格的信号 — 观望也是一种仓位,不硬凑候选</div>`;
+  const dirCls=q.dir>0?"up":"down",dirTxt=q.dir>0?"▲ 做多 LONG":"▼ 做空 SHORT";
+  return `<div class="di-row"><b>${esc(label)}</b> <span class="${dirCls}">${esc(q.symbol.replace("USDT",""))} ${dirTxt}</span>
+    <span class="di-dim">入场 ${fmtPrice(q.entry)} · 止损 ${fmtPrice(q.sl)} · 止盈 ${fmtPrice(q.tp)} · 净期望 ${q.evR>=0?"+":""}${q.evR.toFixed(2)}R · ${cycleCountdownText(cur)}</span>
+    <div class="di-src">止盈依据: ${esc(q.tpSrc||"结构位")} <br>止损依据: ${esc(q.slSrc||"结构位")}</div></div>`;
+}
+function renderDailyIdeaCard(){
+  const body=document.getElementById("dailyIdeaBody"),tag=document.getElementById("dailyIdeaViewTag");
+  if(!body)return;
+  if(tag)tag.textContent=appView==="tradfi"?"当前视图: TradFi":"当前视图: Crypto";
+  ensureCycle("4h");ensureCycle("1d"); // 确保两条轨道都尝试过建仓,不依赖用户当前正停留在哪个tab
+  const html=dailyIdeaRow("4h","4小时")+dailyIdeaRow("1d","今日(1D)");
+  if(body.__lastHtml===html)return;
+  body.__lastHtml=html;body.innerHTML=html;
+}
+
+/* ══ v25: 下轮锁定关注(Next Cycle Watch) ══
+   在当前周期的最后30%时间内,提前找出"下一轮最可能被选中"的品种(加密+TradFi同一套),锁定并开始追踪:
+   ①方向稳定确认达标 ②更高周期不反向(1h→4h,4h→1d,8h→1d,1d→1w) ③整根周期尺寸的TP/SL下,扣费净期望≥EV门槛
+   ④R:R≥1。锁定前每分钟刷新预览;锁定后名单冻结,只追踪现价相对参考价的漂移/是否提前失效。
+   下轮开始时归档,统计"预判被下一轮真正选中"的命中率。同一套引擎、不是新指标。 */
+const NC_LOCK_FROM=0.70,NC_MAX=6,NC_HIST_MAX=60;
+const NC_HTF={"1h":"4h","4h":"1d","8h":"1d","1d":"1w"};
+const ncKey=tf=>"orbit_nextcycle_"+tf+"_v1"+viewKeySuffix(),ncHKey=tf=>"orbit_nextcycle_hist_"+tf+"_v1"+viewKeySuffix();
+function ncLoad(k){try{return JSON.parse(localStorage.getItem(k)||"null");}catch(e){return null;}}
+function ncSave(k,o){try{localStorage.setItem(k,JSON.stringify(o));}catch(e){}}
+function ncBuild(tf){
+  const ms=CYCLE_TF_CONFIG[tf].ms,now=Date.now(),calib=cycleCalibrationByBucket(tf),map=cycleResultsMapFor(tf);
+  const hmap=NC_HTF[tf]?cycleResultsMapFor(NC_HTF[tf]):null;
+  const out=[];
+  for(const x of pickCycleTopN(tf)){
+    const m=market.get(x.symbol);if(!m||!(m.price>0))continue;
+    const r=map.get(x.symbol),sg=r&&r.sig;if(!sg)continue;
+    const stable=sg.dirStableSince?now-sg.dirStableSince:0;
+    if(stable<dirConfirmMinMs(tf))continue;
+    let mtf="—(最高周期)";
+    if(hmap){const hs=hmap.get(x.symbol),hd=hs&&hs.sig?hs.sig.dirSign:null;
+      if(hd!=null&&hd!==0&&hd!==x.dir)continue; // 更高周期反向 → 不列入
+      mtf=NC_HTF[tf]+(hd===x.dir?" 同向 ✓":" 中性/未定");}
+    const t=buildStructureTargets(x.dir,m.price,x.atr,x.structure,x.regime,CYCLE_TF_MINUTES[tf],x.highs,x.lows,x.sigma,x.drift,m.assetClass);
+    if(!t||!(t.tp>0)||!(t.sl>0))continue;
+    const h=cycleHorizonPlan(x,t,m.price,tf,ms,m.assetClass,x.symbol,"nc");if(!h)continue;
+    const gate=v22EvGate(x,calib);if(!(h.evR>=gate.th))continue;
+    out.push({symbol:x.symbol,dir:x.dir,ref:m.price,tp:h.tp,sl:h.sl,tpPct:h.tpPct,slPct:h.slPct,rr:h.tpPct/h.slPct,evR:h.evR,
+      pTP:+h.sim.pTP.toFixed(3),pSL:+h.sim.pSL.toFixed(3),strength:x.strength,conviction:x.conviction,mtf,stableMin:Math.round(stable/60000),
+      regime:x.regimeLabel||x.regime,tech:x.techNote||"",bucket:v22Bucket(x.symbol),state:"watch"});
+  }
+  out.sort((a,b)=>(b.evR+b.strength*0.2)-(a.evR+a.strength*0.2));
+  const cnt={"1":0,"-1":0},pick=[];
+  for(const it of out){if(pick.length>=NC_MAX)break;if(cnt[it.dir]>=Math.ceil(NC_MAX*0.67))continue;pick.push(it);cnt[it.dir]++;}
+  return pick;
+}
+function ncEnsure(tf){
+  const ms=CYCLE_TF_CONFIG[tf].ms,now=Date.now(),curStart=cycleStartOf(now,tf),nextStart=curStart+ms,frac=(now-curStart)/ms;
+  let o=ncLoad(ncKey(tf));
+  if(o&&o.forStart<=curStart){ // 目标周期已经开始 → 归档并统计命中
+    const cur=loadCycleCurrent(tf),ps=(cur&&cur.start===o.forStart)?cur.positions:null;
+    if(o.locked&&ps){
+      o.items.forEach(it=>{const p=ps.find(q=>q.symbol===it.symbol&&q.dir===it.dir);it.adopted=!!p;it.adoptedTier=p?p.tier:null;});
+      const h=ncLoad(ncHKey(tf))||[];h.push({forStart:o.forStart,lockedAt:o.lockedAt,n:o.items.length,adopted:o.items.filter(i=>i.adopted).length,adoptedQ:o.items.filter(i=>i.adoptedTier==="Q").length,invalid:o.items.filter(i=>i.state==="invalid").length});
+      ncSave(ncHKey(tf),h.slice(-NC_HIST_MAX));
+    }
+    o=null;
+  }
+  if(!o)o={forStart:nextStart,locked:false,items:[],lastBuild:0};
+  if(!o.locked){
+    if(now-(o.lastBuild||0)>60000||!o.items.length&&now-(o.lastBuild||0)>15000){o.items=ncBuild(tf);o.lastBuild=now;}
+    if(frac>=NC_LOCK_FROM&&o.items.length){o.locked=true;o.lockedAt=now;o.items.forEach(i=>{i.lockPx=i.ref;});}
+  }
+  // 追踪: 现价相对参考价的顺方向漂移 + 是否已在下轮开始前失效
+  o.items.forEach(it=>{const m=market.get(it.symbol);if(!m||!(m.price>0))return;
+    it.px=m.price;it.drift=it.dir*(m.price-it.ref)/it.ref*100;
+    it.state=it.drift<=-it.slPct?"invalid":it.drift>=it.tpPct?"ran":"watch";});
+  ncSave(ncKey(tf),o);return o;
+}
+function ncPanelHtml(tf){
+  const cfg=CYCLE_TF_CONFIG[tf],o=ncEnsure(tf),hist=ncLoad(ncHKey(tf))||[];
+  const tot=hist.reduce((s,h)=>s+h.n,0),ad=hist.reduce((s,h)=>s+h.adopted,0);
+  const histNote=tot?` · 历史预判命中 ${ad}/${tot}(${(ad/tot*100).toFixed(0)}%,命中=下一轮真的被选进Top10同向)`:" · 预判命中率:样本积累中";
+  const stat=o.locked?`🔒 已锁定 ${fmtTrkDateTime(o.lockedAt)} · 下轮 ${fmtTrkDateTime(o.forStart)} 开始`:`👀 预览中(每60秒刷新) · 进入本期最后${Math.round((1-NC_LOCK_FROM)*100)}%时自动锁定`;
+  const cards=o.items.map(it=>{
+    const st=it.state==="invalid"?`<span class="nc-chip bad">已触及止损位·作废</span>`:it.state==="ran"?`<span class="nc-chip amb">已提前走完目标·不追</span>`:`<span class="nc-chip ok">追踪中</span>`;
+    const dr=it.drift!=null?`${it.drift>=0?"+":""}${it.drift.toFixed(2)}%`:"–";
+    return`<div class="nc-card"><div class="nc-top"><b>${esc(it.symbol.replace("USDT",""))}</b> <span class="${it.dir>0?"up":"down"}">${it.dir>0?"▲ 做多":"▼ 做空"}</span><span class="nc-tag">${esc(it.bucket)}</span>${st}</div>
+      <div class="nc-row"><span>参考价</span><span>${fmtPrice(it.ref)}</span></div>
+      <div class="nc-row"><span>预计TP / SL</span><span>${fmtPrice(it.tp)} (${it.tpPct.toFixed(2)}%) / ${fmtPrice(it.sl)} (${it.slPct.toFixed(2)}%)</span></div>
+      <div class="nc-row"><span>R:R · 净期望</span><span>${it.rr.toFixed(2)}:1 · ${it.evR>=0?"+":""}${it.evR.toFixed(2)}R</span></div>
+      <div class="nc-row"><span>更高周期</span><span>${esc(it.mtf)}</span></div>
+      <div class="nc-row"><span>方向已稳定 · 状态</span><span>${it.stableMin}分钟 · ${esc(String(it.regime))}</span></div>
+      <div class="nc-row"><span>现价漂移(顺方向)</span><span>${dr}</span></div>
+      ${it.tech?`<div class="nc-tech">${esc(it.tech)}</div>`:""}</div>`;}).join("");
+  return`<div class="nc-box"><div class="nc-head"><b>🔭 下轮锁定关注 · ${cfg.label}</b><span class="nc-stat">${stat}${histNote}</span></div>
+    <div class="nc-grid">${cards||`<div class="trk-empty">暂无同时满足"方向稳定 + 更高周期不反向 + 扣费净期望达标"的品种——宁缺毋滥,不凑数。</div>`}</div>
+    <div class="nc-note">这是"预判名单",不是下单指令:参考价=锁定时现价,TP/SL已按${cfg.label}整根K线尺寸计算;下一轮开盘后仍以那一刻的实际入场价重新核算,方向/价位若变化以新一轮为准。</div></div>`;
+}
 function renderTrackPanel(){
+  renderDailyIdeaCard();
   const el=document.getElementById("trkBody");
   if(!el)return;
   const tf=activeCycleTf;
@@ -6044,6 +6235,7 @@ function renderTrackPanel(){
   const __trkHtml=`
     ${renderScanDiagnostics()}
     ${cycleTfTabsHtml()}
+    ${ncPanelHtml(tf)}
     ${v22PanelHtml(tf,cur,cfg)}
     <div class="sig-note" style="margin-top:10px;line-height:1.7;">
       <b>固定周期策略(${cfg.label})是什么</b>: 每期开始时,先按信号强度筛出一批有效候选(信号质量门槛),再在这批候选里按校准后期望值EV(不是信号强度本身)排序选出Top${CYCLE_TOP_N},按当时的实时价开仓——这是一份自动记录的观察日志,不是帮你下单,只用来验证"这套方法到底准不准"。
@@ -12456,9 +12648,11 @@ function dpmInnerHTML(){
     </div>
     <div class="dpm-note">每格 = 以最近收盘价按该周期标准止盈止损机械入场,<b>先到止盈</b>而非先到止损的概率(只计已分胜负样本)。数字来自本币自身历史K线、主动买卖量、资金费率、更大周期与BTC走势,经走步式样本外验证;<b>验证不出优势时自动退回基础率,不硬造方向</b>。点击任一格看完整分析链。</div>
     <div class="dpm-sum">${dpmSummaryHTML(symbol)}</div>
+    <details class="dpm-collapse"${dpmUi.picked?" open":""}><summary style="cursor:pointer;color:var(--dim2);font-size:12px;margin:4px 0;">▸ 展开完整矩阵(LONG/SHORT × 多周期明细)</summary>
     <div class="dpm-grid"><div class="dpm-hd"></div><div class="dpm-hd long">LONG ▲</div><div class="dpm-hd short">SHORT ▼</div>${rows}</div>
     ${dpmDetailHTML(symbol)}
     ${dpmSecHTML("dhr",dhrTitle(symbol),dhrBody(symbol))}
+    </details>
   </div>`;
 }
 function dpmRefresh(){
@@ -12901,6 +13095,11 @@ setInterval(lpPatchAll,1000);
 
 init();
 })();
+
+(function(){function set(on){const p=document.getElementById("trkPanel"),b=document.getElementById("trkFsBtn");if(!p)return;p.classList.toggle("trk-fs",on);document.body.classList.toggle("trk-fs-lock",on);if(b)b.textContent=on?"✕ 退出全屏":"⛶ 全屏";}
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("#trkFsBtn");if(!b)return;set(!document.getElementById("trkPanel").classList.contains("trk-fs"));});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){const p=document.getElementById("trkPanel");if(p&&p.classList.contains("trk-fs"))set(false);}});
+window.addEventListener("resize",()=>{if(window.innerWidth<900){const p=document.getElementById("trkPanel");if(p&&p.classList.contains("trk-fs"))set(false);}});})();
 </script>
 </body>
 </html>
