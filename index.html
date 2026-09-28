@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0b0e15">
-<title>ORBIT — Crypto Intelligence Terminal</title>
+<title>ORBIT — Crypto Intelligence Terminal v23</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Fraunces:ital,opsz,wght@1,9..144,500&display=swap');
@@ -536,6 +536,18 @@
   /* 持仓热力图: 卡片式而非文字行,一眼看清方向/浮盈亏,颜色深浅=盈亏幅度 */
   .trk-heatmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:8px;}
   .trk-tile{border:1px solid var(--line2);border-radius:7px;padding:10px 11px;cursor:pointer;transition:border-color .15s,transform .1s;}
+  .trk-tile-w{border-style:dashed;}
+  .trk-bt-box{border:1px solid var(--line2);border-radius:7px;padding:10px 12px;background:var(--panel2);font-size:12.5px;line-height:1.6;margin-bottom:8px;}
+  .trk-bt-verdict{font-weight:700;margin-bottom:4px;}
+  .trk-bt-verdict.bad{color:var(--down);}.trk-bt-verdict.good{color:var(--up);}.trk-bt-verdict.na{color:var(--amber);}
+  .trk-bt-meta{font-size:11.5px;color:var(--dim2);margin:4px 0;}
+  .trk-bt-table td,.trk-bt-table th{padding:4px 6px;font-size:12px;white-space:nowrap;}
+  .trk-bt-btn{background:none;border:1px solid var(--line2);color:var(--fg);font-size:11.5px;padding:3px 10px;border-radius:8px;cursor:pointer;margin-left:6px;}
+  .trk-bt-btn:disabled{opacity:.5;cursor:default;}
+  .trk-w-chip{font-size:10px;padding:1px 5px;border-radius:3px;color:var(--amber);background:var(--amber-bg);font-family:var(--mono);}
+  .trk-guide-details{margin:10px 0;}
+  .trk-guide-details>summary{cursor:pointer;font-size:12.5px;color:var(--dim2);padding:6px 0;}
+  @media(max-width:640px){.trk-heatmap{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}.trk-conf-band{font-size:12px;line-height:1.6;}}
   .trk-tile-watch{border-style:dashed;opacity:0.72;cursor:default;background:rgba(255,255,255,0.02);}
   .trk-watch-divider{font-size:11.5px;color:var(--dim2);margin:10px 0 6px;padding-top:8px;border-top:1px dashed var(--line2);}
   .trk-tile:hover{border-color:var(--amber);transform:translateY(-1px);}
@@ -1219,6 +1231,34 @@
   .lp-verdict.neutral{color:var(--amber);background:var(--amber-bg);border-left-color:var(--amber);}
   .lp-fresh{margin-top:4px;font-size:10px;color:var(--dim2);text-align:right;}
   .lp-timenote{margin-top:5px;font-size:11px;line-height:1.5;color:var(--blue);background:rgba(127,160,194,.08);border-left:3px solid var(--blue);padding:4px 7px;border-radius:3px;}
+  .v22-bar{margin:0 0 8px;padding:8px 10px;font-size:12.5px;line-height:1.6;cursor:pointer;border-radius:0 6px 6px 0}
+  .v22-bar.halt{background:rgba(184,85,95,.15);border-left:3px solid #b8555f}
+  .v22-bar.down{background:rgba(198,165,101,.12);border-left:3px solid #c6a565}
+  .v22-bar.black{background:rgba(117,108,92,.10);border-left:3px solid #756c5c}
+  .v22-bar .d{display:none;margin-top:6px;color:var(--dim2);cursor:default}
+  .v22-bar.open .d{display:block}
+  .v22-card{border:1px solid rgba(127,127,127,.25);border-radius:8px;padding:10px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.75}
+  .v22-card .h{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-weight:600}
+  .v22-chip{padding:1px 7px;border-radius:9px;font-size:11px;background:rgba(127,127,127,.15)}
+  .v22-chip.g{color:#5fae7a}.v22-chip.y{color:#c6a565}.v22-chip.r{color:#b8555f}
+  .v22-sec{color:var(--dim2);font-size:11.5px;margin:6px 0 2px}
+  .v22-dim{color:var(--dim2);font-size:11px}
+  .v22-row{display:flex;justify-content:space-between;gap:8px}
+  .v22-fl.up{color:#5fae7a}.v22-fl.down{color:#b8555f}
+
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body{overflow-x:hidden;padding-left:var(--sal);padding-right:var(--sar);-webkit-tap-highlight-color:transparent}
+  .v22-view-tab,.trk-tf-tab,.v22-bar button{min-height:40px;touch-action:manipulation}
+  .v22-view-tab{flex:1 1 auto;white-space:nowrap}
+  .trk-tf-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .v22-card{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+  .v22-row{align-items:flex-start}.v22-row>*:last-child{text-align:right}
+  input,select,textarea{font-size:16px}
+  @media(min-width:900px){#trkBody{max-width:980px;margin:0 auto}.v22-card{padding:14px 16px;font-size:13px}}
+  @media(max-width:520px){.v22-card{font-size:12.5px;padding:10px}.v22-row{flex-direction:column;gap:0}.v22-row>*:last-child{text-align:left}}
+  body{padding-bottom:var(--sab)}
+  .v22-flat{background:rgba(198,165,101,.12);padding:4px 8px;border-radius:5px;margin-top:6px}
+
 </style>
 </head>
 <body>
@@ -1352,7 +1392,6 @@
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
       <button class="trk-reset-btn" id="trkExportBtn" title="导出全部追踪记录为CSV文件(含入场/止损/止盈/结算结果),方便自己在Excel里存档或另行统计">⬇ 导出CSV</button>
       <button class="trk-reset-btn" id="trkTgBtn" title="设置Telegram推送: 有新的推荐信号被记录时自动推送到你的Telegram,不用一直盯着屏幕">📨 Telegram推送</button>
-      <button class="trk-reset-btn" id="trkCloudSyncBtn" title="设置跨设备云同步: 用免费的jsonbin.io当中转,让手机和电脑共用同一份追踪记录/持仓/闸门确认状态,不再是两份互不相通的本机存档">☁ 云同步</button>
     </div>
     <div class="trk-body" id="trkBody">加载中…</div>
   </div>
@@ -2021,168 +2060,6 @@ function promptTelegramSetup(){
     });
   }
 }
-/* ══════════════════════════════════════════════════════════════════════════════
-   ── 2026-09-25 新增: 跨设备云同步 ──
-   本工具原本所有状态(推荐追踪日志/固定周期持仓/闸门确认计时/冷却期/手动持仓标记/资金曲线
-   /DPM账本等)只写在当前这台设备浏览器自己的localStorage——手机和电脑是两份完全独立的
-   存档,这是"手机0笔/电脑85笔"的根本原因,不是显示bug。
-   本来最干净的方案是用Claude网页版自带的账号级云存储,但放弃了: 这个工具的核心功能
-   (Binance实时WS行情/Deribit/CoinGecko/Telegram推送)全部要直接对外部网站发请求,
-   一旦把它发布成Claude的托管网页,那个环境的安全策略只放行几个前端脚本CDN,会把这些
-   请求全部静默挡掉——等于把工具的心脏关掉。所以继续保持"下载到本地浏览器直接打开"这个
-   形态不变,自己加一层同步。
-   做法: 用 jsonbin.io(免费,支持跨域,不需要自己搭后端)当两台设备共用的一个云端小盒子。
-   本机每次写入 orbit 开头的记录(Telegram Token/本身的同步凭证除外,那是密钥,永远只留在
-   本机,不参与同步)时,顺手异步推一份最新版本上去(2秒防抖);同时每30秒轮询一次盒子里
-   有没有被另一台设备更新过。合并规则是"按每个字段自己的更新时间戳"取新的一份
-   (last-write-wins,不是整份互相覆盖)——比如手机在结算一笔持仓、电脑在标记另一笔手动
-   入场,两边各自的改动都保得住,不会谁覆盖谁。
-   任何一步失败(没配置/网络问题/免费额度用完)都静默退回"只用本机存储",不影响任何原有
-   功能——这套同步是纯增量的,不改一行原有的业务判定逻辑。 */
-const CLOUD_CFG_KEY="orbit_cloud_sync_cfg";          // 同步凭证本身,只留本机,不参与同步
-const CLOUD_SYNC_META_KEY="orbit_cloud_sync_meta_v1"; // 每个key"最后一次本机写入"的时间戳,只留本机,不参与同步
-const CLOUD_SYNC_BLOCKLIST=new Set([TG_CFG_KEY,CLOUD_CFG_KEY,CLOUD_SYNC_META_KEY]);
-function cloudCfg(){try{return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)||"null")||{apiKey:"",binId:"",enabled:false};}catch(e){return{apiKey:"",binId:"",enabled:false};}}
-function saveCloudCfg(c){try{localStorage.setItem(CLOUD_CFG_KEY,JSON.stringify(c));}catch(e){}}
-function cloudSyncMeta(){try{return JSON.parse(localStorage.getItem(CLOUD_SYNC_META_KEY)||"{}");}catch(e){return{};}}
-function cloudSyncMetaSave(m){try{localStorage.setItem(CLOUD_SYNC_META_KEY,JSON.stringify(m));}catch(e){}}
-function cloudSyncableKeys(){
-  const out=[];
-  for(let i=0;i<localStorage.length;i++){
-    const k=localStorage.key(i);
-    if(k&&k.indexOf("orbit")===0&&!CLOUD_SYNC_BLOCKLIST.has(k))out.push(k);
-  }
-  return out;
-}
-async function cloudBinRead(cfg){
-  const res=await fetch(`https://api.jsonbin.io/v3/b/${cfg.binId}/latest`,{headers:{"X-Master-Key":cfg.apiKey}});
-  if(!res.ok)throw new Error("云同步读取失败 HTTP "+res.status);
-  const j=await res.json();
-  return (j&&j.record)?j.record:{};
-}
-async function cloudBinWrite(cfg,record){
-  const res=await fetch(`https://api.jsonbin.io/v3/b/${cfg.binId}`,{method:"PUT",
-    headers:{"Content-Type":"application/json","X-Master-Key":cfg.apiKey},body:JSON.stringify(record)});
-  if(!res.ok)throw new Error("云同步写入失败 HTTP "+res.status);
-}
-async function cloudBinCreate(cfg,record){
-  const res=await fetch("https://api.jsonbin.io/v3/b",{method:"POST",
-    headers:{"Content-Type":"application/json","X-Master-Key":cfg.apiKey,"X-Bin-Private":"true"},body:JSON.stringify(record)});
-  if(!res.ok)throw new Error("云同步创建失败 HTTP "+res.status);
-  const j=await res.json();
-  return j&&j.metadata?j.metadata.id:null;
-}
-// 正在把远端拉下来的数据合并进本机的这一刻,不要让下面的localStorage写入钩子把这次
-// "合并动作"误当成"本机产生了新变更"又反手推回云端——否则pull和push会互相触发,无限循环。
-let __cloudApplyingRemote=false;
-function cloudApplyRemoteEntry(key,entry,meta){
-  if(!entry)return false;
-  const localTs=meta[key]||0;
-  if(entry.updatedAt<=localTs)return false; // 本机这份不比远端旧,不覆盖(local-write-wins的另一半)
-  __cloudApplyingRemote=true;
-  try{if(entry.deleted)localStorage.removeItem(key);else if(entry.value!=null)localStorage.setItem(key,entry.value);}
-  finally{__cloudApplyingRemote=false;}
-  meta[key]=entry.updatedAt;
-  return true;
-}
-let cloudSyncBusy=false;
-async function cloudSyncPull(){
-  const cfg=cloudCfg();
-  if(!cfg.enabled||!cfg.apiKey||!cfg.binId||cloudSyncBusy)return;
-  cloudSyncBusy=true;
-  try{
-    const record=await cloudBinRead(cfg);
-    const remoteKeys=record.keys||{};
-    const meta=cloudSyncMeta();
-    let changed=false;
-    Object.keys(remoteKeys).forEach(k=>{if(cloudApplyRemoteEntry(k,remoteKeys[k],meta))changed=true;});
-    if(changed){
-      cloudSyncMetaSave(meta);
-      // gatePendingConfirm/planPins是启动时从localStorage读一次、之后常驻内存的const Map,
-      // 云端合并只改了localStorage本身,这两个内存里的Map要跟着换新——不能整体reassign
-      // (是const),用clear()+重新灌入entries()。冷却期(SIGNAL_COOLDOWN_KEY)没有常驻内存的
-      // 拷贝,每次用到都直接loadCooldownMap()现读localStorage,合并完不用额外处理。
-      try{gatePendingConfirm.clear();loadGateConfirm().forEach((v,k)=>gatePendingConfirm.set(k,v));}catch(e){}
-      try{planPins.clear();loadPlanPins().forEach((v,k)=>planPins.set(k,v));}catch(e){}
-      renderTrackPanel();
-      try{renderOpportunityRadar();}catch(e){}
-    }
-  }catch(e){console.error("[ORBIT][云同步] 拉取失败,本次跳过,不影响本机功能",e);}
-  cloudSyncBusy=false;
-}
-let __cloudPushPending=false;
-function cloudQueuePush(){
-  const cfg=cloudCfg();
-  if(!cfg.enabled||!cfg.apiKey||!cfg.binId||__cloudPushPending)return;
-  __cloudPushPending=true;
-  setTimeout(async()=>{
-    __cloudPushPending=false;
-    try{
-      const meta=cloudSyncMeta();
-      const record=await cloudBinRead(cfg).catch(()=>({keys:{}}));
-      const remoteKeys=record.keys||{};
-      const now=Date.now();
-      cloudSyncableKeys().forEach(k=>{
-        const val=localStorage.getItem(k);
-        const localTs=meta[k]||now;
-        const remoteEntry=remoteKeys[k];
-        // 只推"本机比远端新"或"远端还没有"的key,避免把另一台设备刚推上去、自己还没pull
-        // 下来的更新反手覆盖掉。
-        if(!remoteEntry||localTs>remoteEntry.updatedAt){
-          remoteKeys[k]=val==null?{deleted:true,updatedAt:localTs}:{value:val,updatedAt:localTs};
-        }
-      });
-      await cloudBinWrite(cfg,{keys:remoteKeys,updatedAt:now});
-    }catch(e){console.error("[ORBIT][云同步] 推送失败,本次跳过,不影响本机保存",e);}
-  },2000); // 2秒防抖,避免同一批扫描连续写好几个key时触发好几次网络请求
-}
-(function(){
-  // 拦截localStorage的写入,只对orbit开头且不在黑名单里的key顺手触发上面的同步——原有的
-  // "写入本机localStorage"这个行为本身完全不变,只是多了一步"顺手也排队推云端"。
-  const rawSet=localStorage.setItem.bind(localStorage);
-  const rawRemove=localStorage.removeItem.bind(localStorage);
-  localStorage.setItem=function(k,v){
-    rawSet(k,v);
-    if(__cloudApplyingRemote||!k||k.indexOf("orbit")!==0||CLOUD_SYNC_BLOCKLIST.has(k))return;
-    const m=cloudSyncMeta();m[k]=Date.now();cloudSyncMetaSave(m);
-    cloudQueuePush();
-  };
-  localStorage.removeItem=function(k){
-    rawRemove(k);
-    if(__cloudApplyingRemote||!k||k.indexOf("orbit")!==0||CLOUD_SYNC_BLOCKLIST.has(k))return;
-    const m=cloudSyncMeta();m[k]=Date.now();cloudSyncMetaSave(m);
-    cloudQueuePush();
-  };
-})();
-function promptCloudSyncSetup(){
-  const cfg=cloudCfg();
-  const apiKey=prompt("设置跨设备云同步 — 第1步:\n前往 jsonbin.io 免费注册,在 API Keys 页面复制你的 Master Key(留空并确定=关闭云同步):",cfg.apiKey||"");
-  if(apiKey===null)return;
-  if(!apiKey.trim()){saveCloudCfg({apiKey:"",binId:"",enabled:false});alert("已关闭云同步,继续只使用本机存储。");return;}
-  const binIdInput=prompt("设置跨设备云同步 — 第2步:\n如果这是第一台设备,直接留空,确定后自动创建;如果是第二台/后续设备,粘贴第一台设备创建成功时给你看的Bin ID,两台设备就接上同一份云端存档了:",cfg.binId||"");
-  if(binIdInput===null)return;
-  const binId=binIdInput.trim();
-  (async()=>{
-    try{
-      const newCfg={apiKey:apiKey.trim(),binId,enabled:true};
-      if(!binId){
-        const id=await cloudBinCreate(newCfg,{keys:{},updatedAt:Date.now()});
-        if(!id)throw new Error("未拿到Bin ID,请检查API Key是否正确");
-        newCfg.binId=id;
-        saveCloudCfg(newCfg);
-        try{await navigator.clipboard.writeText(id);}catch(e){}
-        alert("云同步已开启。这是本次自动创建的 Bin ID(已尝试复制到剪贴板),记下来在其它设备上设置第2步时粘贴用:\n\n"+id);
-      }else{
-        await cloudBinRead(newCfg); // 校验Key/BinId确实有效且读得到,无效会在这里抛错
-        saveCloudCfg(newCfg);
-        alert("云同步已开启,正在与另一台设备的存档合并…");
-        await cloudSyncPull();
-      }
-    }catch(e){
-      alert("设置失败: "+(e.message||e)+"\n请检查API Key/Bin ID是否输入正确。");
-    }
-  })();
-}
 function fmtTimeSgt(ms){
   const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Singapore",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(new Date(ms));
   const p={};parts.forEach(x=>p[x.type]=x.value);
@@ -2336,6 +2213,10 @@ function init(){
     }
     const trkGoto=e.target.closest(".trk-tile-gotomodal");
     if(trkGoto&&trkGoto.dataset.symbol){openCryptoModal(trkGoto.dataset.symbol);return;}
+    const trkBt=e.target.closest(".trk-bt-btn");
+    if(trkBt&&trkBt.dataset.tf){if(!cycleBtBusy){try{localStorage.removeItem("orbit_cycle_bt_v1_"+trkBt.dataset.tf);}catch(_){}runCycleBacktest(trkBt.dataset.tf);}return;}
+    const v22t=e.target.closest(".v22-view-tab");if(v22t){v22View=v22t.dataset.view;renderTrackPanel();return;}
+    const v22b=e.target.closest("[data-v22]");if(v22b){v22Click(v22b);return;}
     const trkTfTab=e.target.closest(".trk-tf-tab");
     if(trkTfTab&&trkTfTab.dataset.tf){
       if(trkTfTab.dataset.tf!==activeCycleTf){activeCycleTf=trkTfTab.dataset.tf;renderTrackPanel();}
@@ -2369,8 +2250,6 @@ function init(){
     if(trkExport){exportCycleLogCSV();return;}
     const trkTg=e.target.closest("#trkTgBtn");
     if(trkTg){promptTelegramSetup();return;}
-    const trkCloud=e.target.closest("#trkCloudSyncBtn");
-    if(trkCloud){promptCloudSyncSetup();return;}
     const btn=e.target.closest(".bt-run-btn");
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
@@ -3677,14 +3556,6 @@ function renderOpportunityRadar(){
   if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 数据每${fmtScanIntervalLabel()}刷新 · 决策以4小时K线为基准,需持续45分钟以上且跨越一次4H收盘才计入正式清单`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
-  // 2026-09-25 根因修复: recordTrackSignals 此前定义了但从未被任何地方调用过,导致
-  // gatePendingConfirm(下面 oppTriggerState 用它判断 trig.cls 是否能到"pass")永远是空的——
-  // 不是"这一小时行情差、10个候选全被过滤掉",而是"已确认"这一档在代码层面永远不可能被命中,
-  // 不论市场状况多好。同理,推荐追踪日志(TRACK_LOG_KEY)也永远不会新增记录,Telegram也永远
-  // 不会推送,"上次扫描"诊断也永远是"从未成功过"。补上这一行,让它在每次面板刷新时先跑,
-  // 后面 withMeta/oppTriggerState 才能读到刚更新过的 gatePendingConfirm。用 try/catch 兜底,
-  // 避免这里出错拖垮整个 renderOpportunityRadar(其余UI仍要能正常渲染)。
-  try{recordTrackSignals(rows);}catch(e){console.error("recordTrackSignals failed",e);}
   CYCLE_TFS.forEach(tf=>ensureCycle(tf)); // 三个时间维度(4H/1D/1W)的周期引擎都要在后台随扫描刷新/结算,不只是当前展示的那个tab
   const withMeta=rows.map(x=>{
     const type=classifyOpportunityType(x.r.sig);
@@ -3928,6 +3799,251 @@ function cycleTechNote(sig){
 const DIR_CONFIRM_MS_BY_TF={"1h":10*60*1000,"4h":20*60*1000,"8h":40*60*1000,"1d":2*3600*1000,"1w":12*3600*1000}; // v16: 放宽(原15m/60m/2h/4h/24h),仍防止方向瞬间翻转
 function dirConfirmMinMs(tf){
   return DIR_CONFIRM_MS_BY_TF[tf]||OPP_SCAN_INTERVAL_MS;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── v20 根因修复(2026-09-28) ──
+   用户反馈: ①手机端持仓热力图一直空白; ②8笔全LONG、无一触及TP/SL、5笔亏损,整体不像成熟模型。
+   逐层追查后的根本问题(不是单个bug,是三层叠加):
+   [根因1·几何与时间预算错配] 固定周期=信号K线的1根(4H周期用4H K线),而止损≥2.2×ATR、止盈≥3.5×ATR
+     (TF_TPSL_CONFIG)——单根K线内碰到3.5×ATR的概率接近0,结果就是几乎100%"到期平仓",这套TP/SL
+     形同虚设,实际成了"押方向到周期末"。旧的raceProbability是"与时间无关"的先达概率(无限时间),
+     完全没考虑"只有这一根K线的时间",EV因此被系统性高估,校准样本也只统计TP/SL、把占绝大多数的到期单排除在外。
+   [根因2·胜负口径虚高] 到期平仓只要收盘>入场价一分钱(如+0.03%)就记"胜",不扣手续费/滑点(加密往返0.14%)。
+     8笔里+0.15%/+0.26%的"胜"扣费后其实是净亏/持平;顶部67%胜率因此偏乐观。
+   [根因3·空周期被锁死+全同向] ensureCycle一旦选出0笔就把这期存成空并"周期内不改判",直到下一期才重试;
+     加上多空上限80%(8笔全LONG合法),等于把同一个BTC贝塔赌注拆成8笔。
+   v20做法: ①用蒙特卡洛(布朗桥修正,固定种子)在"剩余周期时间内"直接模拟TP/SL/到期三种结局,得到扣费后净期望;
+     ②止盈/止损按剩余周期波动预算收窄到现实可达范围(结构位仍保留为上限/依据);③按净期望标成合格(≥0.02R)/边际不足,两类都追踪并计入统计
+     两类(合格/边际不足)都追踪并计入统计、不挑样本,面板并排对比两类的实盘净盈亏——这是可检验的对照实验;
+     ④胜负一律按扣费后净盈亏;⑤同向上限降到60%;⑥空周期每60秒重试,且永不空白。
+   诚实边界: 这里没有联网历史数据可回测,MC里的漂移项用0.5倍收缩的动量估计,常量均为可调起点而非校准值;
+   面板会用"合格 vs 边际不足"的实盘对照告诉你这套筛选到底有没有用。 */
+let CYCLE_SIM_N=1200;
+const CYCLE_TP_SIGMA_CAP=1.15, CYCLE_SL_SIGMA_MIN=0.8, CYCLE_SL_SIGMA_MAX=1.4, CYCLE_DRIFT_SHRINK=0.5, CYCLE_EVR_MIN=0.02, CYCLE_SIDE_CAP_CRYPTO=0.6;
+function cycleMulberry(seed){let a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};}
+function cycleHashStr(str){let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+// x=顺方向对数收益,止盈在+a,止损在-b;sigma/mu为每"信号K线"的波动/顺向漂移,H为剩余K线根数。
+function cycleHorizonSim(a,b,sigma,mu,H,dir,tpPct,slPct,seed){
+  // 同随机数对照(CRN): 每条路径的随机增量只抽一次,分别按"有漂移mu"和"零漂移"各跑一遍,
+  // 净边际 = EV(mu) − EV(0)。零漂移的布朗运动本身是鞅(理论EV≈0),直接取MC均值会带±0.04%的抽样噪声,
+  // 与合格线同量级;用配对差把噪声压掉,只保留"漂移(边际)"带来的那部分期望。
+  const N=CYCLE_SIM_N,S=32,dt=H/S,sd=sigma*Math.sqrt(dt),v=sd*sd,rnd=cycleMulberry(seed);
+  const z=new Float64Array(S),u1=new Float64Array(S),u2=new Float64Array(S);
+  const run=(m,acc)=>{
+    let x=0,res=0;
+    for(let k=0;k<S;k++){
+      const x1=x+m*dt+sd*z[k];
+      if(x1<=-b){res=-1;break;}
+      if(x1>=a){res=1;break;}
+      if(u1[k]<Math.exp(-2*(x+b)*(x1+b)/v)){res=-1;break;}
+      if(u2[k]<Math.exp(-2*(a-x)*(a-x1)/v)){res=1;break;}
+      x=x1;
+    }
+    if(res===1){acc.tp++;acc.pnl+=tpPct;}
+    else if(res===-1){acc.sl++;acc.pnl-=slPct;}
+    else{acc.to++;acc.pnl+=(dir>0?Math.expm1(x):1-Math.exp(-x))*100;}
+  };
+  const A={tp:0,sl:0,to:0,pnl:0},B={tp:0,sl:0,to:0,pnl:0};
+  for(let n=0;n<N;n++){
+    for(let k=0;k<S;k++){let u=rnd();if(u<1e-12)u=1e-12;z[k]=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*rnd());u1[k]=rnd();u2[k]=rnd();}
+    run(mu,A);run(0,B);
+  }
+  return{pTP:A.tp/N,pSL:A.sl/N,pTO:A.to/N,evPct:(A.pnl-B.pnl)/N};
+}
+function cycleFrictionPct(sym){const rt=EXECUTION_FRICTION[assetClassOfSymbol(sym)]||EXECUTION_FRICTION.DEFAULT;return(rt.feeRoundTrip+rt.slippageRoundTrip)*100;}
+// 单笔候选: 把结构位算出的TP/SL收窄到"剩余周期时间内可达"的范围,再用MC算扣费后净期望
+function cycleHorizonPlan(x,t,entry,tf,remainMs,assetClass,sym,seedKey){
+  const barMs=(CYCLE_TF_MINUTES[tf]||240)*60000;
+  const H=Math.max(0.05,remainMs/barMs);
+  const sigBar=(x.sigma>0&&isFinite(x.sigma))?x.sigma:(x.atr>0?x.atr/entry/1.4:null);
+  if(!(sigBar>0))return null;
+  const sigH=sigBar*Math.sqrt(H),dir=x.dir;
+  const lnTp0=Math.abs(Math.log(t.tp/entry)),lnSl0=Math.abs(Math.log(t.sl/entry));
+  let a=Math.min(lnTp0,CYCLE_TP_SIGMA_CAP*sigH);a=Math.max(a,0.6*sigH);
+  const b=Math.max(CYCLE_SL_SIGMA_MIN*sigH,Math.min(lnSl0,CYCLE_SL_SIGMA_MAX*sigH));
+  const tpAdj=Math.abs(a-lnTp0)>1e-9,slAdj=Math.abs(b-lnSl0)>1e-9;
+  const tp=entry*Math.exp(dir*a),sl=entry*Math.exp(-dir*b);
+  const tpPct=Math.abs((tp-entry)/entry*100),slPct=Math.abs((sl-entry)/entry*100);
+  const muRaw=(x.drift||0)*dir;
+  const mu=CYCLE_DRIFT_SHRINK*Math.max(-0.35*sigBar,Math.min(0.35*sigBar,muRaw));
+  const sim=cycleHorizonSim(a,b,sigBar,mu,H,dir,tpPct,slPct,cycleHashStr(sym+"|"+tf+"|"+(seedKey!=null?seedKey:cycleStartOf(Date.now(),tf))));
+  const fr=cycleFrictionPct(sym);
+  const evNet=sim.evPct-fr,evR=slPct>0?evNet/slPct:-9;
+  return{tp,sl,tpPct,slPct,a,b,lnTp0,lnSl0,tpAdj,slAdj,sigH,H,sim,fr,evNet,evR,
+    pct:v=>(v*100).toFixed(0)+"%"};
+}
+// 胜负口径: 已平仓(非void)一律按扣费后净盈亏>0算胜;全部入选仓位都计入统计(不挑样本),合格/边际不足只做对照
+function cycleIsClosed(p){return p.status!=="OPEN"&&p.outcome!=="void";}
+function cycleOutcome(p){
+  if(p.outcome==="void")return"VOID";
+  if(p.status==="OPEN")return null;
+  if(p.status==="TP")return"TP";
+  if(p.status==="SL")return"SL";
+  const atrPct=p.atr>0&&p.entry>0?p.atr/p.entry*100:(p.slPct>0?p.slPct/2.2:0);
+  if(Math.abs(cyclePnlPct(p,false))<0.5*atrPct)return"EOC_FLAT"; // v22: 到期价格基本没动,不计胜负
+  return cyclePnlPct(p,true)>0?"EOC_MOVE_WIN":"EOC_MOVE_LOSS";
+}
+function cycleIsWin(p){const o=cycleOutcome(p);return o==="TP"||o==="EOC_MOVE_WIN";}
+function cycleIsLoss(p){const o=cycleOutcome(p);return o==="SL"||o==="EOC_MOVE_LOSS";}
+function cycleIsScored(p){return p.outcome!=="void";}
+function cycleHealth(tf){
+  const hist=loadCycleHistory(tf).slice(-30);
+  const all=[];hist.forEach(c=>c.positions.forEach(p=>{if(cycleIsClosed(p))all.push(p);}));
+  const stat=arr=>{
+    const n=arr.length;if(!n)return null;
+    const pn=arr.map(p=>cyclePnlPct(p,true)),avg=pn.reduce((a,b)=>a+b,0)/n;
+    const sd=Math.sqrt(pn.reduce((a,b)=>a+(b-avg)*(b-avg),0)/Math.max(1,n-1));
+    const gp=pn.filter(v=>v>0).reduce((a,b)=>a+b,0),gl=-pn.filter(v=>v<0).reduce((a,b)=>a+b,0);
+    const wins=arr.filter(cycleIsWin).length,to=arr.filter(p=>p.status==="EOC").length;
+    return{n,wins,rate:wins/Math.max(1,arr.filter(p=>cycleIsWin(p)||cycleIsLoss(p)).length)*100,avg,se:sd/Math.sqrt(n),pf:gl>0?gp/gl:null,toShare:to/n*100};
+  };
+  return{cycles:hist.length,scored:stat(all),q:stat(all.filter(p=>p.tier==="Q")),w:stat(all.filter(p=>p.tier==="W"))};
+}
+function cycleHealthHtml(tf,cfg){
+  const h=cycleHealth(tf),S=h.scored;
+  if(!S)return`<div class="trk-conf-band na">📊 本${cfg.label}周期还没有已结算样本——现在能看到的只是模型自评,还没有实盘证据,只当观察,不建议参考实盘</div>`;
+  const f=v=>(v>=0?"+":"")+v.toFixed(2)+"%";
+  let verdict="🟡 样本还少,先当观察";
+  if(S.n>=30)verdict=(S.avg+1.64*S.se<0)?"🔴 扣费后净期望显著为负——这套信号目前没有可用优势,不要据此下单":(S.avg<0?"🟡 扣费后净期望为负,尚未证明有优势":"🟢 扣费后净期望为正(仍需更多样本确认)");
+  const line=(lab,x)=>x?`${lab}: ${x.n}笔 · 净胜率${x.rate.toFixed(0)}% · 平均净盈亏${f(x.avg)}/笔 · 到期未触发${x.toShare.toFixed(0)}%`:`${lab}: 暂无样本`;
+  return`<div class="trk-conf-band">📊 近${h.cycles}期(全部按<b>扣费后净盈亏</b>算胜负) · 已结算${S.n}笔 · 净胜率${S.rate.toFixed(1)}% ${ciLabel(S.wins,S.n)} · 平均净盈亏${f(S.avg)}/笔${S.pf!=null?` · 盈亏比PF ${S.pf.toFixed(2)}`:""}<br>${verdict}${S.n<30?`(n=${S.n}<30)`:""}<br><span style="opacity:.8">${line("净期望为正的合格仓",h.q)}<br>${line("净期望≤0的边际不足仓",h.w)}</span></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ── v21: 页面自带的一键走步回测(联网即跑) ──
+   直接对"固定周期引擎"做历史检验: 拉最近约1500根真实K线(Binance公共接口,与实盘同一数据源与信号函数
+   backtestSnapshotAt/computeClusterConsensus,同一套cycleHorizonPlan时间预算与扣费口径)。
+   每根K线收盘出信号 → 下一根开盘价入场 → 该根K线内先摸TP/SL还是到期收盘 → 扣往返费用得净盈亏。
+   ①不做任何参数拟合,只回答一个问题: 这套信号扣费后到底有没有正期望?
+   ②同时复刻实盘选股: 每个周期按净期望排序、同向≤60%、最多10笔("实盘同款Top10")。
+   ③给出: 全部信号 / 实盘同款 / 合格vs边际不足 / 信号强度五分位 / 多空 / 样本内外 / 不设TP-SL的持有到期对照 / 每根K线都做多的基准。
+   已知简化(如实标注): 结构位用ATR倍数近似(实盘里它们大多被时间预算收窄覆盖,影响很小);同一根K线内TP和SL都被摸到
+   记止损(偏保守);不模拟冷却与真实成交滑点;只测加密品种。结果缓存6小时。 */
+const CYCLE_BT_SYMBOLS=["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","NEARUSDT","BCHUSDT","UNIUSDT","LTCUSDT","DOTUSDT","ATOMUSDT","SUIUSDT","AAVEUSDT"];
+const CYCLE_BT_TTL=6*3600*1000, CYCLE_BT_EVAL_BARS=600;
+const cycleBtState={}; let cycleBtBusy=false; const cycleBtTried=new Set();
+function cycleBtLoad(tf){try{const o=JSON.parse(localStorage.getItem("orbit_cycle_bt_v1_"+tf)||"null");if(o&&o.result&&Date.now()-o.ts<CYCLE_BT_TTL)return o;}catch(e){}return null;}
+function cycleBtSave(tf,o){try{localStorage.setItem("orbit_cycle_bt_v1_"+tf,JSON.stringify(o));}catch(e){}}
+function cycleBtStat(arr,key){
+  const v=arr.map(r=>r[key]),n=v.length;
+  if(!n)return null;
+  const avg=v.reduce((a,b)=>a+b,0)/n,sd=Math.sqrt(v.reduce((a,b)=>a+(b-avg)*(b-avg),0)/Math.max(1,n-1)),se=sd/Math.sqrt(n);
+  const gp=v.filter(x=>x>0).reduce((a,b)=>a+b,0),gl=-v.filter(x=>x<0).reduce((a,b)=>a+b,0),wins=v.filter(x=>x>0).length;
+  return{n,avg,se,t:se>0?avg/se:0,rate:wins/n*100,wins,pf:gl>0?gp/gl:null};
+}
+async function runCycleBacktest(tf){
+  if(cycleBtBusy)return;
+  cycleBtBusy=true;
+  const st=cycleBtState[tf]={status:"running",done:0,total:CYCLE_BT_SYMBOLS.length,msg:"拉取历史K线…"};
+  const kick=()=>{try{renderTrackPanel();}catch(e){}};
+  kick();
+  const intervalMinutes=CYCLE_TF_MINUTES[tf],cfgTp=tfTpslConfig(intervalMinutes,"CRYPTO"),fr=cycleFrictionPct("BTCUSDT"),barMs=CYCLE_TF_CONFIG[tf].ms;
+  const savedN=CYCLE_SIM_N;CYCLE_SIM_N=300;
+  const recs=[];let bhSum=0,bhN=0,okSyms=0,firstT=Infinity,lastT=0;
+  try{
+    for(const sym of CYCLE_BT_SYMBOLS){
+      st.msg="回测 "+sym.replace("USDT","")+"…";
+      let kl=null;
+      try{kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=1500`);}catch(e){kl=null;}
+      st.done++;
+      if(!Array.isArray(kl)||kl.length<300){kick();continue;}
+      okSyms++;
+      const candles=kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
+      candles.pop(); // 最后一根未收盘
+      const n=candles.length,closesFull=candles.map(c=>c.close);
+      const pre={closesFull,ema20F:ema(closesFull,20),ema50F:ema(closesFull,50),ema144F:ema(closesFull,144),ema169F:ema(closesFull,169),
+        rsiF:rsi(closesFull,14),macdF:macd(closesFull),bbF:bollinger(closesFull,20,2),atrF:atr(candles,14),stF:supertrend(candles,10,3),
+        ciF:choppinessIndex(candles,14),biasF:biasIndicator(closesFull,20)};
+      const kd=kdj(candles.map(c=>c.high),candles.map(c=>c.low),closesFull);pre.kdjK=kd.K;pre.kdjD=kd.D;pre.kdjJ=kd.J;
+      const regimeState={regime:"mixed",pendingRegime:null,pendingCount:0};
+      const startIdx=Math.max(200,n-2-CYCLE_BT_EVAL_BARS),endIdx=n-2;
+      for(let idx=startIdx;idx<=endIdx;idx++){
+        const snap=backtestSnapshotAt(candles,idx,tf,pre,regimeState,"CRYPTO");
+        const c=candles[idx+1];
+        if(c.open>0){bhSum+=(c.close-c.open)/c.open*100;bhN++;}
+        if(snap.dirSign!==0&&snap.atrVal>0&&snap.sigmaVal>0){
+          const dir=snap.dirSign,entry=c.open,atrv=snap.atrVal;
+          const tpRaw=entry+dir*cfgTp.tp1AtrMin*atrv,slRaw=entry-dir*cfgTp.slAtrMin*atrv;
+          if(slRaw>0&&tpRaw>0){
+            const h=cycleHorizonPlan({dir,sigma:snap.sigmaVal,atr:atrv,drift:snap.driftPerBarRaw},{tp:tpRaw,sl:slRaw},entry,tf,barMs,"CRYPTO",sym,idx);
+            if(h){
+              const hitTp=dir>0?c.high>=h.tp:c.low<=h.tp,hitSl=dir>0?c.low<=h.sl:c.high>=h.sl;
+              let ex,how;
+              if(hitSl){ex=h.sl;how="SL";}else if(hitTp){ex=h.tp;how="TP";}else{ex=c.close;how="EOC";}
+              const net=dir*(ex-entry)/entry*100-fr,net0=dir*(c.close-entry)/entry*100-fr;
+              recs.push({t:c.time,sym,dir,strength:Math.abs(snap.score)/(snap.maxScore||1),evR:h.evR,tier:h.evR>=CYCLE_EVR_MIN?"Q":"W",net,net0,how});
+              if(c.time<firstT)firstT=c.time;if(c.time>lastT)lastT=c.time;
+            }
+          }
+        }
+        if((idx-startIdx)%25===0)await new Promise(r=>setTimeout(r,0));
+      }
+      kick();
+    }
+    if(!recs.length)throw new Error(okSyms?"回测期内没有产生任何有方向的信号":"历史K线拉取全部失败(网络/代理不可用)");
+    // 复刻实盘选股: 每个周期按净期望排序 → 同向≤60% → 最多10笔
+    const byT=new Map();recs.forEach(r=>{if(!byT.has(r.t))byT.set(r.t,[]);byT.get(r.t).push(r);});
+    const live=[],cap=Math.ceil(CYCLE_TOP_N*CYCLE_SIDE_CAP_CRYPTO);
+    byT.forEach(list=>{
+      list.sort((a,b)=>b.evR-a.evR);const cnt={"1":0,"-1":0};let k=0;
+      for(const r of list){if(k>=CYCLE_TOP_N)break;if(cnt[r.dir]>=cap)continue;live.push(r);cnt[r.dir]++;k++;}
+    });
+    const sortedStr=recs.slice().sort((a,b)=>a.strength-b.strength),q=Math.floor(sortedStr.length/5);
+    const quint=[0,1,2,3,4].map(i=>cycleBtStat(sortedStr.slice(i*q,i===4?undefined:(i+1)*q),"net"));
+    const tSplit=firstT+(lastT-firstT)*0.6;
+    const res={
+      tf,barsPerSym:CYCLE_BT_EVAL_BARS,syms:okSyms,days:Math.round((lastT-firstT)/86400),fr,
+      bhAvg:bhN?bhSum/bhN-fr:null,
+      all:cycleBtStat(recs,"net"),live:cycleBtStat(live,"net"),liveHold:cycleBtStat(live,"net0"),
+      liveQ:cycleBtStat(live.filter(r=>r.tier==="Q"),"net"),liveW:cycleBtStat(live.filter(r=>r.tier==="W"),"net"),
+      liveLong:cycleBtStat(live.filter(r=>r.dir>0),"net"),liveShort:cycleBtStat(live.filter(r=>r.dir<0),"net"),
+      liveIS:cycleBtStat(live.filter(r=>r.t<=tSplit),"net"),liveOOS:cycleBtStat(live.filter(r=>r.t>tSplit),"net"),
+      quint,
+      hit:{tp:live.filter(r=>r.how==="TP").length,sl:live.filter(r=>r.how==="SL").length,eoc:live.filter(r=>r.how==="EOC").length}
+    };
+    st.status="done";st.result=res;st.ts=Date.now();
+    cycleBtSave(tf,{ts:st.ts,result:res});
+  }catch(e){
+    st.status="error";st.msg=String(e&&e.message||e);
+  }finally{
+    CYCLE_SIM_N=savedN;cycleBtBusy=false;kick();
+  }
+}
+function cycleBtVerdict(r){
+  const L=r&&r.live;
+  if(!L)return{cls:"na",txt:"样本不足,无法判定"};
+  if(L.n<100)return{cls:"na",txt:`🟡 样本仅${L.n}笔(<100),先不下结论`};
+  if(L.avg+1.64*L.se<0)return{cls:"bad",txt:"🔴 扣费后净期望显著为负——这套信号在历史上没有可用优势,不建议据此下单"};
+  if(L.avg-1.64*L.se>0)return{cls:"good",txt:"🟢 扣费后净期望显著为正——历史上有优势,但仍需看样本外是否同向"};
+  return{cls:"na",txt:`🟡 净期望${L.avg>=0?"为正":"为负"}但统计上与0无法区分(t=${L.t.toFixed(1)})——没有证据表明有优势`};
+}
+function renderCycleBacktestBox(tf){
+  const st=cycleBtState[tf],cached=cycleBtLoad(tf);
+  let r=null,ts=null;
+  if(st&&st.status==="done"){r=st.result;ts=st.ts;}else if(cached){r=cached.result;ts=cached.ts;}
+  const btn=(lab)=>`<button class="trk-bt-btn" data-tf="${tf}" ${cycleBtBusy?"disabled":""}>${lab}</button>`;
+  const head=`<div class="trk-subhead">🧪 历史回测 · ${CYCLE_TF_CONFIG[tf].label}周期(联网自动跑,缓存6小时)</div>`;
+  if(cycleBtBusy&&st&&st.status==="running")return head+`<div class="trk-bt-box">⏳ ${esc(st.msg)}(${st.done}/${st.total})——会自动更新,可以先看上面的卡片</div>`;
+  if(st&&st.status==="error"&&!r)return head+`<div class="trk-bt-box">回测没跑成: ${esc(st.msg)} ${btn("重试")}</div>`;
+  if(!r)return head+`<div class="trk-bt-box">还没有回测结果。${btn("▶ 立即回测")}</div>`;
+  const v=cycleBtVerdict(r),f=(x,d=2)=>(x>=0?"+":"")+x.toFixed(d)+"%";
+  const row=(lab,x)=>x?`<tr><td>${lab}</td><td>${x.n}</td><td>${x.rate.toFixed(0)}%</td><td class="${x.avg>=0?"up":"down"}">${f(x.avg,3)}</td><td>${x.t.toFixed(1)}</td></tr>`:`<tr><td>${lab}</td><td colspan="4">–</td></tr>`;
+  const oos=r.liveOOS,is=r.liveIS;
+  const oosNote=(oos&&is)?`样本内${f(is.avg,3)} → 样本外${f(oos.avg,3)}${(is.avg>0&&oos.avg<=0)?"(⚠ 样本外转负,疑似过拟合/不稳)":""}`:"";
+  const mono=r.quint.every(Boolean)?(r.quint[4].avg>r.quint[0].avg?"强度越高越好(单调性尚可)":"强度高的并没有更好——信号强度不能当作把握度用"):"";
+  const age=Math.max(1,Math.round((Date.now()-ts)/60000));
+  return head+`<div class="trk-bt-box"><div class="trk-bt-verdict ${v.cls}">${v.txt}</div>
+    <div class="trk-bt-meta">${r.syms}个品种 · 最近约${r.days}天 · 每品种${r.barsPerSym}根${CYCLE_TF_CONFIG[tf].label}K线 · 往返费用${r.fr.toFixed(2)}%已扣 · ${age}分钟前 ${btn("重跑")}</div>
+    <div style="overflow-x:auto"><table class="trk-calib-table trk-bt-table"><thead><tr><th>分组(每根K线一笔)</th><th>笔数</th><th>净胜率</th><th>平均净盈亏</th><th>t值</th></tr></thead><tbody>
+      ${row("<b>实盘同款Top10</b>",r.live)}${row("全部有方向的信号",r.all)}
+      ${row("　├ 净期望为正(合格)",r.liveQ)}${row("　└ 边际不足",r.liveW)}
+      ${row("　做多",r.liveLong)}${row("　做空",r.liveShort)}
+      ${row("不设TP/SL·持有到期(对照)",r.liveHold)}
+      ${r.quint.map((x,i)=>row(`信号强度 第${i+1}档${i===0?"(最弱)":i===4?"(最强)":""}`,x)).join("")}
+      <tr><td>基准: 每根都做多</td><td>–</td><td>–</td><td class="${r.bhAvg>=0?"up":"down"}">${r.bhAvg==null?"–":f(r.bhAvg,3)}</td><td>–</td></tr>
+    </tbody></table></div>
+    <div class="trk-bt-meta">${oosNote}${oosNote&&mono?" · ":""}${mono}<br>Top10内出场: 止盈${r.hit.tp} · 止损${r.hit.sl} · 到期${r.hit.eoc}。t值|t|&lt;2 视为与0无显著差异。同一根K线内TP/SL都触及记止损(偏保守);结构位用ATR倍数近似;不含冷却与真实成交滑点。</div></div>`;
 }
 function pickCycleTopN(tf){
   const map=cycleResultsMapFor(tf);
@@ -4319,55 +4435,64 @@ function buildStructureTargets(dirSign,entry,atrVal,structure,regime,intervalMin
 const CYCLE_TF_MINUTES={"1h":60,"4h":240,"8h":480,"1d":1440,"1w":10080};
 function buildCyclePositions(tf,topN){
   const intervalMinutes=CYCLE_TF_MINUTES[tf]||240;
-  // 2026-09-18: buildStructureTargets现在可能因为"目标距离低于该周期最小有效目标%"(需求四)或
-  // "期望值EV<0"(需求五)而返回noSetup——这类币种不该被硬塞进本期持仓列表凑数,直接过滤掉
-  // (而不是像单symbol深度视图那样渲染一张"无方向"卡片,固定周期复盘列表本身就是"选出来的Top N",
-  // 过滤掉不合格的候选是这个列表天然该做的事)。
-  // 2026-09-23: 同样在这里补上信号冷却门槛——固定周期复盘之前没有这道闸,同一symbol+方向
-  // 刚被上一期结算证伪成SL,下一期选股仍可能因为强度分高而再次入选,和单symbol深度视图那边
-  // 已经堵上的漏洞是同一个问题,这里一并堵上。
+  const cfg=CYCLE_TF_CONFIG[tf];
+  const now=Date.now();
+  const remainMs=Math.max(60000,cycleStartOf(now,tf)+cfg.ms-now);
+  const stats={cand:topN.length,cooldown:0,noPrice:0,badGeom:0,qualified:0,watch:0,sideCapped:0};
+  buildCyclePositions.lastStats=buildCyclePositions.lastStats||{};buildCyclePositions.lastStats[tf]=stats;
+  const brk=v22Breaker(tf);v22Filtered[tf]=[];
+  if(brk.state==="halted"){stats.halted=true;return[];} // v22 熔断: 暂停生成新候选,只做复盘
+  const calib=cycleCalibrationByBucket(tf);
+  // v20: 不再因noSetup/EV<0直接丢弃候选(那样一期可能0笔且被锁死,手机端因此整块空白);
+  // 一律走"时间预算+扣费净期望"评估,净期望≥CYCLE_EVR_MIN的标合格(Q),其余标边际不足(W),两类都追踪并计入统计。
   const built=topN.map(x=>{
     const m=market.get(x.symbol);
+    if(!m||!(m.price>0)){stats.noPrice++;return null;}
     const entry=m.price;
-    if(cooldownRemainingMs(x.symbol,x.dir,intervalMinutes)>0)return null;
+    if(cooldownRemainingMs(x.symbol,x.dir,intervalMinutes)>0){stats.cooldown++;return null;}
+    const bl=v22Blacklist(x,tf);if(bl){stats.blacklisted=(stats.blacklisted||0)+1;v22NoteFiltered(tf,x,"画像黑名单: "+bl);return null;} // 资格剔除,不是降权
     const t=buildStructureTargets(x.dir,entry,x.atr,x.structure,x.regime,intervalMinutes,x.highs,x.lows,x.sigma,x.drift,m.assetClass);
-    if(t.noSetup)return null;
-    // v14: 用实盘校准后的先达胜率重新过EV门槛(raceWinProb仍存原值,供后续校准用)
-    const ce=calibratedEdge(t.raceWinProb,t.rr!=null?t.rr.toFixed(2):null,false);
-    if(ce.evTier==="reject")return null;
-    t.ev=ce.ev;t.evTier=ce.evTier;t.evNote=ce.evNote;t.raceWinProbCal=ce.calib?Math.round(ce.calib.p):null;
-    return{symbol:x.symbol,dir:x.dir,entry,tp:t.tp,sl:t.sl,
-      tpPct:Math.abs((t.tp-entry)/entry*100),slPct:Math.abs((t.sl-entry)/entry*100),
-      tpSrc:t.tpSources&&t.tpSources[0]?t.tpSources[0]:null,
-      slSrc:t.slSources&&t.slSources[0]?t.slSources[0]:null,
-      cappedByLevel:t.cappedByLevel,levelSkippedTooClose:t.levelSkippedTooClose,
-      raceWinProb:t.raceWinProb,raceWinProbCal:t.raceWinProbCal,regime:x.regime,regimeLabel:x.regimeLabel,
+    if(!t||!(t.tp>0)||!(t.sl>0)||!isFinite(t.tp)||!isFinite(t.sl)){stats.badGeom++;return null;}
+    const h=cycleHorizonPlan(x,t,entry,tf,remainMs,m.assetClass,x.symbol);
+    if(!h){stats.badGeom++;return null;}
+    const gate=v22EvGate(x,calib);const tier=h.evR>=gate.th?"Q":"W";
+    const baseTp=t.tpSources&&t.tpSources[0]?t.tpSources[0]:null,baseSl=t.slSources&&t.slSources[0]?t.slSources[0]:null;
+    const tpSrc=h.tpAdj?`${baseTp?baseTp+" — ":""}原结构目标距离${(h.lnTp0*100).toFixed(2)}%,超出本期剩余时间内可达范围(剩余1σ≈${(h.sigH*100).toFixed(2)}%),已收窄到≈${CYCLE_TP_SIGMA_CAP}σ`:baseTp;
+    const slSrc=h.slAdj?`${baseSl?baseSl+" — ":""}原止损距离${(h.lnSl0*100).toFixed(2)}%,按剩余波动预算调整到${(h.b*100).toFixed(2)}%(约${(h.b/h.sigH).toFixed(2)}σ)`:baseSl;
+    const S=h.sim,pc=v=>Math.round(v*100);
+    const evNote=`时间预算内模拟: 止盈${pc(S.pTP)}% / 止损${pc(S.pSL)}% / 到期未触发${pc(S.pTO)}% · 扣往返费用${h.fr.toFixed(2)}%后净期望${h.evNet>=0?"+":""}${h.evNet.toFixed(3)}%(${h.evR>=0?"+":""}${h.evR.toFixed(2)}R)${tier==="Q"?"":" · 扣费后净期望≤0,边际不足"}`;
+    return{symbol:x.symbol,dir:x.dir,entry,tp:h.tp,sl:h.sl,tier,evR:h.evR,atr:x.atr,gate:gate.tier,
+      tpPct:h.tpPct,slPct:h.slPct,tpSrc,slSrc,
+      cappedByLevel:!h.tpAdj&&t.cappedByLevel,levelSkippedTooClose:!h.tpAdj&&t.levelSkippedTooClose,
+      raceWinProb:(S.pTP+S.pSL)>0?Math.round(S.pTP/(S.pTP+S.pSL)*100):null,raceWinProbCal:null,
+      pTP:+S.pTP.toFixed(3),pSL:+S.pSL.toFixed(3),pTO:+S.pTO.toFixed(3),horizonBars:+h.H.toFixed(3),
+      regime:x.regime,regimeLabel:x.regimeLabel,
       strength:x.strength,conviction:x.conviction,techNote:x.techNote,
-      ev:t.ev,evTier:t.evTier,evNote:t.evNote,sigma:t.sigma,driftPerBar:t.driftPerBar,
+      ev:h.evR,evTier:tier==="Q"?(h.evR>=0.15?"ok":"marginal"):"reject",evNote,sigma:x.sigma,driftPerBar:(x.drift||0)*x.dir,
       status:"OPEN",exitPrice:null,exitAt:null,outcome:null};
   }).filter(Boolean);
-  // 2026-09-24 新增(用户诉求文档缺陷6): 方向集中度上限。固定周期引擎选出的Top10如果清一色
-  // 同一方向,本质是同一个宏观赌注被拆成10笔挂着"分散"的假象,一旦方向错,10笔一起亏——
-  // 这不是新增相关性计算(那需要额外的历史收益率数据,超出当前候选池自带的信息),只做
-  // "人多的一侧最多留几个名额"的最小改动: 同一方向最多占CYCLE_TOP_N的80%(10个名额里最多8个
-  // 同向)。如果对侧根本没有任何合格候选(不是"让位后没人补",而是一开始就没有),就如实减少
-  // 总仓位数量,不再为了凑够10笔而虚构分散(对应文档原文"减少总仓位到5笔,而不是硬凑10笔"的
-  // 精神——这里按候选池实际情况自然减少,不是固定砍到5)。
-  // v11: 全部为非crypto品种时,同向上限收紧到50%(5笔)——TradFi相关性更高,8笔同向本质是同一个赌注。
+  // 方向集中度: 同向最多占60%(非crypto 50%)。8笔全LONG本质是同一个BTC贝塔赌注,不是分散。
   const allNonCrypto=built.length>0&&built.every(p=>{const a=(market.get(p.symbol)||{}).assetClass;return a&&a!=="CRYPTO";});
-  const capOneSide=Math.ceil(CYCLE_TOP_N*(allNonCrypto?0.5:0.8));
-  // 2026-09-25 修复(用户明确要求"排名标准必须是风险调整后的期望值,不是confluence强度"):
-  // 此前多空各自按strength(信号共振度原始分)截取capOneSide名额、最终也按strength排序——
-  // strength只回答"这个方向的票投得多整齐",不回答"这笔在扣完手续费/滑点、按历史校准后到底
-  // 值不值得占一个仓位名额"。EV(t.ev,来自calibratedEdge,已经过calibrateRaceProb按同档历史
-  // 已结算样本收缩)才是后者。先按EV把整个候选池排序再分多空各截取名额、最终Top10也按EV排序,
-  // strength仍在上面pickCycleTopN那一步作为"够不够格进候选池"的前置信号质量筛子保留——
-  // 分层变成"strength决定谁有资格入池,EV决定入池后怎么排名",不是互相替代。
-  built.sort((a,b)=>b.ev-a.ev);
-  const longs=built.filter(p=>p.dir>0),shorts=built.filter(p=>p.dir<0);
-  const balanced=[...longs.slice(0,capOneSide),...shorts.slice(0,capOneSide)];
-  balanced.sort((a,b)=>b.ev-a.ev);
-  return balanced.slice(0,CYCLE_TOP_N);
+  const capSide=Math.ceil(CYCLE_TOP_N*(allNonCrypto?0.5:CYCLE_SIDE_CAP_CRYPTO));
+  built.forEach(p=>{const s=v22ImageStat(p,tf);p.rankKey=p.evR+(s.level?(wilsonCI(s.w,s.n)[0]/100-0.5):-0.10);p.validated=!!s.level;});
+  built.sort((a,b)=>b.rankKey-a.rankKey);
+  const pick=[],cnt={"1":0,"-1":0};
+  const cap=brk.state==="restricted"?5:CYCLE_TOP_N,bc={},BCAP={BTC:2,ALT:4,TRADFI:3};
+  const rt=s=>{const r=cycleResultsMapFor(tf).get(s);return r&&r.sig&&r.sig.retTail;};
+  const take=list=>{for(const p of list){
+    if(pick.length>=cap)break;
+    if(cnt[p.dir]>=capSide){stats.sideCapped++;continue;}
+    const bk=v22Bucket(p.symbol),bkk=bk+p.dir;
+    if((bc[bkk]||0)>=BCAP[bk]){stats.sideCapped++;v22NoteFiltered(tf,p,"组合层: "+bk+"桶同向已满("+BCAP[bk]+"笔)");continue;}
+    let hit=null;
+    for(const q of pick){if(q.dir!==p.dir)continue;const a=rt(p.symbol),b2=rt(q.symbol);const rho=(a&&b2)?riskPearson(a,b2,30):null;if(rho!=null&&rho>=0.75){hit=q.symbol+" ρ="+rho.toFixed(2);break;}}
+    if(hit){v22NoteFiltered(tf,p,"相关度过高,已保留EV更高的 "+hit);continue;}
+    pick.push(p);cnt[p.dir]++;bc[bkk]=(bc[bkk]||0)+1;
+  }};
+  take(built.filter(p=>p.tier==="Q"));
+  take(built.filter(p=>p.tier!=="Q"));
+  stats.qualified=pick.filter(p=>p.tier==="Q").length;stats.watch=pick.length-stats.qualified;
+  return pick;
 }
 // 2026-09-24 重写(P0,用户诉求文档缺陷4——最致命的bug):
 // 旧版settleCycleIfDue在"周期越过截止时间"的那一刻,直接用market.get(symbol)的实时价把所有
@@ -4422,9 +4547,19 @@ function ensureCycle(tf){
   if(!cur){
     const topN=pickCycleTopN(tf);
     if(topN.length===0)return null; // 扫描引擎还没跑出第一轮结果(刚打开页面时的短暂状态)
-    cur={start,end:start+CYCLE_TF_CONFIG[tf].ms,builtAt:Date.now(),lateMs:Date.now()-start,positions:buildCyclePositions(tf,topN)};
+    cur={start,end:start+CYCLE_TF_CONFIG[tf].ms,builtAt:Date.now(),lateMs:Date.now()-start,positions:buildCyclePositions(tf,topN),lastTry:Date.now()};
     saveCycleCurrent(tf,cur);
     return cur;
+  }
+  // v20: 这一期若是空的(旧版会被\"周期内不改判\"锁死到下一期,手机端热力图长期空白的根因之一),每60秒重新尝试建仓
+  if(!cur.positions.length&&Date.now()<cur.end&&Date.now()-(cur.lastTry||0)>60000){
+    cur.lastTry=Date.now();
+    const topN2=pickCycleTopN(tf);
+    if(topN2.length){
+      const ps=buildCyclePositions(tf,topN2);
+      if(ps.length){cur.positions=ps;cur.builtAt=Date.now();cur.lateMs=cur.builtAt-cur.start;}
+    }
+    saveCycleCurrent(tf,cur);
   }
   evaluateOpenPositions(cur);
   saveCycleCurrent(tf,cur);
@@ -4553,12 +4688,12 @@ function cycleCalibrationByBucket(tf){
   const hist=loadCycleHistory(tf);
   const buckets={};
   hist.forEach(c=>c.positions.forEach(p=>{
-    if(p.conviction==null||p.status==="OPEN"||p.outcome==="void")return;
+    if(p.conviction==null||p.status==="OPEN"||p.outcome==="void"||cycleOutcome(p)==="EOC_FLAT")return;
     const b=cycleConvictionBucket(p.conviction);
     if(!buckets[b])buckets[b]={wins:0,total:0};
     buckets[b].total++;
-    {const v=cyclePnlPct(p);if(isFinite(v)){buckets[b].pnl=(buckets[b].pnl||0)+v;buckets[b].pnlN=(buckets[b].pnlN||0)+1;}}
-    if(p.status==="TP"||p.outcome==="flat_win")buckets[b].wins++;
+    {const v=cyclePnlPct(p,true);if(isFinite(v)){buckets[b].pnl=(buckets[b].pnl||0)+v;buckets[b].pnlN=(buckets[b].pnlN||0)+1;}}
+    if(cycleIsWin(p))buckets[b].wins++;
   }));
   return buckets;
 }
@@ -4574,7 +4709,7 @@ function cycleBucketStat(buckets,conv){
 function cycleOverallStats(tf){
   const hist=loadCycleHistory(tf).slice(-30);
   const wins=hist.reduce((s,c)=>s+cycleWinLoss(c).wins,0);
-  const total=hist.reduce((s,c)=>s+cycleCounted(c).length,0);
+  const total=hist.reduce((s,c)=>s+cycleDecided(c).length,0);
   const[lo,hi]=wilsonCI(wins,total);
   return{wins,total,rate:total?wins/total*100:null,lo,hi,cycles:hist.length};
 }
@@ -4621,8 +4756,9 @@ function cycleStatusBadge(p){
   if(p.status==="OPEN")return`<span class="trk-badge" style="color:var(--amber);background:var(--amber-bg);">持仓中</span>`;
   if(p.status==="TP")return`<span class="trk-badge win">✅ 止盈 TP</span>`;
   if(p.status==="SL")return`<span class="trk-badge loss">❌ 止损 SL</span>`;
-  const win=p.outcome==="flat_win";
-  return`<span class="trk-badge ${win?"win":"loss"}">⏱ 到期平仓(${win?"浮盈":"浮亏"})</span>`;
+  if(cycleOutcome(p)==="EOC_FLAT")return`<span class="trk-badge" style="color:var(--dim2);" title="到期时价格变动<0.5×ATR,不计入胜负">⏸ 到期未动·不计胜负</span>`;
+  const win=cycleIsWin(p);
+  return`<span class="trk-badge ${win?"win":"loss"}" title="按扣除往返手续费+滑点后的净盈亏判定">⏱ 到期走了一段(${win?"盈":"亏"})</span>`;
 }
 function cycleCountdownText(cur){
   const rem=Math.max(0,cur.end-Date.now());
@@ -4634,11 +4770,11 @@ function cycleTfTabsHtml(){
 }
 function renderCycleHeatmap(tf,cur){
   const cfg=CYCLE_TF_CONFIG[tf];
-  if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟自动开始第一期…</div>';
+  if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟自动开始第一期…</div>'+renderCycleBacktestBox(tf);
   const calib=cycleCalibrationByBucket(tf);
   const overall=cycleOverallStats(tf);
-  const tiles=cur.positions.slice().sort((a,b)=>cyclePnlPct(b)-cyclePnlPct(a)).map(p=>{
-    const pnl=cyclePnlPct(p);
+  const tiles=cur.positions.slice().sort((a,b)=>((a.tier==="W")-(b.tier==="W"))||(cyclePnlPct(b,cycleIsClosed(b))-cyclePnlPct(a,cycleIsClosed(a)))).map(p=>{
+    const pnl=cyclePnlPct(p,cycleIsClosed(p));
     const bg=trkHeatColor(p.status==="OPEN"?pnl:null);
     const id=tf+"|"+cur.start+"|"+p.symbol;
     const expanded=trkExpandedIds.has(id);
@@ -4647,9 +4783,10 @@ function renderCycleHeatmap(tf,cur){
     const ev=cycleTileEV(p,bStat);
     const evChip=ev==null?`<span class="trk-ev-chip na">样本不足</span>`:`<span class="trk-ev-chip ${ev>=0?"pos":"neg"}">EV${ev>=0?"+":""}${ev.toFixed(2)}%</span>`;
     const hint=cycleActionHint(p);
-    return`<div class="trk-tile${expanded?" open":""}" data-id="${esc(id)}" data-symbol="${esc(p.symbol)}" style="background:${bg};" title="点击查看这笔的入场/止盈/止损/技术分析明细">
+    const isW=p.tier==="W";
+    return`<div class="trk-tile${expanded?" open":""}${isW?" trk-tile-w":""}" data-id="${esc(id)}" data-symbol="${esc(p.symbol)}" style="background:${bg};" title="点击查看这笔的入场/止盈/止损/技术分析明细">
       <div class="trk-tile-top">
-        <span class="trk-tile-sym">${esc(p.symbol.replace("USDT",""))} <span class="trk-tile-dir ${p.dir>0?"up":"down"}">${p.dir>0?"▲":"▼"}</span></span>
+        <span class="trk-tile-sym">${esc(p.symbol.replace("USDT",""))} <span class="trk-tile-dir ${p.dir>0?"up":"down"}">${p.dir>0?"▲":"▼"}</span></span>${isW?`<span class="trk-w-chip" title="扣除往返手续费后,这笔在剩余周期内的模拟净期望≤0: 照常追踪,统计里也算,但别当成有优势的单">边际不足</span>`:""}
       </div>
       <div class="trk-tile-pnl ${pnlCls}">${pnl>=0?"+":""}${pnl.toFixed(2)}%</div>
       <div class="trk-tile-meta">${cycleStatusBadge(p)} ${evChip}</div>
@@ -4666,8 +4803,9 @@ function renderCycleHeatmap(tf,cur){
       <div class="trk-detail-row"><span>止损 SL(${p.slPct.toFixed(2)}%)</span><span>${fmtPrice(p.sl)}</span></div>
       <div class="trk-detail-row trk-detail-tech"><span>止损依据</span><span>${p.slSrc?`方向判断错了的话,大概率先在这里被证伪: ${esc(p.slSrc)}`:"– (旧版记录,无结构依据字段)"}</span></div>
       <div class="trk-detail-row"><span>R:R(目标:风险)</span><span>${(p.tpPct/p.slPct).toFixed(2)} : 1</span></div>
+      ${p.pTP!=null?`<div class="trk-detail-row trk-detail-tech"><span>剩余周期内结局概率(模拟)</span><span>止盈${Math.round(p.pTP*100)}% · 止损${Math.round(p.pSL*100)}% · 到期未触发${Math.round(p.pTO*100)}%</span></div>`:""}
       <div class="trk-detail-row"><span>先达胜率</span><span title="从入场价出发,数学上先摸到止盈还是先摸到止损的概率(与时间无关),不是模型自评把握度">${p.raceWinProb!=null?p.raceWinProb+"%":"– (旧版记录)"}</span></div>
-      <div class="trk-detail-row"><span>预期值 EV(理论·先达胜率)</span><span class="${p.evTier==="marginal"?"amb":p.evTier==="ok"?"bull":""}" title="先达胜率×RR-(1-先达胜率),单位为R(风险的倍数);低于0.15R视为边际机会,扣除手续费滑点后接近盈亏平衡">${p.evNote?esc(p.evNote):"–"}</span></div>
+      <div class="trk-detail-row"><span>净期望(时间预算·扣费)</span><span class="${p.evTier==="marginal"?"amb":p.evTier==="ok"?"bull":""}" title="先达胜率×RR-(1-先达胜率),单位为R(风险的倍数);低于0.15R视为边际机会,扣除手续费滑点后接近盈亏平衡">${p.evNote?esc(p.evNote):"–"}</span></div>
       ${lpBlockHTML(p,cur,tf)}
       ${p.status!=="OPEN"&&p.exitAt?`<div class="trk-detail-row"><span>结算时间 Matched</span><span>${fmtTrkDateTime(p.exitAt)}</span></div>`:""}
       <div class="trk-detail-row"><span>模型自评把握度</span><span>${p.conviction!=null?p.conviction+"%":"–"}(信号强度${(p.strength*100).toFixed(0)}%)</span></div>
@@ -4679,10 +4817,8 @@ function renderCycleHeatmap(tf,cur){
       <button class="trk-tile-gotomodal" data-symbol="${esc(p.symbol)}">📈 打开${esc(p.symbol.replace("USDT",""))}行情图 →</button>
     </div>`:""}`;
   }).join("");
-  const confBand=overall.total>0
-    ?`<div class="trk-conf-band">📊 近${overall.cycles}期整体校准: 已结算${overall.total}笔 · 实际胜率${overall.rate.toFixed(1)}% ${ciLabel(overall.wins,overall.total)}${overall.total<20?" · 样本还不多,数字会随样本增加而变稳":""}</div>`
-    :`<div class="trk-conf-band na">📊 本${cfg.label}周期还没有已结算样本,校准胜率暂时算不出来——现在能看到的只是模型自评分数,还没有实证支持,建议先观察不建议参考实盘</div>`;
-  const guideNote=`<div class="trk-guide-note" style="line-height:1.7;">
+  const confBand=cycleHealthHtml(tf,cfg);
+  const guideNote=`<details class="trk-guide-details"><summary>📖 怎么看这个面板(点开)</summary><div class="trk-guide-note" style="line-height:1.7;">
     <b>看这个面板,按这个顺序看：</b>
     <br>① 先看顶部的整体胜率站不站得住(样本要够多、置信区间不要太宽)——这比看任何一笔单独的信号都重要。
     <br>② 每笔卡片先看EV是正是负：EV为正且样本不算太小,才值得当真;EV为负或标"样本不足",跳过或只当观察,不要因为方向标了LONG/SHORT就当真。
@@ -4690,24 +4826,234 @@ function renderCycleHeatmap(tf,cur){
     <br>④ 还在持仓中的信号,注意卡片下面的操作提示：现价已经偏离建议入场价太多时,提示会说清楚现在追值不值,不用你自己心算。
     <br>⑤ 这一期是在页面首次选出Top N的那一刻建仓的:页面在周期开始时就开着,建仓点就在周期起点附近;否则会晚一些(头部会标出迟到多久,入场价=建仓时现价,结算路径也从建仓时刻起算)。你打开时市场可能已经走出一段——"现价剩余R:R"就是算给你看"现在追进去,划不划算",而不是让你只盯着方向标签冲。
     <br>⑥ 这里只机械化验证"方向判断得准不准、目标价合不合理",不建议仓位和杠杆——具体下多大仓位,按你自己的风险承受能力定,这个面板不替你做这个决定。
-  </div>`;
+    <br>⑦ v20起: 胜负按<b>扣费后净盈亏</b>算;止盈止损按"本期剩余时间内价格走得到的范围"收窄;扣费后模拟净期望>0的标"合格",≤0的标"边际不足"——两类都照常追踪并计入统计(不挑样本),面板顶部会并排给出两类的实盘净盈亏,对照就是检验这套筛选有没有用的证据。
+  </div></details>`;
   // v13: 入场价 = 建仓那一刻(builtAt)的现价,不是周期起点价——同一期在不同时刻打开页面的人,入场价本来就不同。
   // 这是\"从你打开页面起算的观察日志\",不是全局确定性快照;迟到超过周期10%时明确标出,避免误读。
   const lateNote=(cur.builtAt&&cur.builtAt-cur.start>cfg.ms*0.1)?` · <span style="color:var(--amber);" title="入场价取建仓时刻的现价,结算路径也从该时刻起算,不含建仓之前的行情">⏱ 本期于开始后${Math.round((cur.builtAt-cur.start)/60000)}分钟才建仓(入场价=建仓时现价)</span>`:"";
-  return`<div class="trk-cycle-head">本期开仓时间 ${fmtTrkDateTime(cur.start)}${lateNote} · ${cycleCountdownText(cur)} · 止盈止损按每个币种自己当下的斐波那契/趋势线/摆动结构位与ATR波动率单独计算(不套用统一百分比,点开任一笔卡片可看具体依据) · 按${cfg.label}周期信号强度选出的Top${CYCLE_TOP_N},周期内不改判</div>
-    ${confBand}${guideNote}
-    <div class="trk-heatmap">${tiles}</div>`;
+  const bs=(buildCyclePositions.lastStats||{})[tf]||{};
+  const emptyBox=`<div class="trk-empty" style="line-height:1.7;">本期暂时没有可追踪的仓位(系统每60秒自动重试)。<br><span style="opacity:.8">候选${bs.cand!=null?bs.cand:"–"}个 · 冷却中${bs.cooldown||0} · 价格缺失${bs.noPrice||0} · 几何无效${bs.badGeom||0}。可先看下方"引擎诊断",通常是K线还在陆续拉取(手机REST轮询下较慢)。</span></div>`;
+  const nQ=cur.positions.filter(p=>p.tier!=="W").length;
+  return`<div class="trk-cycle-head">本期开仓 ${fmtTrkDateTime(cur.start)}${lateNote} · ${cycleCountdownText(cur)} · 共${cur.positions.length}笔(净期望为正${nQ}·边际不足${cur.positions.length-nQ}) · 周期内不改判</div>
+    <div class="trk-heatmap">${cur.positions.length?tiles:emptyBox}</div>
+    ${confBand}${renderCycleBacktestBox(tf)}${guideNote}`;
 }
 /* 每期整体盈亏%(等权10笔平均),供趋势图/复利权益曲线/历史表共用同一口径,避免各处
    各算各的导致数字对不上。 */
 // v11: void(无K线数据、未计盈亏)不参与任何胜率/均值分母
-function cycleCounted(c){return c.positions.filter(p=>p.outcome!=="void");}
-function cycleAvgPnl(c){const arr=cycleCounted(c);return arr.length?arr.reduce((s,p)=>s+cyclePnlPct(p),0)/arr.length:0;}
+function cycleCounted(c){return c.positions.filter(cycleIsScored);}
+function cycleDecided(c){return c.positions.filter(p=>cycleIsWin(p)||cycleIsLoss(p));} // v22: 胜率分母只含四类有效结果
+function cycleAvgPnl(c){const arr=cycleCounted(c);return arr.length?arr.reduce((s,p)=>s+cyclePnlPct(p,cycleIsClosed(p)),0)/arr.length:0;}
 function cycleWinLoss(c){
-  const wins=c.positions.filter(p=>p.status==="TP"||p.outcome==="flat_win").length;
-  const losses=c.positions.filter(p=>p.status==="SL"||p.outcome==="flat_loss").length;
+  const sc=c.positions.filter(cycleIsScored);
+  const wins=sc.filter(cycleIsWin).length;
+  const losses=sc.filter(cycleIsLoss).length;
   return{wins,losses};
 }
+/* ══════════════ v22 诚实层: 结算语义 · 画像兑现率 · 资格剔除 · 熔断 · 三Tab ══════════════
+   四个问题: 自评还是兑现? n多少? 区间多宽? 有效期? 默认只展示「有效胜率」,判断(锚定价)与展示(此刻可入场价)分开。 */
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){try{refreshOpenPositionSymbols();openPositionSymbols.forEach(s=>checkImmediateHitsForSymbol(s));renderTrackPanel();}catch(e){}}});
+window.addEventListener("pageshow",e=>{if(e.persisted){try{renderTrackPanel();}catch(_){}}});
+const V22_CFG_KEY="orbit_config_v22",V22_MIN_N=15;
+let v22View="today",v22Ack=false,v22Cache={k:"",v:null};
+const v22Open=new Set(),v22Filtered={};
+function v22Cfg(){try{return JSON.parse(localStorage.getItem(V22_CFG_KEY)||"{}")||{};}catch(e){return{};}}
+function v22SaveCfg(c){try{localStorage.setItem(V22_CFG_KEY,JSON.stringify(c));}catch(e){}}
+function v22Bucket(s){const a=(market.get(s)||{}).assetClass;return s==="BTCUSDT"?"BTC":(a&&a!=="CRYPTO"?"TRADFI":"ALT");}
+function v22NoteFiltered(tf,x,why){const a=v22Filtered[tf]||(v22Filtered[tf]=[]);if(a.length<30)a.push({symbol:x.symbol,dir:x.dir,why});}
+function v22Sgt(ts){return new Date(ts+8*3600000).toISOString().slice(5,16).replace("T"," ")+" SGT";}
+function v22F(x){return x>=100?x.toFixed(2):x>=1?x.toFixed(4):x.toPrecision(4);}
+function v22S(x,d){return(x>=0?"+":"")+x.toFixed(d==null?2:d);}
+function v22Key(p,tf,coarse){const lo=p.conviction==null?"na":Math.min(90,Math.floor(p.conviction/10)*10);return(coarse?"*":p.symbol)+"|"+tf+"|"+(p.dir>0?"LONG":"SHORT")+"|"+(p.regime||"?")+"|"+lo;}
+// 画像统计: 从已结算历史回流; 细画像(含币种)样本<15时回退到不分币种的同类画像
+function v22Stats(tf){
+  const k=tf+":"+Math.floor(Date.now()/30000);
+  if(v22Cache.k===k)return v22Cache.v;
+  const fine={},coarse={};
+  loadCycleHistory(tf).forEach(c=>c.positions.forEach(p=>{
+    const o=cycleOutcome(p);if(!o||o==="VOID")return;
+    [[fine,false],[coarse,true]].forEach(([m,cs])=>{
+      const kk=v22Key(p,tf,cs),s=m[kk]||(m[kk]={n:0,w:0,l:0,f:0});
+      if(o==="EOC_FLAT")s.f++;else{s.n++;if(cycleIsWin(p))s.w++;else s.l++;}
+    });
+  }));
+  v22Cache={k,v:{fine,coarse}};return v22Cache.v;
+}
+function v22ImageStat(p,tf){
+  const S=v22Stats(tf),f=S.fine[v22Key(p,tf,false)],c=S.coarse[v22Key(p,tf,true)];
+  if(f&&f.n>=V22_MIN_N)return Object.assign({level:"画像"},f);
+  if(c&&c.n>=V22_MIN_N)return Object.assign({level:"同类画像(不分币种)"},c);
+  return{level:null,n:f?f.n:0,w:f?f.w:0,l:f?f.l:0,f:f?f.f:0};
+}
+function v22Blacklist(p,tf){
+  const s=v22ImageStat(p,tf);if(!s.level)return null;
+  const hi=wilsonCI(s.w,s.n)[1];
+  return hi<50?`${s.level}历史 ${s.w}/${s.n} 兑现,Wilson上界 ${hi.toFixed(0)}% < 50%`:null;
+}
+function v22EvGate(x,calib){
+  const b=cycleBucketStat(calib,x.conviction);
+  if(!b||b.rate==null||b.total<V22_MIN_N||!(x.conviction>0))return{tier:"normal",th:CYCLE_EVR_MIN};
+  const r=b.rate/x.conviction;
+  if(r<0.70)return{tier:"downgraded",th:0.15};
+  if(r<0.85)return{tier:"cautious",th:0.08};
+  return{tier:"normal",th:CYCLE_EVR_MIN};
+}
+// 策略级熔断: 只升级不自动解除,必须人工复位
+function v22Breaker(tf){
+  const cfg=v22Cfg(),b=(cfg.breaker&&cfg.breaker[tf])||{state:"normal"};
+  const hist=loadCycleHistory(tf).filter(c=>c.start>(b.resetAt||0)).slice(-30);
+  let cur={state:"normal",dd:0};
+  if(hist.length>=8){
+    const curve=[100].concat(computeCycleEquityCurve(hist)),peak=Math.max.apply(null,curve),dd=(peak-curve[curve.length-1])/peak*100;
+    cur=dd>=25?{state:"halted",dd}:dd>=15?{state:"restricted",dd}:{state:"normal",dd};
+  }
+  const rk={normal:0,restricted:1,halted:2};
+  if(rk[cur.state]>rk[b.state||"normal"]){cfg.breaker=cfg.breaker||{};cfg.breaker[tf]={state:cur.state,dd:cur.dd,at:Date.now(),resetAt:b.resetAt||0};v22SaveCfg(cfg);return cfg.breaker[tf];}
+  return(b.state&&b.state!=="normal")?b:{state:"normal",dd:cur.dd};
+}
+function v22WorstImage(tf){
+  const m={};
+  loadCycleHistory(tf).slice(-30).forEach(c=>c.positions.forEach(p=>{
+    const o=cycleOutcome(p);if(!o||o==="VOID")return;
+    const k=v22Key(p,tf,true),s=m[k]||(m[k]={k,n:0,w:0,pnl:0});
+    s.pnl+=cyclePnlPct(p,true);if(o!=="EOC_FLAT"){s.n++;if(cycleIsWin(p))s.w++;}
+  }));
+  return Object.values(m).sort((a,b)=>a.pnl-b.pnl)[0]||null;
+}
+// 现价视角: 三层概率(自评→校准→兑现)+现价重算EV
+function v22Live(p,tf,calib){
+  const m=market.get(p.symbol),px=m&&m.price>0?m.price:p.entry;
+  const atr=p.atr>0?p.atr:(p.slPct>0?p.entry*p.slPct/100/2.2:0);
+  const ratio=atr>0?Math.abs(px-p.entry)/atr:0;
+  const fresh=ratio<0.3?{k:"green",t:"仍可入场",c:"g"}:ratio<1?{k:"yellow",t:"边缘·需按现价重算",c:"y"}:{k:"red",t:"已错失",c:"r"};
+  const d=(a,b)=>Math.abs(Math.log(a/b)),sg=p.sigma>0?p.sigma:null,dr=p.driftPerBar||0;
+  const rp=x0=>raceProbability(d(p.tp,x0),d(p.sl,x0),dr,sg);
+  const clamp=v=>Math.max(0.02,Math.min(0.98,v));
+  const modelP=clamp(p.raceWinProb!=null?p.raceWinProb/100+(rp(px)-rp(p.entry)):rp(px));
+  const b=cycleBucketStat(calib,p.conviction),nCal=b&&b.total>=CYCLE_CALIB_MIN_N?b.total:0;
+  const calibP=nCal?clamp((nCal*b.rate/100+10*modelP)/(nCal+10)):modelP;
+  const s=v22ImageStat(p,tf),imgP=s.level?s.w/s.n:null;
+  const effP=s.level?clamp((s.n*imgP+V22_MIN_N*calibP)/(s.n+V22_MIN_N)):calibP;
+  const nEff=s.level?s.n:nCal,ci=nEff>=V22_MIN_N?wilsonCI(Math.round(effP*nEff),nEff):null;
+  // 根因四: 布朗运动无跳跃假设 → 自评向0.5收缩(厚尾折扣),止损再扣缺口成本0.1R; 已有兑现样本时以数出来的为准
+  const tailP=s.level?effP:clamp(0.5+(effP-0.5)*0.8);
+  // 根因二: 止损跟着现价重算——结构止损距现价<70%原距离时按原ATR倍数放宽(防被扫); >130%时提示按比例减仓
+  const dir=p.dir,slD0=Math.abs(p.entry-p.sl);let slUse=p.sl,slNote="结构止损",sizeK=1;
+  const dNow=Math.abs(px-p.sl),wrong=dir>0?p.sl>=px:p.sl<=px;
+  if(wrong||dNow<0.7*slD0){slUse=px-dir*slD0;slNote="已按现价重算(保持原止损距离)";}
+  else if(dNow>1.3*slD0){sizeK=slD0/dNow;slNote="止损距离已放大,建议仓位×"+sizeK.toFixed(2);}
+  const slD=Math.abs(px-slUse),tpD=Math.abs(p.tp-px),rr=slD>0?tpD/slD:0,slPct=slD/px*100,tpPct=tpD/px*100;
+  const ev=tailP*rr-(1-tailP)-0.1,evNet=slPct>0?ev-cycleFrictionPct(p.symbol)/slPct:-9;
+  const rem=Math.max(0,((p.cycleEnd||0)-Date.now())),pnl=cyclePnlPct(p,false),rr0=Math.abs(p.entry-p.sl)>0?Math.abs(p.tp-p.entry)/Math.abs(p.entry-p.sl):0;
+  const cold=!s.level,live=p.status==="OPEN"&&p.tier==="Q"&&fresh.k!=="red";
+  const actionable=live&&!cold&&imgP>=0.45&&evNet>0;      // 已验证: 有≥15笔数出来的兑现
+  const watch=live&&cold&&modelP>=0.60&&evNet>=0.15;      // 未验证: 只能小仓位观察,不叫"可执行"
+  const thesis=evNet>=0.05&&fresh.k!=="red"?"🟢 仍成立":evNet>-0.15?"🟡 在减弱":"🔴 被削弱";
+  const hold=evNet>=0.05?"仍建议持有 ✓":evNet>-0.15?"建议减仓":"建议离场";
+  return{slUse,slNote,sizeK,watch,cold,px,ratio,fresh,modelP,calibP,nCal,imgP,n:s.n,level:s.level,effP,ci,rr,rr0,ev,evNet,slPct,tpPct,pnl,pnlR:p.slPct>0?pnl/p.slPct:0,actionable,thesis,hold,drift:(px-p.entry)/p.entry*100};
+}
+function v22Card(p,cur,tf,l){
+  const pc=v=>Math.round(v*100)+"%",up=p.dir>0,barMs=(CYCLE_TF_MINUTES[tf]||240)*60000;
+  const remBars=Math.max(0.05,(cur.end-Date.now())/barMs),timeOk=!(p.sigma>0)||Math.abs(Math.log(p.tp/l.px))<=1.3*p.sigma*Math.sqrt(remBars);
+  const ci=l.ci?` [${l.ci[0].toFixed(0)}% - ${l.ci[1].toFixed(0)}%]`:" [区间待样本≥15]";
+  const nTxt=(l.level?l.n:l.nCal)>=V22_MIN_N?`n=${l.level?l.n:l.nCal}`:`n<${V22_MIN_N}(冷启动)`;
+  return`<div class="v22-card">
+    <div class="h"><span>${esc(p.symbol.replace("USDT",""))} ${up?"▲ 做多":"▼ 做空"}</span><span class="v22-chip ${l.fresh.c}">${l.fresh.t}</span><span class="v22-chip">EV ${v22S(l.evNet)}R</span><span class="v22-chip">${l.cold?"自评(未验证)":"有效胜率"} ${pc(l.effP)}</span></div>
+    <div class="v22-sec">── 此刻进场的参数 ──</div>
+    <div class="v22-row"><span>当前可入场价</span><b>${v22F(l.px)}(= 现价)</b></div>
+    <div class="v22-row"><span>止损(由用户自行确认)</span><span>${v22F(l.slUse)}(距现价 ${l.slPct.toFixed(2)}%)</span></div><div class="v22-dim">${l.slNote}${l.sizeK<1?"":""}</div>
+    <div class="v22-row"><span>目标 TP</span><span>${v22F(p.tp)}(距现价 ${l.tpPct.toFixed(2)}%,R:R ${l.rr.toFixed(2)})</span></div>
+    <div class="v22-row"><span>${l.cold?"自评胜率(无兑现数据,勿当真)":"有效胜率(兑现口径)"}</span><b>${pc(l.effP)}${ci} · ${nTxt}</b></div>
+    <div class="v22-dim">├ 自评 ${pc(l.modelP)}(自评) ├ 校准 ${pc(l.calibP)}(${l.nCal?"校准 n="+l.nCal:"校准样本不足,沿用自评"}) └ 兑现 ${l.imgP==null?"–(冷启动)":pc(l.imgP)+"(兑现 n="+l.n+","+l.level+")"} · 有效期 至 ${v22Sgt(cur.end)}</div>
+    <div class="v22-row"><span>剩余窗口</span><span>${cycleCountdownText(cur).replace("后结算","")} · ${timeOk?"时间够到达 TP ✓":"⚠ 剩余时间偏紧"}</span></div>
+    <div class="v22-sec">── 判断与现状对比(参考,勿据此下单) ──</div>
+    <div class="v22-dim">${v22Sgt(cur.start)} 判断锚定价 ${v22F(p.entry)} → 现价 ${v22F(l.px)}(${v22S(l.drift)}%) · 判断论文状态 ${l.thesis}</div>
+    <div class="v22-dim"><a class="trk-tile-gotomodal" data-symbol="${esc(p.symbol)}" style="cursor:pointer;text-decoration:underline;">查看结构与图表 →</a></div>
+  </div>`;
+}
+function v22TodayHtml(tf,cur,L,today){
+  const watch=L.filter(o=>o.l.watch),missed=L.filter(o=>o.l.fresh.k==="red").length;
+  const head=`<div class="v22-card"><b>此刻:</b> 已验证可执行 ${today.length} · 未验证观察 ${watch.length} · 已错失 ${missed}<div class="v22-dim">「已验证」= 该画像有≥15笔已结算的真实兑现;「未验证」只有模型自评,只适合极小仓位试探。</div></div>`;
+  if(cur&&v22Breaker(tf).state!=="halted"&&watch.length)return head+today.map(o=>v22Card(o.p,cur,tf,o.l)).join("")+`<div class="trk-subhead">🧪 未验证观察(自评,非兑现)</div>`+watch.map(o=>v22Card(o.p,cur,tf,o.l)).join("");
+  return head+v22TodayBase(tf,cur,L,today);
+}
+function v22TodayBase(tf,cur,L,today){
+  if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟…</div>';
+  if(v22Breaker(tf).state==="halted")return'<div class="trk-empty">此周期策略已熔断,暂停生成新候选,只做复盘(见顶部红条)。</div>';
+  if(today.length)return today.map(o=>v22Card(o.p,cur,tf,o.l)).join("");
+  const missed=L.filter(o=>o.l.fresh.k==="red").length,weak=L.filter(o=>o.l.fresh.k!=="red").length;
+  return`<div class="trk-empty">此刻没有仍可入场的合格候选。<br>本期入选 ${L.length} 个 · 已错失 ${missed} 个(→进行中) · 未达门槛 ${weak} 个(冷启动要求自评≥65%且EV≥0.20R;已有画像兑现率的要求≥45%且EV>0)。<br>宁缺毋滥: 不为凑数降低标准。</div>`;
+}
+function v22LiveHtml(tf,cur,L){
+  if(!cur||!L.length)return'<div class="trk-empty">本期没有进行中的仓位。</div>';
+  return L.map(({p,l})=>{
+    const cls=l.pnl>=0?"up":"down";
+    return`<div class="v22-card">
+      <div class="h"><span>${esc(p.symbol.replace("USDT",""))} ${p.dir>0?"▲ 做多":"▼ 做空"}</span><span class="v22-fl ${cls}" data-sym="${esc(p.symbol)}" data-dir="${p.dir}" data-entry="${p.entry}" data-slpct="${p.slPct}">${l.pnl>=0?"浮动盈利":"浮动亏损"} ${v22S(l.pnl)}%(${v22S(l.pnlR)}R)</span></div>
+      <div class="v22-dim">判断时间 ${v22Sgt(cur.start)} · ${cycleCountdownText(cur)} · 锚定入场 ${v22F(p.entry)} · 现价 ${v22F(l.px)} · 止损 ${v22F(p.sl)} · TP ${v22F(p.tp)}</div>
+      <div class="v22-row"><span>现价视角 EV(有效胜率 ${Math.round(l.effP*100)}%)</span><b>${v22S(l.evNet)}R → ${l.hold}</b></div>
+      <div class="v22-row"><span>论文状态</span><span>${l.thesis}</span></div>
+      <div class="v22-dim">剩余 R:R ${l.rr.toFixed(2)}(原 ${l.rr0.toFixed(2)}) · ⚠ 现价触及 ${v22F(p.sl)} 则论文被推翻</div>
+    </div>`;}).join("");
+}
+function v22ScoreHtml(tf){
+  const hist=loadCycleHistory(tf);if(!hist.length)return"";
+  const last=hist[hist.length-1],c={TP:0,SL:0,EOC_MOVE_WIN:0,EOC_MOVE_LOSS:0,EOC_FLAT:0,VOID:0};
+  last.positions.forEach(p=>{const o=cycleOutcome(p);if(o&&c[o]!=null)c[o]++;});
+  const w=c.TP+c.EOC_MOVE_WIN,l=c.SL+c.EOC_MOVE_LOSS,n=w+l,tot=n+c.EOC_FLAT,ci=n?wilsonCI(w,n):null;
+  const fs=tot?c.EOC_FLAT/tot:0,ov=cycleOverallStats(tf);
+  const filt=(v22Filtered[tf]||[]).map(x=>`<div class="v22-dim">${esc(x.symbol.replace("USDT",""))} ${x.dir>0?"做多":"做空"} · ${esc(x.why)}</div>`).join("");
+  return`<div class="v22-card">
+    <div class="h">📊 上一期 · ${CYCLE_TF_CONFIG[tf].label} · ${v22Sgt(last.start)} → ${v22Sgt(last.end)}</div>
+    <div>✅ 方向命中(TP) ${c.TP} 笔 · ❌ 方向证伪(SL) ${c.SL} 笔<br>⚠️ 到期走了一段(盈) ${c.EOC_MOVE_WIN} 笔 · ⚠️ 到期走了一段(亏) ${c.EOC_MOVE_LOSS} 笔</div>
+    <div class="v22-flat">⏸ 到期未动(不计胜负) ${c.EOC_FLAT} 笔 · 未决率 ${(fs*100).toFixed(0)}%${c.VOID?` · 无数据 ${c.VOID} 笔`:""}</div>
+    <div>🎯 有效样本 ${n} 笔 · 兑现率 ${n?(w/n*100).toFixed(1)+"% ["+ci[0].toFixed(0)+"% - "+ci[1].toFixed(0)+"%](兑现,n="+n+")":"–"}</div>
+    <div class="v22-dim">近30期累计: 有效样本 ${ov.total} 笔 · 兑现率 ${ov.rate==null?"–":ov.rate.toFixed(1)+"% ["+ov.lo.toFixed(0)+"% - "+ov.hi.toFixed(0)+"%]"}</div>
+    ${fs>=0.3?`<div>💡 洞察: ${c.EOC_FLAT} 笔"到期未动"占 ${(fs*100).toFixed(0)}%,说明本期目标距离仍偏大,或波动率不足以支撑该周期的目标几何。</div>`:""}
+    ${filt?`<div class="v22-sec">── 本期被过滤的候选与原因 ──</div>${filt}`:""}
+  </div>`;
+}
+function v22Banners(tf,cur){
+  const out=[],bar=(id,cls,head,det)=>out.push(`<div class="v22-bar ${cls}${v22Open.has(id)?" open":""}" data-v22="bar" data-id="${id}"><b>${head}</b><div class="d" onclick="event.stopPropagation()">${det}</div></div>`);
+  const b=v22Breaker(tf);
+  if(b.state!=="normal"){
+    const w=v22WorstImage(tf),halted=b.state==="halted";
+    bar("brk"+tf,"halt",`⚠ ${CYCLE_TF_CONFIG[tf].label}策略已${halted?"熔断":"降级"}(近30期回撤 ${b.dd.toFixed(1)}%)——点击查看报告`,
+      `${halted?"该周期暂停生成新候选,只做复盘。":"该周期仅保留EV最高的5笔。"}<br>${w?`亏损贡献最大的画像: ${esc(w.k)} · 近30期累计 ${v22S(w.pnl)}% · 兑现 ${w.w}/${w.n} · 建议禁用该画像。`:""}<br>
+      <label><input type="checkbox" class="v22-ackbox" data-v22="ack" ${v22Ack?"checked":""}> 我已阅读这份报告</label>
+      <button data-v22="reset" data-tf="${tf}" ${v22Ack?"":"disabled"}>手动复位</button>`);
+  }
+  const bl=(v22Filtered[tf]||[]).filter(x=>x.why.indexOf("画像黑名单")===0);
+  if(bl.length)bar("bl"+tf,"black",`画像黑名单: ${bl.length} 个候选被剔除(资格剔除,非降权)`,bl.map(x=>`${esc(x.symbol.replace("USDT",""))} ${x.dir>0?"做多":"做空"} · ${esc(x.why)}`).join("<br>"));
+  const dg=cur?cur.positions.filter(p=>p.gate&&p.gate!=="normal").length:0;
+  if(dg)bar("dg"+tf,"down",`档位降级: ${dg} 笔所在把握度档历史兑现率低于自评,EV门槛已提高`,"兑现率/自评<85%门槛提到0.08R,<70%提到0.15R(常规0.02R)。");
+  return out.join("");
+}
+function v22PanelHtml(tf,cur,cfg){
+  const calib=cycleCalibrationByBucket(tf),open=cur?cur.positions.filter(p=>p.status==="OPEN"):[];
+  const L=open.map(p=>{p.cycleEnd=cur.end;return{p,l:v22Live(p,tf,calib)};}),today=L.filter(o=>o.l.actionable);
+  const T=[["today","此刻可执行 ("+today.length+(L.some(o=>o.l.watch)?"+"+L.filter(o=>o.l.watch).length:"")+")"],["live","进行中 ("+L.length+")"],["score","上一期成绩单"]];
+  const tabs=`<div class="trk-tf-tabs">${T.map(([k,t])=>`<button class="trk-tf-tab v22-view-tab${v22View===k?" active":""}" data-view="${k}">${t}</button>`).join("")}</div>`;
+  let body;
+  if(v22View==="today")body=v22TodayHtml(tf,cur,L,today);
+  else if(v22View==="live")body=v22LiveHtml(tf,cur,L)+`<div class="trk-subhead">🔥 本期持仓热力图 · Top${CYCLE_TOP_N}(固定${cfg.label})</div>`+renderCycleHeatmap(tf,cur)+cycleFilterNote(tf);
+  else body=v22ScoreHtml(tf)+`<div class="trk-subhead">📓 复盘 · 上一期结算结果(${cfg.label})</div>`+renderCycleReview(tf)+renderCalibrationAttribution();
+  return tabs+v22Banners(tf,cur)+body;
+}
+function v22Click(el){
+  const k=el.dataset.v22;
+  if(k==="bar"){const id=el.dataset.id;if(v22Open.has(id))v22Open.delete(id);else v22Open.add(id);}
+  else if(k==="ack")v22Ack=!!el.checked;
+  else if(k==="reset"){if(!v22Ack)return;const cfg=v22Cfg();cfg.breaker=cfg.breaker||{};cfg.breaker[el.dataset.tf]={state:"normal",dd:0,at:Date.now(),resetAt:Date.now()};v22SaveCfg(cfg);v22Ack=false;}
+  renderTrackPanel();
+}
+// 每秒轻量tick: 只改浮动盈亏数字,不重绘结构、不触发网络
+setInterval(()=>{try{document.querySelectorAll(".v22-fl").forEach(el=>{
+  const m=market.get(el.dataset.sym);if(!m||!(m.price>0))return;
+  const e=+el.dataset.entry,dr=+el.dataset.dir,sp=+el.dataset.slpct,pn=dr*(m.price-e)/e*100;
+  el.textContent=(pn>=0?"浮动盈利 ":"浮动亏损 ")+v22S(pn)+"%"+(sp>0?"("+v22S(pn/sp)+"R)":"");
+  el.className="v22-fl "+(pn>=0?"up":"down");});}catch(e){}},1000);
+
 /* ══════════════════════════════════════════════════════════════════════════════
    ── 组合风险层(PORTFOLIO RISK LAYER)· 2026-09-23 ──
    上面所有引擎(DPM/EV/机会雷达/固定周期)解决的都是同一类问题:"这一笔的方向胜率有多少
@@ -4768,8 +5114,8 @@ function riskCalibMultiplier(tf){
   let convSum=0,n=0,wins=0;
   hist.forEach(c=>c.positions.forEach(p=>{
     if(p.conviction==null||p.outcome==="void")return;
-    const isWin=p.status==="TP"||p.outcome==="flat_win";
-    const isLoss=p.status==="SL"||p.outcome==="flat_loss";
+    const isWin=cycleIsWin(p);
+    const isLoss=cycleIsLoss(p);
     if(!isWin&&!isLoss)return; // 未结算/timeout/void不计入胜率校准,避免半途而废的仓位污染判定
     convSum+=p.conviction;n++;if(isWin)wins++;
   }));
@@ -4953,7 +5299,9 @@ function cycleFilterNote(tf){
   if(s.closed)parts.push(`休市 ${s.closed}`);
   if(s.unstable)parts.push(`方向待稳定 ${s.unstable}`);
   if(s.noSig)parts.push(`无明确方向 ${s.noSig}`);
-  return `<div class="sig-note" style="opacity:.75">${parts.join(" · ")} · 只做有把握的单,没有机会就空仓</div>`;
+  const bs=(buildCyclePositions.lastStats||{})[tf];
+  if(bs)parts.push(`入选净期望为正${bs.qualified}·边际不足${bs.watch}${bs.sideCapped?`·同向超限让位${bs.sideCapped}`:""}`);
+  return `<div class="sig-note" style="opacity:.75">${parts.join(" · ")} · 合格线=扣费后净期望≥${CYCLE_EVR_MIN}R(多数信号过不了这条线是正常的:往返成本0.14%本身就吃掉大半边际)</div>`;
 }
 /* v16: 已结算单的"开单→结束"走势回放(点▸展开)。按需拉取该周期的真实K线,画入场/TP/SL/离场点,
    并给出最有利/最不利偏移(MFE/MAE),让用户一眼看懂这笔单为什么赢、为什么输、还是只是没走出来。 */
@@ -5007,7 +5355,7 @@ function cycleReviewRowHtml(tf,last,p,pnl){
   const key=tf+"|"+last.start+"|"+p.symbol+"|"+p.dir,k=tpDomKey(key);
   const iv=(CYCLE_PATH_INTERVAL[tf]==="1m"?1:CYCLE_PATH_INTERVAL[tf]==="5m"?5:CYCLE_PATH_INTERVAL[tf]==="15m"?15:CYCLE_PATH_INTERVAL[tf]==="30m"?30:240)*60000;
   tradePathMeta.set(key,{tf,symbol:p.symbol,dir:p.dir,entry:p.entry,tp:p.tp,sl:p.sl,exitPrice:p.exitPrice,exitAt:p.exitAt||last.end,status:p.status,
-    win:p.outcome==="win"||(p.outcome!=="loss"&&pnl>0),t0:(last.builtAt||last.start),t1:Math.min(Date.now(),(p.exitAt||last.end)+iv)});
+    win:cycleIsWin(p),t0:(last.builtAt||last.start),t1:Math.min(Date.now(),(p.exitAt||last.end)+iv)});
   const open=trkOpenPaths.has(key);
   if(open&&!tradePathCache.has(key))setTimeout(()=>loadTradePath(key),0);
   return `<tr>
@@ -5032,13 +5380,13 @@ function renderCycleReview(tf){
   const pendingNote=pendingCount?`<div class="trk-settling-note">⏳ 上一期正在核实真实K线路径中,结算完成后会更新到这里(通常在下一次网络轮询内完成,如果该品种数据源暂时缺失可能稍久)</div>`:"";
   if(!hist.length)return pendingNote+`<div class="trk-empty">还没有已结算的${cfg.label}周期,第一期结算后会显示在这里(复盘上一笔的入场价/结果)。${CYCLE_TF_CONFIG[tf].ms>CYCLE_TF_CONFIG["4h"].ms?`${cfg.label}周期较长,积累样本会比1H/4H慢很多,请耐心等待。`:""}</div>`;
   const last=hist[hist.length-1];
-  const rows=last.positions.map(p=>cycleReviewRowHtml(tf,last,p,cyclePnlPct(p))).join("");
+  const rows=last.positions.map(p=>cycleReviewRowHtml(tf,last,p,cyclePnlPct(p,cycleIsClosed(p)))).join("");
   const{wins,losses}=cycleWinLoss(last);
   const avgPnl=cycleAvgPnl(last);
   // 近30期趋势(有多少算多少),用于看这套固定策略长期是否稳定,而不是只看最近一期
   const trend=hist.slice(-30);
   const trendWins=trend.reduce((s,c)=>s+cycleWinLoss(c).wins,0);
-  const trendTotal=trend.reduce((s,c)=>s+cycleCounted(c).length,0);
+  const trendTotal=trend.reduce((s,c)=>s+cycleDecided(c).length,0);
   const trendWinRate=trendTotal?(trendWins/trendTotal*100).toFixed(1):"–";
   const equityCurve=computeCycleEquityCurve(hist);
   const finalEquity=equityCurve.length?equityCurve[equityCurve.length-1]:100;
@@ -5295,8 +5643,8 @@ function computeRegimeAttribution(){
   const byRegime=new Map(),byTf=new Map();
   const bump=(map,key,p)=>{
     if(!key)return;
-    const isWin=p.status==="TP"||p.outcome==="flat_win";
-    const isLoss=p.status==="SL"||p.outcome==="flat_loss";
+    const isWin=cycleIsWin(p);
+    const isLoss=cycleIsLoss(p);
     if(!isWin&&!isLoss)return;
     const cur=map.get(key)||{n:0,wins:0,rSum:0,rN:0};
     cur.n++;if(isWin)cur.wins++;
@@ -5685,21 +6033,18 @@ function renderTrackPanel(){
   const tf=activeCycleTf;
   const cfg=CYCLE_TF_CONFIG[tf];
   const cur=ensureCycle(tf);
+  // v21: 联网后自动回测当前周期(每个周期每次会话最多自动触发一次;有6小时内缓存就不重跑)
+  if(!cycleBtBusy&&!cycleBtTried.has(tf)&&market.size>0&&!cycleBtLoad(tf)){cycleBtTried.add(tf);setTimeout(()=>runCycleBacktest(tf),1500);}
   // 每次面板刷新(20秒一次,或被逐tick判定命中后立即触发)都重新收集一遍"当前真的挂着仓位/
   // 追踪记录的symbol集合",让新开的仓位/新记录的推荐尽快被逐tick判定覆盖到(见上方
   // openPositionSymbols/refreshOpenPositionSymbols说明),同时把已经平仓/结算的symbol移出去。
   refreshOpenPositionSymbols();
   const statusEl=document.getElementById("trkStatus");
-  if(statusEl)statusEl.textContent=cur?`本期${cur.positions.length}笔 · ${cycleCountdownText(cur)} · 每20秒刷新止盈止损判定`:"等待首轮扫描…";
+  if(statusEl)statusEl.textContent=cur?`本期${cur.positions.length}笔(净期望为正${cur.positions.filter(p=>p.tier!=="W").length}) · ${cycleCountdownText(cur)} · 每20秒刷新止盈止损判定`:"等待首轮扫描…";
   const __trkHtml=`
     ${renderScanDiagnostics()}
     ${cycleTfTabsHtml()}
-    <div class="trk-subhead">🔥 持仓热力图 · 本期Top${CYCLE_TOP_N}(固定${cfg.label}策略,按信号强度排序)</div>
-    ${renderCycleHeatmap(tf,cur)}
-     ${cycleFilterNote(tf)}
-    <div class="trk-subhead">📓 复盘 · 上一期结算结果(${cfg.label})</div>
-    ${renderCycleReview(tf)}
-    ${renderCalibrationAttribution()}
+    ${v22PanelHtml(tf,cur,cfg)}
     <div class="sig-note" style="margin-top:10px;line-height:1.7;">
       <b>固定周期策略(${cfg.label})是什么</b>: 每期开始时,先按信号强度筛出一批有效候选(信号质量门槛),再在这批候选里按校准后期望值EV(不是信号强度本身)排序选出Top${CYCLE_TOP_N},按当时的实时价开仓——这是一份自动记录的观察日志,不是帮你下单,只用来验证"这套方法到底准不准"。
       <br><b>止盈止损怎么算的</b>: 不是所有币种套同一个百分比。每个币种的止损放在它自己当下最近的支撑/压力位外侧(来自斐波那契回撤/扩展、回归拟合趋势线、K线摆动高低点、成交量密集区、VWAP这几类结构共振出来的价位),加一点ATR缓冲防止被插针扫到;止盈同理,优先找同一套结构里最近的目标位,只有附近没有合格的结构位时才退回按ATR波动率估算。方向本身(做多/做空)和当前是趋势市还是震荡市,则由MACD、RSI、EMA等一整套指标动态投票决定——震荡市止损收紧、止盈更保守,趋势市反之。点开任意一笔卡片,"止盈依据""止损依据"两行会写清楚这一笔具体用的是哪个价位、为什么。
@@ -8903,7 +9248,7 @@ function backtestSnapshotAt(candles,idx,intervalLabel,pre,regimeState,assetClass
   if(dirSign!==0){
     plan=buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,clusterRes.confluence,vwapVal,sigmaVal,reliability,regime,highs,lows,driftPerBarRaw,assetClass,true); // 回测: 不用实盘结果校准(前视)
   }
-  return{dirSign,plan,reliability};
+  return{dirSign,plan,reliability,score,maxScore,atrVal,sigmaVal,driftPerBarRaw,price};
 }
 
 /* 逐笔向前模拟: 这笔限价单历史上有没有真的成交(挂单成交前若先反向击穿失效撤单价则视为撤单,
@@ -10222,7 +10567,7 @@ function drawCycleWinRateCanvas(tf){
   if(emptyEl)emptyEl.style.display="none";
   const pad=6,n=hist.length,barW=(w-pad*2)/n;
   let totalWins=0,totalN=0;
-  hist.forEach(c=>{const{wins}=cycleWinLoss(c);totalWins+=wins;totalN+=cycleCounted(c).length;});
+  hist.forEach(c=>{const{wins}=cycleWinLoss(c);totalWins+=wins;totalN+=cycleDecided(c).length;});
   const overallRate=totalN?totalWins/totalN*100:0;
   const[ciLo,ciHi]=totalN?wilsonCI(totalWins,totalN):[0,100];
   const yFor=v=>h-pad-(Math.max(0,Math.min(100,v))/100)*(h-pad*2);
@@ -10234,7 +10579,7 @@ function drawCycleWinRateCanvas(tf){
   ctx.strokeStyle="rgba(255,255,255,0.08)";ctx.lineWidth=1;ctx.stroke();
   hist.forEach((c,i)=>{
     const{wins}=cycleWinLoss(c);
-    const cn=cycleCounted(c).length;
+    const cn=cycleDecided(c).length;
     const rate=cn?wins/cn*100:0;
     const x=pad+i*barW,y=yFor(rate);
     ctx.fillStyle=rate>=50?"#5a9b78":"#b8555f";
@@ -12553,11 +12898,6 @@ function lpPatchAll(){
   });
 }
 setInterval(lpPatchAll,1000);
-
-// 云同步: 每30秒轮询一次远端有没有别的设备写入的新版本;先用本机现有数据正常渲染
-// (不等网络),pull回来的合并结果由cloudSyncPull内部按需重绘,不阻塞首屏。
-setInterval(cloudSyncPull,30000);
-cloudSyncPull();
 
 init();
 })();
