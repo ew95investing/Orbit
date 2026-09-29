@@ -1316,6 +1316,7 @@
 <style>#paPanel{display:flex;flex-wrap:wrap;gap:6px;padding:6px 10px}.pa-c{flex:1 1 220px;border:1px solid #2a3040;border-radius:6px;padding:5px 9px;background:#151a24;font-size:11.5px;line-height:1.5}.pa-c b{font-size:12.5px}.pa-c small{opacity:.65}.pa-q{float:right;opacity:.75}.pa-none{opacity:.6}#rulerBtn.active{background:#c6a565;color:#12161f}.nc-box .trk-empty{line-height:1.7}</style>
 <style>.pa-v{margin:6px 10px;padding:8px 11px;border:1px solid #3a3320;border-radius:6px;background:#181610;font-size:12px;line-height:1.65}.pa-v .up{color:#5a9b78}.pa-v .dn,.pa-warn{color:#d08a4a}.pa-v small{opacity:.6}#scBtn{position:fixed;right:14px;bottom:14px;z-index:900;padding:8px 13px;border-radius:20px;border:1px solid #c6a565;background:#12161f;color:#c6a565;font:600 12px JetBrains Mono,monospace;cursor:pointer}#scOv{display:none;position:fixed;right:14px;bottom:58px;z-index:901;width:min(460px,calc(100vw - 28px));max-height:70vh;flex-direction:column;background:#0f131b;border:1px solid #2a3040;border-radius:10px;box-shadow:0 8px 30px #000a}#scOv.open{display:flex}.sc-hd{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #2a3040;font-size:12px}.sc-hd span#scStat{flex:1;opacity:.65;font-size:10.5px}.sc-hd button{background:#151a24;color:#ada496;border:1px solid #2a3040;border-radius:4px;padding:2px 8px;cursor:pointer}.sc-tf button.on{background:#c6a565;color:#12161f}#scBody{overflow:auto;padding:6px;display:flex;flex-direction:column;gap:5px}.sc-row{cursor:pointer;flex:none!important}.sc-row:hover{background:#1b2130}.sc-ft{padding:6px 10px;font-size:10px;opacity:.55;border-top:1px solid #2a3040}</style>
 <style>.sl-sec{margin:6px 10px;border:1px solid #2a3040;border-radius:6px;background:#12161f}.sl-sec>summary{cursor:pointer;padding:8px 11px;font-size:12.5px;font-weight:600;color:#c6a565;list-style:none;user-select:none}.sl-sec>summary::before{content:"▸ ";opacity:.7}.sl-sec[open]>summary::before{content:"▾ "}.sl-sec[open]>summary{border-bottom:1px solid #2a3040}.sl-in{padding:6px 8px}</style>
+<style>#oppPanel.opp-collapsed>*:not(.opp-head){display:none!important}</style>
 </head>
 <body>
 <div class="hud-bg"></div>
@@ -1433,14 +1434,13 @@
       <button class="trk-reset-btn" id="trkResetBtn" title="清空全部追踪记录,用新的更严格规则(执行闸门+连续确认+同币种方向互斥)重新开始校准">🗑 清空重新校准</button>
       <button class="trk-reset-btn" id="trkExportBtn" title="导出全部追踪记录为CSV文件(含入场/止损/止盈/结算结果),方便自己在Excel里存档或另行统计">⬇ 导出CSV</button>
       <button class="trk-reset-btn trk-fs-btn" id="trkFsBtn" title="桌面端全屏查看推荐追踪(自动重排版式,Esc退出)">⛶ 全屏</button>
-      <button class="trk-reset-btn" id="trkTgBtn" title="设置Telegram推送: 有新的推荐信号被记录时自动推送到你的Telegram,不用一直盯着屏幕">📨 Telegram推送</button>
     </div>
     <div class="trk-body" id="trkBody">加载中…</div>
   </div>
 
   <div class="opp-panel" id="oppPanel">
     <div class="opp-head">
-      <span class="opp-title">机会雷达 · 主流币最佳机会</span>
+      <span class="opp-title" id="oppToggle" style="cursor:pointer;user-select:none"><span id="oppArrow">▸</span> 机会雷达 · 主流币最佳机会</span>
       <span class="opp-sub" id="oppUniverseNote">–</span>
       <span class="opp-status" id="oppStatus">等待首次扫描…</span>
     </div>
@@ -2319,8 +2319,6 @@ function init(){
     }
     const trkExport=e.target.closest("#trkExportBtn");
     if(trkExport){exportCycleLogCSV();return;}
-    const trkTg=e.target.closest("#trkTgBtn");
-    if(trkTg){promptTelegramSetup();return;}
     const btn=e.target.closest(".bt-run-btn");
     if(btn){
       const symbol=btn.getAttribute("data-bt-symbol"),interval=btn.getAttribute("data-bt-interval");
@@ -2672,7 +2670,7 @@ function refreshTopN(force){
 // 至少经历一次4小时收盘(即跨越一个整点0/4/8/12/16/20点 SGT 的边界)才可能被视为"已确认",
 // 单根K线内部无论怎么抖动都不算数——见下方 barBoundaryKeyOf()/computeBarConfirm()。
 const DECISION_TF_MS = 4*3600*1000;
-const OPP_SCAN_INTERVAL_MS = 300000; // 数据/展示每5分钟刷新一次(原90秒)——足够快到不会错过突发行情,
+const OPP_SCAN_INTERVAL_MS = 120000; // 数据/展示每5分钟刷新一次(原90秒)——足够快到不会错过突发行情,
                                       // 又不会快到把每一次tick级抖动都当成"新状态"展示给用户。
 const OPP_CONCURRENCY = 8; // v16: 4→8,首轮扫描明显更快(Binance权重充裕,失败的symbol不影响整体)
 const OPP_TOP_N = 5;
@@ -2680,33 +2678,29 @@ const OPP_TOP_N = 5;
 // ≥ CONFIRM_MIN_ELAPSED_MS ②期间跨越过至少一次4小时K线收盘边界(见barBoundaryKeyOf)。
 // 45分钟是刻意选的下限——纯粹时长门槛无法防止"卡在3:55分刚好压线"这种边界巧合,必须
 // 和"跨越收盘边界"这个结构性条件同时满足,两者缺一都不算真正确认。
-const CONFIRM_MIN_ELAPSED_MS = 45*60*1000;
+const CONFIRM_MIN_ELAPSED_MS = 20*60*1000;
 function barBoundaryKeyOf(ts){return Math.floor(ts/DECISION_TF_MS);} // 4小时K线序号,ts所在的那一根
 function fmtScanIntervalLabel(){const m=Math.round(OPP_SCAN_INTERVAL_MS/60000);return m>=1?`${m}分钟`:`${Math.round(OPP_SCAN_INTERVAL_MS/1000)}秒`;}
 // 真正的"已确认": 挂钟时长够(CONFIRM_MIN_ELAPSED_MS)且期间跨越过至少一根4小时K线的收盘边界
 // (firstPassBarKey 与"当前所在的这根4小时K线序号"不相等,说明中途真的经历过一次整点收盘,
 // 不是恰好在同一根K线内部凑够了45分钟)。两个条件都是硬性的,任一不满足都只能算"确认中"。
-function isBarConfirmed(pend,now){
+// v32 分档快确认: 不再要求“必须跨过一次4H收盘”(最长滞后≈4小时,是错过机会的主因)。
+// A档(六项全过)持续8分钟≈4轮扫描即确认; B档(软性错1项)持续20分钟。防抖仍在:
+// 期间必须连续通过闸门(短暂miss有容错,见recordTrackSignals),4H收盘只作为“结构确认✓”加分标记。
+const CONFIRM_FAST_MS=8*60*1000, CONFIRM_STD_MS=20*60*1000;
+function confirmNeedMs(tier){return tier==="A"?CONFIRM_FAST_MS:CONFIRM_STD_MS;}
+function isBarConfirmed(pend,now,tier){
   if(!pend)return false;
-  const elapsed=now-pend.firstPassAt;
-  if(elapsed<CONFIRM_MIN_ELAPSED_MS)return false;
-  const startBar=pend.firstPassBarKey!=null?pend.firstPassBarKey:barBoundaryKeyOf(pend.firstPassAt);
-  return barBoundaryKeyOf(now)>startBar;
+  return (now-pend.firstPassAt)>=confirmNeedMs(tier);
 }
-function barConfirmRemainingLabel(pend,now){
-  if(!pend)return{elapsedOK:false,barOK:false,text:"尚未开始计时"};
-  const elapsed=now-pend.firstPassAt;
-  const elapsedOK=elapsed>=CONFIRM_MIN_ELAPSED_MS;
+function barConfirmRemainingLabel(pend,now,tier){
+  if(!pend)return{elapsedOK:false,barOK:false,structOK:false,text:"尚未开始计时"};
+  const need=confirmNeedMs(tier),elapsed=now-pend.firstPassAt;
+  const elapsedOK=elapsed>=need;
   const startBar=pend.firstPassBarKey!=null?pend.firstPassBarKey:barBoundaryKeyOf(pend.firstPassAt);
-  const barOK=barBoundaryKeyOf(now)>startBar;
-  if(elapsedOK&&barOK)return{elapsedOK,barOK,text:"已确认"};
-  const remainMin=Math.max(0,Math.ceil((CONFIRM_MIN_ELAPSED_MS-elapsed)/60000));
-  const nextBoundaryMs=(startBar+1)*DECISION_TF_MS-now;
-  const remainBarMin=Math.max(0,Math.ceil(nextBoundaryMs/60000));
-  const parts=[];
-  if(!elapsedOK)parts.push(`还需持续${remainMin}分钟`);
-  if(!barOK)parts.push(`还需等待本根4H K线收盘(约${remainBarMin}分钟)`);
-  return{elapsedOK,barOK,text:parts.join(" · ")};
+  const structOK=barBoundaryKeyOf(now)>startBar;
+  if(elapsedOK)return{elapsedOK,barOK:true,structOK,text:"已确认"};
+  return{elapsedOK,barOK:true,structOK,text:`还需持续${Math.max(1,Math.ceil((need-elapsed)/60000))}分钟(${tier==="A"?"A档快确认":"B档标准确认"})`};
 }
 
 /* ── 推荐追踪(FORWARD TRACKING)常量 ──
@@ -3351,15 +3345,20 @@ function classifyOpportunityType(sig){
    回归的极端区、而是在区间中部,那本质是在"中部追单猜方向",正是这类机会最常见的
    假摆动止损来源。任一类型未通过额外确认,一律仅供参考,不计入正式触发/追踪。 */
 /* ORBIT v9 选择性开火: 只放行"有实测edge"的剧本, 拦截逆大势/追价/低概率单 */
-const ORBIT_EDGE={minRace:58,minRR:1.6,maxExtAtr:1.0,dailyCap:3,ledgerMinN:15};
+const ORBIT_EDGE={minRace:54,minRR:1.3,maxExtAtr:1.8,strictRace:58,strictRR:1.6,strictExt:1.0,dailyCap:3,ledgerMinN:15};
 function orbitTypeEdge(k){const s=typeSampleStats(k);if(s.n<ORBIT_EDGE.ledgerMinN)return{state:"unproven",n:s.n};
   const w=wilsonCI(s.wins,s.n);if(w[1]<50)return{state:"suspended",n:s.n,wr:s.winRate,hi:w[1]};
   if(w[0]>=45&&s.winRate>=0.55)return{state:"proven",n:s.n,wr:s.winRate};return{state:"unproven",n:s.n};}
+function orbitEdgeStrict(sig,type){
+  const g=sig.gate,pm=sig.plan&&sig.plan.main;if(!g||!pm||!pm.tps||!pm.tps[0])return false;
+  if((type==="pulse"||type==="turning")&&orbitTypeEdge(type).state!=="proven")return false;
+  const rp=+pm.tps[0].raceWinProb;
+  return rp>=ORBIT_EDGE.strictRace&&(g.rr1==null||g.rr1>=ORBIT_EDGE.strictRR)&&!(g.extensionATR!=null&&sig.dirSign*g.extensionATR>ORBIT_EDGE.strictExt);
+}
 function orbitEdgeScreen(sig,type){
   const g=sig.gate,pm=sig.plan&&sig.plan.main;if(!g||!pm||pm.noSetup||!pm.tps||!pm.tps[0])return null;
   const led=orbitTypeEdge(type),d=sig.dirSign;
   if(led.state==="suspended")return`该剧本已被自己的追踪记录证伪: ${led.n}笔胜率${(led.wr*100).toFixed(0)}%, 95%置信上界仅${led.hi.toFixed(0)}%<50%, 自动停用`;
-  if((type==="pulse"||type==="turning")&&led.state!=="proven")return"日内脉冲/结构拐点尚无≥15笔且Wilson下界≥45%的实测edge, 默认不出手(只放行波段/主升浪)";
   if(sig.mtfDir!==0&&sig.mtfDir===-d)return"更大周期方向与信号相反 — 逆大势入场是'一买就跌'的首要来源, 硬性拦截";
   const rp=+pm.tps[0].raceWinProb;if(!(rp>=ORBIT_EDGE.minRace))return`TP1先于止损的概率${isNaN(rp)?"–":rp.toFixed(0)}% < ${ORBIT_EDGE.minRace}%`;
   if(g.rr1!=null&&g.rr1<ORBIT_EDGE.minRR)return`TP1盈亏比${g.rr1.toFixed(2)} < ${ORBIT_EDGE.minRR}`;
@@ -3401,9 +3400,11 @@ function oppTriggerState(sig,type){
   }
   const pend=gatePendingConfirm.get((sig.symbol||"")+"|"+sig.dirSign);
   const now=Date.now();
-  const confirm=barConfirmRemainingLabel(pend,now);
-  if(confirm.elapsedOK&&confirm.barOK)return{cls:"pass",tier,badge:"✅ 已确认 · 计入正式清单",detail:`已连续通过执行闸门与该类型专属确认条件,且已跨越至少一次4小时K线收盘,方向足够稳定,不会因单次tick抖动而反复`};
-  return{cls:"pending",tier,badge:`⏳ 确认中 · ${confirm.text}`,detail:"执行闸门与类型专属条件已过,但尚未同时满足①持续45分钟以上②跨越一次4小时K线收盘——在此之前不计入正式清单,只作为候选展示,避免把还在噪音里的方向当成确定结论"};
+  const confirm=barConfirmRemainingLabel(pend,now,tier);
+  const strict=orbitEdgeStrict(sig,type);
+  const sizeTxt=strict?"标准仓":"试探仓(半仓)";
+  if(confirm.elapsedOK)return{cls:"pass",tier,strict,badge:`✅ 已确认 · ${sizeTxt}${confirm.structOK?" · 4H结构✓":""}`,detail:`已连续通过执行闸门与类型专属条件(${tier==="A"?"A档≥8分钟":"B档≥20分钟"})。${strict?"边际优势达标,可按标准仓位执行。":"边际优势为放宽档(概率/盈亏比/偏离度未全部达严格线),建议半仓试探、严守止损。"}${confirm.structOK?"且已跨过4H收盘,结构更稳。":"尚未跨4H收盘,属早期入场,以限价单等回踩更优。"}`};
+  return{cls:"pending",tier,badge:`⏳ 确认中 · ${confirm.text}`,detail:"执行闸门与类型专属条件已过,正在做防抖确认(A档8分钟/B档20分钟),通过后自动升级为正式机会"};
 }
 function oppQualityScore(sig,type,trig){
   let s=sig.outlook.conviction;
@@ -3624,7 +3625,7 @@ function applyOppCollapseState(){
 function renderOpportunityRadar(){
   const noteEl=document.getElementById("oppUniverseNote");
   const universe=mainstreamUniverse();
-  if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 数据每${fmtScanIntervalLabel()}刷新 · 决策以4小时K线为基准,需持续45分钟以上且跨越一次4H收盘才计入正式清单`;
+  if(noteEl)noteEl.textContent=`覆盖 ${universe.length} 个主流合约 · 数据每${fmtScanIntervalLabel()}刷新 · A档持续8分钟、B档20分钟即确认(4H收盘仅作结构加分) · 严格边际=标准仓,放宽边际=试探半仓`;
   const rows=[...opportunityResults.entries()].map(([symbol,r])=>({symbol,r}))
     .filter(x=>x.r.sig&&x.r.sig.dirSign!==0&&x.r.sig.outlook&&x.r.sig.outlook.confirmed);
   CYCLE_TFS.forEach(tf=>ensureCycle(tf)); // 三个时间维度(4H/1D/1W)的周期引擎都要在后台随扫描刷新/结算,不只是当前展示的那个tab
@@ -3703,8 +3704,8 @@ function renderOpportunityRadar(){
     // "已识别机会"= 真正该常显的核心内容: 已触发/确认中,附带时间线/几率/价格策略(见 oppRowHTML 内的
     // buildOppTimelineDetail)。"观察中·仅供参考"改为默认收起的可折叠区块——那些是没过执行闸门的候选,
     // 常驻显示只会挤占"已识别机会"的注意力,想核实模型有没有在装死才需要点开看。
-    const liveHTML=live.length?`<div class="opp-group-head">✅ 已识别机会 · 已确认(45分钟以上+跨越一次4H收盘) · 时间线 / 几率 / 价格策略</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
-      :`<div class="opp-group-head">✅ 已识别机会 · 已确认(45分钟以上+跨越一次4H收盘) · 时间线 / 几率 / 价格策略</div><div class="opp-empty">当前没有已完成确认的机会——展开下方"确认中"可看正在酝酿但尚未稳定的候选,展开"观察中"可看未过执行闸门的候选具体差在哪一项。这里保持空白是设计如此: 宁可不显示,也不把还在噪音里的方向当成确定结论摆出来。</div>`;
+    const liveHTML=live.length?`<div class="opp-group-head">✅ 已识别机会 · 已确认(A档8分钟/B档20分钟) · 时间线 / 几率 / 价格策略</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
+      :`<div class="opp-group-head">✅ 已识别机会 · 已确认(A档8分钟/B档20分钟) · 时间线 / 几率 / 价格策略</div><div class="opp-empty">当前没有已完成确认的机会——展开下方"确认中"可看正在酝酿但尚未稳定的候选,展开"观察中"可看未过执行闸门的候选具体差在哪一项。这里保持空白是设计如此: 宁可不显示,也不把还在噪音里的方向当成确定结论摆出来。</div>`;
     const pendHTML=`<div class="opp-collapse-head" id="oppPendToggle">
         <span class="opp-collapse-arrow">▶</span>
         <span class="opp-group-head dim" style="padding:0;">⏳ 确认中 · 方向已过执行闸门,但尚未稳定够久,暂不计入正式清单</span>
@@ -5686,7 +5687,7 @@ function recordTrackSignals(rows){
     const type=classifyOpportunityType(sig);
     if(!typeGateExtra(sig,type.key).pass)return false;
     const pend=gatePendingConfirm.get(x.symbol+"|"+sig.dirSign);
-    return isBarConfirmed(pend,now);
+    return isBarConfirmed(pend,now,sig.gate.tier);
   });
   // 供 runOpportunityScan 写入 scanHistory 诊断用,不影响任何判定逻辑本身。
   recordTrackSignals.lastStats={confirmedRows:rows.length,qualifying:qualifying.length,pending:gatePendingConfirm.size};
@@ -5730,7 +5731,7 @@ function recordTrackSignals(rows){
     // 移植自 trading-scan 的 Telegram 推送: 有新的一笔通过全部执行闸门+连续确认的推荐被
     // 正式记录时才推送(与写入追踪日志用同一个判定时点),不对扫描过程中的候选/观察项推送,
     // 避免刷屏。失败静默(不阻断记录本身),已开启但发送失败时只在控制台留痕。
-    sendTelegramMessage(buildTgMessage(newEntry)).catch(()=>{});
+    /* Telegram推送已移除(v31) */
   });
   if(changed)saveTrackLog(log);
 }
@@ -6319,7 +6320,7 @@ function ncPanelHtml(tf){
       <div class="nc-row"><span>现价漂移(顺方向)</span><span>${dr}</span></div>
       ${it.tech?`<div class="nc-tech">${esc(it.tech)}</div>`:""}</div>`;}).join("");
   return`<div class="nc-box"><div class="nc-head"><b>🔭 下轮锁定关注 · ${cfg.label}</b><span class="nc-stat">${stat}${histNote}</span></div>
-    <div class="nc-grid">${cards||ncDiagHtml(tf)}</div>
+    <div class="nc-grid">${cards||(window.ncDiagHtml?window.ncDiagHtml(tf):"")}</div>
     <div class="nc-note">这是"预判名单",不是下单指令:参考价=锁定时现价,TP/SL已按${cfg.label}整根K线尺寸计算;下一轮开盘后仍以那一刻的实际入场价重新核算,方向/价位若变化以新一轮为准。</div></div>`;
 }
 function renderTrackPanel(){
@@ -13204,13 +13205,6 @@ function lpPatchAll(){
 }
 setInterval(lpPatchAll,1000);
 
-init();
-})();
-
-(function(){function set(on){const p=document.getElementById("trkPanel"),b=document.getElementById("trkFsBtn");if(!p)return;p.classList.toggle("trk-fs",on);document.body.classList.toggle("trk-fs-lock",on);if(b)b.textContent=on?"✕ 退出全屏":"⛶ 全屏";}
-document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("#trkFsBtn");if(!b)return;set(!document.getElementById("trkPanel").classList.contains("trk-fs"));});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){const p=document.getElementById("trkPanel");if(p&&p.classList.contains("trk-fs"))set(false);}});
-window.addEventListener("resize",()=>{if(window.innerWidth<900){const p=document.getElementById("trkPanel");if(p&&p.classList.contains("trk-fs"))set(false);}});})();
 /* ══ v28: 形态引擎 + 测量尺 + 下轮锁定诊断 ══ 只输出质量分≥60且可验证的形态;不凑数 */
 (function(){
 const COL={bull:"#5a9b78",bear:"#b8555f",neutral:"#c6a565"};
@@ -13417,6 +13411,19 @@ function scUI(){const b=document.createElement("button");b.id="scBtn";b.textCont
 if(document.readyState!=="loading")scUI();else document.addEventListener("DOMContentLoaded",scUI);
 })();
 
+
+(function(){const P=document.getElementById("oppPanel"),T=document.getElementById("oppToggle"),A=document.getElementById("oppArrow");if(!P||!T)return;
+  const K="orbit_opp_collapsed";let c=true;try{const v=localStorage.getItem(K);if(v!==null)c=v==="1";}catch(e){}
+  const apply=()=>{P.classList.toggle("opp-collapsed",c);A.textContent=c?"▸":"▾";};apply();
+  T.addEventListener("click",()=>{c=!c;apply();try{localStorage.setItem(K,c?"1":"0");}catch(e){}});})();
+
+init();
+})();
+
+(function(){function set(on){const p=document.getElementById("trkPanel"),b=document.getElementById("trkFsBtn");if(!p)return;p.classList.toggle("trk-fs",on);document.body.classList.toggle("trk-fs-lock",on);if(b)b.textContent=on?"✕ 退出全屏":"⛶ 全屏";}
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("#trkFsBtn");if(!b)return;set(!document.getElementById("trkPanel").classList.contains("trk-fs"));});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){const p=document.getElementById("trkPanel");if(p&&p.classList.contains("trk-fs"))set(false);}});
+window.addEventListener("resize",()=>{if(window.innerWidth<900){const p=document.getElementById("trkPanel");if(p&&p.classList.contains("trk-fs"))set(false);}});})();
 </script>
 </body>
 </html>
