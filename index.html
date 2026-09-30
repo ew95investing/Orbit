@@ -1312,6 +1312,8 @@
     .trk-tile-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px}
     .trk-detail-tech,.trk-tile-gotomodal{grid-column:1/-1}
   }
+
+.odp{margin:8px 0 2px;font-size:11.5px}.odp table{width:100%;border-collapse:collapse;font-family:var(--mono)}.odp th,.odp td{padding:3px 6px;text-align:right;border-bottom:1px solid var(--line2);font-weight:500}.odp th{color:var(--dim2);font-size:10.5px}.odp th:first-child,.odp td:first-child{text-align:left;font-family:inherit}.odp .v{margin-top:5px;font-weight:600;line-height:1.6}.odp .v.ok{color:var(--up)}.odp .v.warn{color:var(--down)}.odp .v.neutral{color:var(--amber)}.opat{font-size:11.5px;margin:5px 0;color:var(--dim);line-height:1.6}.opat.ok{color:var(--up)}.opat.bad{color:var(--down)}.ofw{font-size:12px;line-height:1.75;color:var(--dim)}
 </style>
 <style>#paPanel{display:flex;flex-wrap:wrap;gap:6px;padding:6px 10px}.pa-c{flex:1 1 220px;border:1px solid #2a3040;border-radius:6px;padding:5px 9px;background:#151a24;font-size:11.5px;line-height:1.5}.pa-c b{font-size:12.5px}.pa-c small{opacity:.65}.pa-q{float:right;opacity:.75}.pa-none{opacity:.6}#rulerBtn.active{background:#c6a565;color:#12161f}.nc-box .trk-empty{line-height:1.7}</style>
 <style>.pa-v{margin:6px 10px;padding:8px 11px;border:1px solid #3a3320;border-radius:6px;background:#181610;font-size:12px;line-height:1.65}.pa-v .up{color:#5a9b78}.pa-v .dn,.pa-warn{color:#d08a4a}.pa-v small{opacity:.6}#scBtn{position:fixed;right:14px;bottom:14px;z-index:900;padding:8px 13px;border-radius:20px;border:1px solid #c6a565;background:#12161f;color:#c6a565;font:600 12px JetBrains Mono,monospace;cursor:pointer}#scOv{display:none;position:fixed;right:14px;bottom:58px;z-index:901;width:min(460px,calc(100vw - 28px));max-height:70vh;flex-direction:column;background:#0f131b;border:1px solid #2a3040;border-radius:10px;box-shadow:0 8px 30px #000a}#scOv.open{display:flex}.sc-hd{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #2a3040;font-size:12px}.sc-hd span#scStat{flex:1;opacity:.65;font-size:10.5px}.sc-hd button{background:#151a24;color:#ada496;border:1px solid #2a3040;border-radius:4px;padding:2px 8px;cursor:pointer}.sc-tf button.on{background:#c6a565;color:#12161f}#scBody{overflow:auto;padding:6px;display:flex;flex-direction:column;gap:5px}.sc-row{cursor:pointer;flex:none!important}.sc-row:hover{background:#1b2130}.sc-ft{padding:6px 10px;font-size:10px;opacity:.55;border-top:1px solid #2a3040}</style>
@@ -3345,7 +3347,7 @@ function classifyOpportunityType(sig){
    回归的极端区、而是在区间中部,那本质是在"中部追单猜方向",正是这类机会最常见的
    假摆动止损来源。任一类型未通过额外确认,一律仅供参考,不计入正式触发/追踪。 */
 /* ORBIT v9 选择性开火: 只放行"有实测edge"的剧本, 拦截逆大势/追价/低概率单 */
-const ORBIT_EDGE={minRace:54,minRR:1.3,maxExtAtr:1.8,strictRace:58,strictRR:1.6,strictExt:1.0,dailyCap:3,ledgerMinN:15};
+const ORBIT_EDGE={minRace:54,minRR:1.3,maxExtAtr:1.8,strictRace:58,strictRR:1.6,strictExt:1.0,dailyCap:6,ledgerMinN:15};
 function orbitTypeEdge(k){const s=typeSampleStats(k);if(s.n<ORBIT_EDGE.ledgerMinN)return{state:"unproven",n:s.n};
   const w=wilsonCI(s.wins,s.n);if(w[1]<50)return{state:"suspended",n:s.n,wr:s.winRate,hi:w[1]};
   if(w[0]>=45&&s.winRate>=0.55)return{state:"proven",n:s.n,wr:s.winRate};return{state:"unproven",n:s.n};}
@@ -3410,6 +3412,8 @@ function oppQualityScore(sig,type,trig){
   let s=sig.outlook.conviction;
   if(trig.cls==="pass")s+=15; else if(trig.cls==="pending")s+=6;
   if(type==="wave")s+=6; else if(type==="turning")s+=3;
+  const pf=window.patFor&&sig.symbol?window.patFor(sig.symbol,sig.dirSign):null;
+  if(pf){if(pf.al>0)s+=Math.min(10,pf.r.q/10);else if(pf.al<0)s-=6;}
   return s;
 }
 function oppStars(conviction){
@@ -3510,6 +3514,137 @@ function oppStatsBarHTML(sig){
     <span class="opp-stat"><i>把握度</i>${sig.outlook.conviction}%</span>
   </div>${oppConfidenceHTML(sig)}`;
 }
+
+/* v33: 入场价双列——🔒信号锚定价(信号首次成立那一刻钉住) vs 📍当下重算价; 附带“现在还能不能追”的判决 */
+function oppDualHTML(symbol,sig){
+  const pm=sig.plan&&sig.plan.main;if(!pm||pm.noSetup||!sig.dirSign)return"";
+  const d=sig.dirSign,px=sig.price,atr=sig.atr||Math.abs(pm.entry-pm.sl)||1e-9;
+  const pend=gatePendingConfirm.get(symbol+"|"+d),a=pend&&pend.anchor;
+  const hm=t=>new Date(t).toLocaleTimeString("en-GB",{timeZone:"Asia/Singapore",hour:"2-digit",minute:"2-digit"});
+  const tps=(pm.tps||[]).map(t=>t.price);
+  const row=(l,e,s,t)=>`<tr><td>${l}</td><td>${fmtPrice(e)}</td><td>${fmtPrice(s)}</td><td>${t[0]!=null?fmtPrice(t[0]):"–"}</td><td>${t[1]!=null?fmtPrice(t[1]):"–"}</td></tr>`;
+  let body="",vd="",vc="neutral";
+  if(a){
+    const risk=Math.abs(a.entry-a.sl)||1e-9,tp1=a.tp[0];
+    const gone=d*(px-a.sl)<=0,hit=tp1!=null&&d*(px-tp1)>=0;
+    const away=d*(px-a.entry)/atr;
+    const rem=(tp1!=null&&d*(px-a.sl)>0)?d*(tp1-px)/(d*(px-a.sl)):0;
+    const rNow=d*(px-a.entry)/risk;
+    if(gone){vd="⛔ 现价已越过锚定止损 → 这个信号已失效,以下方“当下重算”为准";vc="warn";}
+    else if(hit){vd="🏃 现价已到锚定TP1 → 这一波已跑完,不追;等“当下重算”价的下一次回踩";vc="warn";}
+    else if(away<=0){vd=`✅ 现价已回到/穿过锚定入场价 → 锚定限价应已成交,按锚定价持有(浮${rNow>=0?"盈":"亏"}${Math.abs(rNow).toFixed(2)}R)`;vc=rNow<-0.5?"warn":"ok";}
+    else if(away<=0.3){vd=`✅ 现价距锚定入场仅${away.toFixed(2)}ATR → 直接挂锚定价限价,与当下重算基本一致`;vc="ok";}
+    else if(away<=1){vd=`🟡 现价比锚定入场远${away.toFixed(2)}ATR → 挂锚定价等回踩;若市价追,用锚定SL的剩余R:R=${rem.toFixed(2)}`;vc="neutral";}
+    else if(rem>=1.3){vd=`🟠 已跑${away.toFixed(1)}ATR,但市价追单剩余R:R=${rem.toFixed(2)}仍≥1.3 → 只可半仓追,止损用锚定SL ${fmtPrice(a.sl)}`;vc="neutral";}
+    else{vd=`🔴 已跑${away.toFixed(1)}ATR,追单剩余R:R=${rem.toFixed(2)}<1.3 → 不追,等回踩到“当下重算”入场价 ${fmtPrice(pm.entry)}`;vc="warn";}
+    body=row(`🔒 信号锚定 ${hm(a.at)}`,a.entry,a.sl,a.tp)+row("📍 当下重算",pm.entry,pm.sl,tps);
+  }else{
+    body=row("📍 当下重算",pm.entry,pm.sl,tps);
+    vd="信号首次成立时会自动钉住锚定价(此后即使价格跑远,也能对照“当时该在哪入”与“现在该在哪入”)";
+  }
+  return`<div class="odp"><table><tr><th></th><th>入场</th><th>止损 SL</th><th>TP1</th><th>TP2</th></tr>${body}</table><div class="v ${vc}">${esc(vd)}</div></div>`;
+}
+function oppPatHTML(symbol,sig){
+  const pf=window.patFor&&window.patFor(symbol,sig.dirSign);if(!pf)return"";
+  const r=pf.r,pm=sig.plan&&sig.plan.main,d=sig.dirSign,atr=sig.atr||1e-9;
+  let tip="";
+  if(pf.al>0&&pm&&!pm.noSetup&&pm.tps&&pm.tps[0]){
+    const t1=pm.tps[0].price,e=pm.entry;
+    if(r.target&&d*(r.target-t1)>0.5*atr)tip+=` → TP2可上修至形态目标 ${fmtPrice(r.target)}`;
+    if(r.inval&&d*(e-r.inval)>0){const dd=Math.abs(e-r.inval);if(dd>=0.8*atr&&dd<Math.abs(e-pm.sl))tip+=` → SL可收紧至形态失效位 ${fmtPrice(r.inval)}(R:R≈${(Math.abs(t1-e)/dd).toFixed(2)})`;}
+  }
+  const cls=pf.al>0?"ok":pf.al<0?"bad":"";
+  const st=pf.al>0?"✓ 与信号同向(加分)":pf.al<0?"⚠ 与信号相反(扣分,降低仓位)":"中性";
+  return`<div class="opat ${cls}">📐 形态佐证 · ${pf.tf.toUpperCase()} ${esc(r.name)} · 质量${Math.round(r.q)} · ${st}${r.target?` · 目标 ${fmtPrice(r.target)}`:""}${r.inval?` · 失效 ${fmtPrice(r.inval)}`:""}${esc(tip)}</div>`;
+}
+function oppFwdHTML(symbol,sig){
+  const pm=sig.plan&&sig.plan.main;if(!pm||pm.noSetup||!sig.dirSign)return"";
+  const d=sig.dirSign,e=pm.entry,sl=pm.sl,t1=pm.tps&&pm.tps[0],t2=pm.tps&&pm.tps[1];
+  const inv=pm.entryInfo&&pm.entryInfo.invalidatePrice,atr=sig.atr||Math.abs(e-sl)||1e-9,f=fmtPrice;
+  const nb=Math.ceil(Date.now()/DECISION_TF_MS)*DECISION_TF_MS;
+  const hm=new Date(nb).toLocaleTimeString("en-GB",{timeZone:"Asia/Singapore",hour:"2-digit",minute:"2-digit"});
+  const p60=t1?e+d*0.6*Math.abs(t1.price-e):null;
+  const steps=[
+    `① 现在→入场:限价 ${f(e)}(距现价${(Math.abs(sig.price-e)/atr).toFixed(1)}ATR)。${inv?`成交前触及 ${f(inv)} 即撤单(说明是趋势延续而非回调)。`:""}下一根4H收盘 ${hm} SGT 是第一个复核点`,
+    t1?`② 成交→TP1 ${f(t1.price)}(R:R ${t1.rr||"–"},先达${t1.raceWinProb!=null?Math.round(t1.raceWinProb)+"%":"–"}):走到 ${f(p60)}(60%路程)就把止损上移到保本 ${f(e)}`:"",
+    t1?`③ 触及TP1:平约一半,剩余仓位止损已在保本 → 这笔单的下行风险清零`:"",
+    t2?`④ TP1→TP2 ${f(t2.price)}:改为跟随结构/EMA50移动止损,不再用固定价离场`:`④ TP1之后:跟随结构/EMA50移动止损,让利润奔跑`,
+    `⑤ 转折预警:任何一次4H收盘出现反向顶/底部结构、或更大周期翻向 → 提前减仓,不等硬止损 ${f(sl)}`
+  ].filter(Boolean);
+  return`<div class="opp-detail-sec"><b>🔭 前瞻路径 · 未来3–5步的条件树</b>${steps.map(s=>`<div class="ofw">${esc(s)}</div>`).join("")}</div>`;
+}
+/* ══ v35: 风险引擎——顶级量化的收益来自“活得久+仓位对”,不是信号本身 ══
+   ① 模型健康度: 用已结算笔数的滚动R期望与90%置信区间监控edge是否衰减,衰减/回撤/连亏时自动降风险乘数(不因连赢加码,乘数上限1.0)
+   ② 单笔风险: 1/8分数凯利(μ先打5折收缩)=风险%净值,夹在0.15%~1.0%; μ、σ来自仓位管理后的收益分布模拟
+   ③ 组合风险: 加密币相关性≈0.75, 5个同向单≈1.3个独立赌注。用相关矩阵算组合风险,总预算2.5%净值,超出按比例缩放
+   ④ 大盘Beta闸: 逆BTC方向(BTC把握度≥55)的山寨单风险减半
+   ⑤ 资金费: 按24h持有折算成R,逆向付费明显时降风险 */
+let __hCache={t:0,v:null};
+function orbitHealth(){
+  const now=Date.now();if(__hCache.v&&now-__hCache.t<60000)return __hCache.v;
+  const rs=[];
+  try{Object.keys(CYCLE_TF_CONFIG).forEach(tf=>{loadCycleHistory(tf).forEach(c=>(c.positions||[]).forEach(p=>{
+    if(p.outcome==="void"||p.exitPrice==null||!p.entry||!p.sl||!p.dir)return;
+    const risk=Math.abs(p.entry-p.sl);if(!(risk>0))return;
+    let R=p.dir*(p.exitPrice-p.entry)/risk-0.0014*p.entry/risk;
+    if(!isFinite(R))return;R=Math.max(-1.5,Math.min(6,R));rs.push({t:+p.exitAt||+c.end||0,R});}));});}catch(e){}
+  rs.sort((a,b)=>a.t-b.t);const w=rs.slice(-40),n=w.length;
+  let v={n,mult:0.5,mode:"learning",label:`样本不足(${n}/12笔)→ 风险上限减半,先积累实测`,mean:null};
+  if(n>=12){
+    const mean=w.reduce((s,x)=>s+x.R,0)/n,sd=Math.sqrt(w.reduce((s,x)=>s+(x.R-mean)**2,0)/(n-1))||1,se=sd/Math.sqrt(n);
+    let cum=0,peak=0,dd=0;w.forEach(x=>{cum+=x.R;peak=Math.max(peak,cum);dd=Math.max(dd,peak-cum);});
+    let st=0;for(let i=n-1;i>=0&&w[i].R<0;i--)st++;
+    const lo=mean-1.64*se,hi=mean+1.64*se,wr=w.filter(x=>x.R>0).length/n;
+    v={n,mean,lo,hi,wr,dd,streak:st};
+    if(hi<0){v.mult=0.25;v.mode="decay";v.label="⚠ edge衰减: 最近实测期望显著为负 → 风险降到1/4,先查原因不要加仓";}
+    else if(dd>=6||st>=5){v.mult=0.5;v.mode="defense";v.label=`🛡 防守模式: ${dd>=6?"滚动回撤≥6R":"连亏"+st+"笔"} → 风险减半`;}
+    else if(mean<0){v.mult=0.6;v.mode="weak";v.label="实测期望为负(未达显著) → 风险×0.6";}
+    else if(lo>0){v.mult=1.0;v.mode="proven";v.label="✅ 实测期望显著为正 → 满额风险(乘数上限1.0,不因连赢加码)";}
+    else{v.mult=0.8;v.mode="normal";v.label="实测期望为正但区间含0 → 风险×0.8";}
+  }
+  __hCache={t:now,v};return v;
+}
+function orbitAllocate(live,all){
+  const H=orbitHealth(),BUDGET=2.5,RHO=0.75,items=[];
+  const btc=(all||[]).find(x=>x.symbol==="BTCUSDT"),bs=btc&&btc.r&&btc.r.sig;
+  (live||[]).forEach(x=>{
+    const sig=x.r.sig,pm=sig.plan&&sig.plan.main;if(!pm||pm.noSetup||!pm.entry||!pm.sl)return;
+    const notes=[],slPct=Math.abs(pm.entry-pm.sl)/pm.entry*100,py=pm.payoff;
+    let risk=0.3;
+    if(py&&py.sd>0){const mu=Math.max(0,py.ev)*0.5;risk=Math.max(0.15,Math.min(1.0,12.5*mu/(py.sd*py.sd)));notes.push(`1/8凯利(μ=${py.ev.toFixed(2)}R→收缩后${mu.toFixed(2)}R,σ=${py.sd.toFixed(2)}R)`);}
+    let m=H.mult;if(m<1)notes.push(`健康度×${m}`);
+    const g=sig.gate;if(g&&g.tier!=="A"){m*=0.7;notes.push("B档×0.7");}
+    if(typeof orbitEdgeStrict==="function"&&!orbitEdgeStrict(sig,classifyOpportunityType(sig).key)){m*=0.5;notes.push("试探仓×0.5");}
+    const pf=window.patFor?window.patFor(x.symbol,sig.dirSign):null;
+    if(pf&&pf.al<0){m*=0.7;notes.push("形态反向×0.7");}else if(pf&&pf.al>0&&pf.r.q>=70){m*=1.1;notes.push("形态同向×1.1");}
+    if(bs&&x.symbol!=="BTCUSDT"&&bs.dirSign!==0&&bs.dirSign!==sig.dirSign&&(bs.outlook&&bs.outlook.conviction>=55)){m*=0.5;notes.push("逆BTC方向×0.5");}
+    const fu=(typeof market!=="undefined"&&market.get(x.symbol))?market.get(x.symbol).funding:null;let carry=null;
+    if(fu!=null&&isFinite(fu)&&slPct>0){carry=fu*sig.dirSign*3/slPct;if(carry>0.10){m*=0.8;notes.push(`资金费逆向≈${carry.toFixed(2)}R/日×0.8`);}else if(carry<-0.05)notes.push(`资金费顺向,日收≈${(-carry).toFixed(2)}R`);}
+    items.push({symbol:x.symbol,dir:sig.dirSign,risk:Math.min(1.0,risk*m),slPct,notes,carry});
+  });
+  const port=()=>Math.sqrt(items.reduce((s,a)=>s+items.reduce((t,b)=>t+(a===b?1:(a.dir===b.dir?RHO:-RHO))*a.risk*b.risk,0),0));
+  let P=port(),scaled=false;if(P>BUDGET){const k=BUDGET/P;items.forEach(a=>{a.risk*=k;});scaled=true;P=port();}
+  const map={};items.forEach(a=>{a.notional=a.risk/a.slPct*100;map[a.symbol]=a;});
+  const L=items.filter(a=>a.dir>0).reduce((s,a)=>s+a.risk,0),S=items.filter(a=>a.dir<0).reduce((s,a)=>s+a.risk,0);
+  return{map,H,P,scaled,sumRisk:items.reduce((s,a)=>s+a.risk,0),L,S,BUDGET,n:items.length};
+}
+function orbitRiskPanelHTML(){
+  const A=window.__alloc;if(!A)return"";const H=A.H,f=x=>x.toFixed(2);
+  const hs=H.mean!=null?`最近${H.n}笔实测期望 ${H.mean>=0?"+":""}${f(H.mean)}R(90%区间 ${f(H.lo)}~${f(H.hi)}) · 胜率 ${Math.round(H.wr*100)}% · 滚动回撤 ${f(H.dd)}R · 当前连亏 ${H.streak}`:`已结算样本 ${H.n} 笔`;
+  const cls=H.mode==="proven"?"ok":(H.mode==="decay"||H.mode==="defense")?"bad":"";
+  return`<div class="opat ${cls}">🛡 <b>模型健康度</b> · ${hs}<br>${esc(H.label)}</div>
+<div class="opat">⚖️ <b>组合风险预算</b> · 计划总风险 ${f(A.sumRisk)}% 净值(多 ${f(A.L)}% / 空 ${f(A.S)}%) · 相关性调整后 ${f(A.P)}% / 上限 ${A.BUDGET}%${A.scaled?" · <b>已按预算等比缩放</b>":""} · 规则: 单笔≤1% · 当日累计亏损达-2R停止开新仓 · 所有风险按“止损打到=亏这个%净值”设定杠杆</div>`;
+}
+function oppSizeHTML(symbol){
+  const a=window.__alloc&&window.__alloc.map[symbol];if(!a)return"";
+  return`<div class="opat ok">🎯 <b>建议风险 ${a.risk.toFixed(2)}% 净值</b> → 名义仓位≈${a.notional.toFixed(0)}% 净值(止损距离 ${a.slPct.toFixed(2)}%,止损打到只亏 ${a.risk.toFixed(2)}% 净值) · ${esc(a.notes.join(" · "))}</div>`;
+}
+function oppPayoffHTML(sig){
+  const pm=sig.plan&&sig.plan.main,p=pm&&pm.payoff;if(!p)return"";
+  const pc=x=>Math.round(x*100)+"%",sg=x=>(x>=0?"+":"")+x.toFixed(2)+"R";
+  const bar=`<div style="display:flex;height:7px;border-radius:3px;overflow:hidden;margin:4px 0"><i style="flex:${p.pLoss};background:var(--down)"></i><i style="flex:${p.pFlat};background:var(--dim2)"></i><i style="flex:${p.pTP1};background:var(--amber)"></i><i style="flex:${p.pTP2};background:var(--up)"></i></div>`;
+  return`<div class="opat">📊 仓位管理后的收益分布(${p.n}条模拟路径 · 分批40/35/25% + 保本 + 移动止损)${bar}全损 ${pc(p.pLoss)} · 保本/小波动 ${pc(p.pFlat)} · TP1档锁利 ${pc(p.pTP1)} · TP2+跑单 ${pc(p.pTP2)} · 管理后EV ${sg(p.ev)}(静态二元 ${sg(p.evS)}) · 最好一笔 ${p.best.toFixed(1)}R vs 平均亏损 ${p.avgL.toFixed(2)}R</div>`;
+}
 function oppRowHTML(symbol,r){
   const sig=r.sig;sig.symbol=sig.symbol||symbol;
   const type=classifyOpportunityType(sig);
@@ -3532,6 +3667,7 @@ function oppRowHTML(symbol,r){
       <span class="opp-row-toggle">${expanded?"▾ 收起":"▸ 展开"}</span>
     </div>
     ${oppStatsBarHTML(sig)}
+    ${oppDualHTML(symbol,sig)}${oppPatHTML(symbol,sig)}${oppPayoffHTML(sig)}${oppSizeHTML(symbol)}
     <div class="opp-row-detail">
       <div class="opp-timeline-block">
         <b>⏱ 时间线与判断依据</b>
@@ -3542,6 +3678,7 @@ function oppRowHTML(symbol,r){
       </div>
       <div class="opp-detail-sec"><b>为什么归为这一档</b><div>${esc(type.logicNote)}</div></div>
       <div class="opp-detail-sec"><b>持仓纪律与预估时长</b><div>${esc(type.hold)}</div></div>
+      ${oppFwdHTML(symbol,sig)}
       <div class="opp-detail-sec"><b>入场条件</b><div>${esc(det.entryCond)}</div></div>
       <div class="opp-detail-sec"><b>止损止盈规则</b><div>${esc(det.slTpRule)}</div></div>
       <div class="opp-detail-sec"><b>仓位建议</b><div>${esc(det.posRule)}</div></div>
@@ -3622,6 +3759,15 @@ function applyOppCollapseState(){
   const lhead=document.getElementById("oppLegendToggle"),lbody=document.getElementById("oppLegendBody");
   if(lhead&&lbody){lhead.classList.toggle("open",oppLegendOpen);lbody.classList.toggle("open",oppLegendOpen);}
 }
+function patGroupHTML(live){
+  const P=window.__pat||{},have=new Set((live||[]).map(x=>x.symbol+"|"+x.r.sig.dirSign)),rows=[];
+  Object.keys(P).forEach(s=>["4h","1d"].forEach(tf=>{const x=P[s]&&P[s][tf];if(!x||x.r.q<70||x.r.bias==="neutral")return;
+    const dir=x.r.bias==="bull"?1:-1,px=market.get(s)?market.get(s).price:x.px;
+    const rr=x.r.target&&x.r.inval&&px?Math.abs(x.r.target-px)/Math.abs(px-x.r.inval):null;rows.push({s,tf,r:x.r,dir,px,rr,has:have.has(s+"|"+dir)});}));
+  rows.sort((a,b)=>b.r.q-a.r.q);const top=rows.slice(0,6);
+  const body=top.length?top.map(x=>`<div class="opat ${x.has?"ok":""}"><b>${esc(x.s.replace("USDT",""))}</b> <span class="opp-row-dir ${x.dir>0?"up":"down"}">${x.dir>0?"LONG":"SHORT"}</span> · ${x.tf.toUpperCase()} ${esc(x.r.name)} · 质量${Math.round(x.r.q)}${x.r.target?` · 目标 ${fmtPrice(x.r.target)}`:""}${x.r.inval?` · 失效 ${fmtPrice(x.r.inval)}`:""}${x.rr&&isFinite(x.rr)?` · 盈亏比≈${x.rr.toFixed(1)}`:""} · ${x.has?"✓ 已有执行闸门同向信号":"尚无闸门确认 → 前瞻观察,等回踩价再入"} <button class="trk-tile-gotomodal" data-symbol="${esc(x.s)}">图表 →</button></div>`).join(""):`<div class="opp-empty">Top50形态扫描中/暂无质量≥70的形态</div>`;
+  return`<div class="opp-group-head">📐 形态机会 · Top50 已收盘K线 · 与斐波那契/结构一起作为寻找机会的证据源(同向信号自动加分)</div>${body}`;
+}
 function renderOpportunityRadar(){
   const noteEl=document.getElementById("oppUniverseNote");
   const universe=mainstreamUniverse();
@@ -3641,6 +3787,7 @@ function renderOpportunityRadar(){
   // headline"已识别机会",pending单独放进"确认中"折叠区(默认收起,想看模型正在酝酿什么可以点开,
   // 但不会被当成已经可以行动的结论),fail仍是"观察中·仅供参考"。
   const live=withMeta.filter(x=>x.trig.cls==="pass").slice(0,ORBIT_EDGE.dailyCap); // 每天只出手2-3次: 只留质量最高的前3
+  try{window.__alloc=orbitAllocate(live,withMeta);}catch(e){window.__alloc=null;}
   const pending=withMeta.filter(x=>x.trig.cls==="pending").slice(0,OPP_TOP_N*2);
   const ref=withMeta.filter(x=>x.trig.cls==="fail").slice(0,OPP_TOP_N*2);
   // 2026-09-11 新增: 🎯今日关注 — 用户反馈"不知道模型现在到底在盯哪些币,也没有通知,容易错过"。
@@ -3704,7 +3851,7 @@ function renderOpportunityRadar(){
     // "已识别机会"= 真正该常显的核心内容: 已触发/确认中,附带时间线/几率/价格策略(见 oppRowHTML 内的
     // buildOppTimelineDetail)。"观察中·仅供参考"改为默认收起的可折叠区块——那些是没过执行闸门的候选,
     // 常驻显示只会挤占"已识别机会"的注意力,想核实模型有没有在装死才需要点开看。
-    const liveHTML=live.length?`<div class="opp-group-head">✅ 已识别机会 · 已确认(A档8分钟/B档20分钟) · 时间线 / 几率 / 价格策略</div>${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
+    const liveHTML=live.length?`<div class="opp-group-head">✅ 已识别机会 · 已确认(A档8分钟/B档20分钟) · 时间线 / 几率 / 价格策略</div>${orbitRiskPanelHTML()}${live.map(x=>oppRowHTML(x.symbol,x.r)).join("")}`
       :`<div class="opp-group-head">✅ 已识别机会 · 已确认(A档8分钟/B档20分钟) · 时间线 / 几率 / 价格策略</div><div class="opp-empty">当前没有已完成确认的机会——展开下方"确认中"可看正在酝酿但尚未稳定的候选,展开"观察中"可看未过执行闸门的候选具体差在哪一项。这里保持空白是设计如此: 宁可不显示,也不把还在噪音里的方向当成确定结论摆出来。</div>`;
     const pendHTML=`<div class="opp-collapse-head" id="oppPendToggle">
         <span class="opp-collapse-arrow">▶</span>
@@ -3718,7 +3865,7 @@ function renderOpportunityRadar(){
         <span class="opp-collapse-count">${ref.length} 项</span>
       </div>
       <div class="opp-collapse-body" id="oppRefBody">${ref.length?ref.map(x=>oppRowHTML(x.symbol,x.r)).join(""):'<div class="opp-empty">暂无观察中的候选</div>'}</div>`;
-    tableEl.innerHTML=withMeta.length?(liveHTML+pendHTML+refHTML):'<div class="opp-empty">当前主流币里暂无达到方向确认门槛的机会,继续观察</div>';
+    tableEl.innerHTML=withMeta.length?(liveHTML+patGroupHTML(live)+pendHTML+refHTML):patGroupHTML(live)+'<div class="opp-empty">当前主流币里暂无达到方向确认门槛的机会,继续观察</div>';
   }
   renderFutureScanSection();
   const refToggle=document.getElementById("oppRefToggle");
@@ -4472,6 +4619,10 @@ function buildStructuralSL(dirSign,entry,atrVal,structure,tfCfg,regimeSlMult,hig
       slBasis="atr-fallback";
     }
   }
+  {const poolS=(dirSign>0?structure.supports:structure.resistances)||[];
+    const beyond=poolS.filter(l=>{const d=dirSign>0?slPrice-l.price:l.price-slPrice;return d>0&&d<=0.4*atrVal&&(l.weight||0)>=1.5;}).sort((a,b)=>b.weight-a.weight)[0];
+    if(beyond){const ns=dirSign>0?beyond.price-0.15*atrVal:beyond.price+0.15*atrVal;
+      if(Math.abs(ns-slPrice)<=0.5*atrVal){slPrice=ns;slSources=[...slSources,`扫损防护: 止损前方紧邻强位(权重${beyond.weight.toFixed(1)}),价格常先扫该位再回头,止损已放到其外侧`];}}}
   const minSlDist=atrVal*tfCfg.slAtrMin*regimeSlMult;
   if(dirSign>0&&slPrice>entry-minSlDist)slPrice=entry-minSlDist;
   if(dirSign<0&&slPrice<entry+minSlDist)slPrice=entry+minSlDist;
@@ -4498,11 +4649,17 @@ function buildTieredTargets(dirSign,entry,atrVal,structure,tfCfg,regimeTpMult,ti
     const growthFloor=i===1?tps[0].dist*1.8:i===2?tps[0].dist*2.5:0; // 恒以TP1实际距离为基准,不是逐档相乘
     const chainFloor=i>=1?tps[i-1].dist*1.15:0; // 无论TP2/TP3各自的下限算出多少,都必须严格大于紧邻的上一档
     const minDist=Math.max(atrVal*ownAtrFloor,growthFloor,chainFloor);
-    const lvl=candidates.find(c=>!used.has(c)&&Math.abs(c.price-entry)>=minDist);
+    const elig=candidates.filter(c=>!used.has(c)&&Math.abs(c.price-entry)>=minDist);
+    let lvl=elig[0];
+    if(elig.length>1){const w0=elig[0].distAtr,win=w0+(i===0?0.8:1.5),pl=elig.filter(c=>c.distAtr<=win);
+      const sc=c=>(c.weight||0)-0.25*(c.distAtr-w0);   // 质量-距离折中: 明显更强的位置,值得多走一小段
+      lvl=pl.reduce((b,c)=>sc(c)>sc(b)?c:b,pl[0]);}
     let price,sources,basis;
     if(lvl){
       used.add(lvl);
       price=lvl.price;sources=lvl.sources;basis="structure";
+      if((lvl.weight||0)>=1.8){const fr=dirSign>0?price-atrVal*0.12:price+atrVal*0.12;   // 强位前置: 价格常在强位前反转,不等精确触及
+        if(Math.abs(fr-entry)>=minDist){price=fr;sources=[...sources,"前置0.12×ATR止盈(强位处价格常提前反转)"];}}
     }else{
       const rawMult=atrFallbackMults[i]*regimeTpMult;
       const raw=dirSign>0?entry+atrVal*rawMult:entry-atrVal*rawMult;
@@ -4957,6 +5114,9 @@ function cycleCountdownText(cur){
 function cycleTfTabsHtml(){
   return`<div class="trk-tf-tabs">${CYCLE_TFS.map(tf=>`<button class="trk-tf-tab${tf===activeCycleTf?" active":""}" data-tf="${tf}">${CYCLE_TF_CONFIG[tf].label}</button>`).join("")}</div>`;
 }
+const __barOpenC={};
+function getBarOpen(sym,tf,start){const k=sym+"|"+tf+"|"+start;if(k in __barOpenC)return __barOpenC[k];__barOpenC[k]=null;
+  fetchJSON(REST+`/fapi/v1/klines?symbol=${sym}&interval=${tf}&startTime=${start}&limit=1`).then(a=>{__barOpenC[k]=(a&&a[0])?+a[0][1]:false;}).catch(()=>{__barOpenC[k]=false;});return null;}
 function renderCycleHeatmap(tf,cur){
   const cfg=CYCLE_TF_CONFIG[tf];
   if(!cur)return'<div class="trk-empty">扫描引擎还在跑出第一轮结果,稍等几分钟自动开始第一期…</div>'+renderCycleBacktestBox(tf);
@@ -4986,10 +5146,11 @@ function renderCycleHeatmap(tf,cur){
     </div>${expanded?`<div class="trk-tile-detail" data-id="${esc(id)}">
       <div class="trk-detail-row"><span>方向</span><span>${p.dir>0?"LONG 多":"SHORT 空"}</span></div>
       <div class="trk-detail-row"><span>建议时间 Signal</span><span>${fmtTrkDateTime(cur.lateMs>120000&&cur.builtAt?cur.builtAt:cur.start)}${cur.lateMs>120000?` <span class="dim">(本期开始于${fmtTrkDateTime(cur.start)},此单建仓较晚)</span>`:""}</span></div>
-      <div class="trk-detail-row"><span>入场价 Entry</span><span>${fmtPrice(p.entry)}</span></div>
-      <div class="trk-detail-row"><span>止盈 TP(${p.tpPct.toFixed(2)}%)</span><span>${fmtPrice(p.tp)}</span></div>
+      ${(()=>{const bo=getBarOpen(p.symbol,tf,cur.start);const late=(cur.lateMs||0)>120000;const diff=bo?p.dir*(p.entry-bo)/bo*100:null;
+        return`<div class="trk-detail-row"><span>🔒 信号价 @${fmtTrkDateTime(cur.start)}</span><span>${bo?fmtPrice(bo)+' <span class="dim">(周期开盘价 · 信号基准点)</span>':"取价中…"}</span></div><div class="trk-detail-row"><span>📍 建仓价 Entry @${fmtTrkDateTime(cur.builtAt||cur.start)}</span><span>${fmtPrice(p.entry)}${diff!=null&&late?` <span class="dim">(${diff>0?"比信号价差":"比信号价优"}${Math.abs(diff).toFixed(2)}%)</span>`:""}</span></div>`;})()}
+      <div class="trk-detail-row"><span>止盈 TP(${p.tpPct.toFixed(2)}% 距建仓价)</span><span>${fmtPrice(p.tp)}${(()=>{const bo=getBarOpen(p.symbol,tf,cur.start);return bo?` <span class="dim">· 距信号价 ${(p.dir*(p.tp-bo)/bo*100).toFixed(2)}%</span>`:"";})()}</span></div>
       <div class="trk-detail-row trk-detail-tech"><span>止盈依据</span><span>${p.tpSrc?(p.cappedByLevel?`价格离场前更可能先撞上这个真实${p.dir>0?"压力位":"支撑位"}: ${esc(p.tpSrc)}`:p.levelSkippedTooClose?`附近有${p.dir>0?"压力位":"支撑位"}(${esc(p.tpSrc)}),但太近了会让盈亏比不划算,已改用波动率目标`:esc(p.tpSrc)):"– (旧版记录,无结构依据字段)"}</span></div>
-      <div class="trk-detail-row"><span>止损 SL(${p.slPct.toFixed(2)}%)</span><span>${fmtPrice(p.sl)}</span></div>
+      <div class="trk-detail-row"><span>止损 SL(${p.slPct.toFixed(2)}% 距建仓价)</span><span>${fmtPrice(p.sl)}${(()=>{const bo=getBarOpen(p.symbol,tf,cur.start);return bo?` <span class="dim">· 距信号价 ${(p.dir*(p.sl-bo)/bo*100).toFixed(2)}%</span>`:"";})()}</span></div>
       <div class="trk-detail-row trk-detail-tech"><span>止损依据</span><span>${p.slSrc?`方向判断错了的话,大概率先在这里被证伪: ${esc(p.slSrc)}`:"– (旧版记录,无结构依据字段)"}</span></div>
       <div class="trk-detail-row"><span>R:R(目标:风险)</span><span>${(p.tpPct/p.slPct).toFixed(2)} : 1</span></div>
       ${p.pTP!=null?`<div class="trk-detail-row trk-detail-tech"><span>剩余周期内结局概率(模拟)</span><span>止盈${Math.round(p.pTP*100)}% · 止损${Math.round(p.pSL*100)}% · 到期未触发${Math.round(p.pTO*100)}%</span></div>`:""}
@@ -5656,9 +5817,12 @@ function recordTrackSignals(rows){
     if(sig.gate.pass&&extraOK){
       const prev=gatePendingConfirm.get(key);
       const broke=!prev||(now-prev.lastAt)>GATE_STALE_GAP_MS; // 中途真的断过(长时间未见)才重新计时,短暂刷新/后台不受影响
+      const pm0=sig.plan&&sig.plan.main;
+      const anchor=(!broke&&prev&&prev.anchor&&now-prev.anchor.at<12*3600e3)?prev.anchor
+        :(pm0&&!pm0.noSetup?{px:sig.price,entry:pm0.entry,sl:pm0.sl,tp:(pm0.tps||[]).map(t=>t.price),at:now}:null);
       gatePendingConfirm.set(key,{firstPassAt:broke?now:prev.firstPassAt,
         firstPassBarKey:broke?barBoundaryKeyOf(now):(prev.firstPassBarKey!=null?prev.firstPassBarKey:barBoundaryKeyOf(prev.firstPassAt)),
-        lastAt:now,missStreak:0});
+        lastAt:now,missStreak:0,anchor});
     }else{
       const prev=gatePendingConfirm.get(key);
       const withinGap=prev&&(now-prev.lastAt)<=GATE_STALE_GAP_MS;
@@ -7630,6 +7794,30 @@ function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap,a
       candidates.push({price:last.lower2,src:"VWAP -2σ",w:0.45});
     }
   }
+  /* v34: 价位来源多元化——量化交易员看的不只是斐波那契: 动态均线/布林/唐奇安突破极值/前日前周高低与开盘/
+     日内枢轴/整数关口/等高等低流动性池。每一类都作为候选进入同一个聚类,靠“跨族共振”而不是单族堆权重。 */
+  try{
+    const last=candles.length-1,cl=candles.map(c=>c.close);
+    [[20,0.7],[50,1.0],[200,1.3]].forEach(([p,w])=>{const v=ema(cl,p)[last];if(v&&isFinite(v)&&v>0)candidates.push({price:v,src:`EMA${p} 动态均线`,w});});
+    const tail=candles.slice(-20),mu=tail.reduce((s,c)=>s+c.close,0)/tail.length,sd=Math.sqrt(tail.reduce((s,c)=>s+(c.close-mu)**2,0)/tail.length);
+    if(sd>0){candidates.push({price:mu+2*sd,src:"布林上轨(20,2)",w:0.6},{price:mu-2*sd,src:"布林下轨(20,2)",w:0.6});}
+    [20,55].forEach(nn=>{const t=candles.slice(-nn-1,-1);if(t.length>=nn){const w=nn===55?1.0:0.8;candidates.push({price:Math.max(...t.map(c=>c.high)),src:`唐奇安${nn}周期高点`,w},{price:Math.min(...t.map(c=>c.low)),src:`唐奇安${nn}周期低点`,w});}});
+    const dk=t=>Math.floor(t/86400),wk=t=>Math.floor((t/86400+3)/7),agg=(keyf)=>{const m=new Map();candles.forEach(c=>{if(!isFinite(c.time))return;const k=keyf(c.time),o=m.get(k);if(!o)m.set(k,{o:c.open,h:c.high,l:c.low,c:c.close});else{o.h=Math.max(o.h,c.high);o.l=Math.min(o.l,c.low);o.c=c.close;}});return m;};
+    if(isFinite(candles[last].time)){
+      const D=agg(dk),W=agg(wk),cd=dk(candles[last].time),cw=wk(candles[last].time),pd=D.get(cd-1),pw=W.get(cw-1),td=D.get(cd),tw=W.get(cw);
+      if(pd){candidates.push({price:pd.h,src:"前日高点 PDH",w:0.9},{price:pd.l,src:"前日低点 PDL",w:0.9},{price:pd.c,src:"前日收盘",w:0.5});
+        const P=(pd.h+pd.l+pd.c)/3;candidates.push({price:P,src:"日内枢轴 P",w:0.5},{price:2*P-pd.l,src:"日内枢轴 R1",w:0.6},{price:2*P-pd.h,src:"日内枢轴 S1",w:0.6});}
+      if(pw)candidates.push({price:pw.h,src:"前周高点 PWH",w:1.1},{price:pw.l,src:"前周低点 PWL",w:1.1});
+      if(td)candidates.push({price:td.o,src:"当日开盘价",w:0.6});
+      if(tw)candidates.push({price:tw.o,src:"当周开盘价",w:0.7});
+    }
+    const mag=Math.pow(10,Math.floor(Math.log10(price)));
+    [[mag/2,0.8],[mag/10,0.4]].forEach(([st,w])=>{const b=Math.floor(price/st);[b-1,b,b+1,b+2].forEach(k=>{const v=k*st;if(v>0&&Math.abs(v-price)/price<0.05)candidates.push({price:v,src:"整数关口(心理位)",w});});});
+    const eq=(arr,label)=>{const a=arr.slice(-8);for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)if(Math.abs(a[i].price-a[j].price)/a[i].price<0.0015)candidates.push({price:(a[i].price+a[j].price)/2,src:`等${label}流动性池(止损扎堆区)`,w:0.9});};
+    eq(highs,"高点");eq(lows,"低点");
+    if(volProfile.vah!=null)candidates.push({price:volProfile.vah,src:"价值区上沿 VAH",w:1.0});
+    if(volProfile.val!=null)candidates.push({price:volProfile.val,src:"价值区下沿 VAL",w:1.0});
+  }catch(e){}
   candidates.sort((a,b)=>a.price-b.price);
   const tol=price*0.004;
   const clusters=[];
@@ -7638,7 +7826,12 @@ function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap,a
     if(last&&Math.abs(c.price-last.avg)<=tol){last.items.push(c);last.avg=last.items.reduce((s,i)=>s+i.price,0)/last.items.length;last.weight+=c.w;last.sources.push(c.src);}
     else clusters.push({avg:c.price,items:[c],weight:c.w,sources:[c.src]});
   });
-  const enriched=clusters.map(cl=>({price:cl.avg,weight:cl.weight,sources:[...new Set(cl.sources)]}));
+  const famOf=s=>/Fib/.test(s)?"fib":/摆动|等高|等低/.test(s)?"swing":/趋势线/.test(s)?"trend":/POC|HVN|VAH|VAL/.test(s)?"vol":/VWAP/.test(s)?"vwap":/EMA|布林|唐奇安/.test(s)?"band":/前日|前周|开盘|枢轴/.test(s)?"time":/整数/.test(s)?"psy":/江恩/.test(s)?"gann":"other";
+  const FAMN={fib:"斐波那契",swing:"摆动/流动性",trend:"趋势线",vol:"成交量",vwap:"VWAP",band:"均线/通道",time:"时间位",psy:"整数关口",gann:"江恩",other:"其它"};
+  const enriched=clusters.map(cl=>{const sr=[...new Set(cl.sources)],fams=new Set(sr.map(famOf));let w=cl.weight;
+    if(fams.size===1&&fams.has("fib"))w*=0.7;else w+=0.4*(fams.size-1);   // 纯斐波那契聚类降权;跨族共振加权
+    w=Math.min(w,4.5);if(fams.size>=2)sr.push(`跨${fams.size}族共振: ${[...fams].map(f=>FAMN[f]).join("/")}`);
+    return{price:cl.avg,weight:w,sources:sr,fams:fams.size};});
   // 江恩角度线二次确认(见上方computeGannFan大段注释): 从最近一个摆动低点和最近一个摆动高点
   // 各起一组角度线(不猜方向,两组都算,交给下面去和已经聚类好的结构位比对),命中已有聚类
   // 才加权,命中不了不新增位置——江恩角度线在这里只做"确认",不单独产生止盈止损位。
@@ -8082,6 +8275,35 @@ function computeLimitEntry(dirSign,price,atrVal,structure,vwapVal,intervalMinute
     invalidatePrice,invalidateNote};
 }
 
+/* v34: 仓位管理后的收益分布——不是“要么止盈要么止损”的二元结局。规则与止损阶梯一致:
+   走到TP1的60%→止损移保本; TP1平40%→止损锁TP1涨幅一半; TP2平35%→剩余25%用2.5×ATR追踪止损(跑单,无固定目标)。
+   用该资产已实现波动率σ与趋势漂移做几何布朗路径(固定种子,结果稳定不闪烁),扣0.14%往返成本。 */
+function simulatePayoff(dir,entry,sl,tps,atrVal,sigma,drift,intervalMin){
+  if(!sigma||!atrVal||!tps||tps.length<2||!intervalMin)return null;
+  const risk=Math.abs(entry-sl);if(!(risk>0))return null;
+  const bars=Math.max(12,Math.min(300,Math.round(4320/intervalMin))),SUB=3,s=sigma/Math.sqrt(SUB),mu=(drift||0)/SUB,N=700;
+  const t1=tps[0].price,t2=tps[1].price,F=[0.4,0.35],R=p=>dir*(p-entry)/risk,fee=0.0014*entry/risk;
+  let a=(Math.abs(entry*1e6)|0)+12345;const rnd=()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+  const gauss=()=>{let u=0,v=0;while(!u)u=rnd();v=rnd();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);};
+  const c={loss:0,flat:0,tp1:0,tp2:0};let sum=0,sq=0,best=-9,wS=0,lS=0,nW=0,nL=0,evS=0;
+  for(let n=0;n<N;n++){
+    let px=entry,stop=sl,rem=1,real=0,stage=0,moved=false,ext=entry,firstDone=false;
+    for(let k=0;k<bars*SUB&&rem>0;k++){
+      px*=Math.exp(dir*(mu+s*gauss()));
+      if(!firstDone){if(dir*(px-sl)<=0){evS-=1;firstDone=true;}else if(dir*(px-t1)>=0){evS+=R(t1);firstDone=true;}}
+      if(dir*(px-stop)<=0){real+=rem*R(stop);rem=0;break;}
+      if(stage===0&&!moved&&dir*(px-entry)>=0.6*Math.abs(t1-entry)){stop=entry+dir*0.1*atrVal;moved=true;}
+      if(stage===0&&dir*(px-t1)>=0){real+=F[0]*R(t1);rem-=F[0];stage=1;stop=entry+dir*0.5*Math.abs(t1-entry);}
+      if(stage===1&&dir*(px-t2)>=0){real+=F[1]*R(t2);rem-=F[1];stage=2;ext=px;}
+      if(stage===2){ext=dir>0?Math.max(ext,px):Math.min(ext,px);const ts=ext-dir*2.5*atrVal;if(dir*(ts-stop)>0)stop=ts;}
+    }
+    if(rem>0)real+=rem*R(px);
+    real-=fee;sum+=real;sq+=real*real;if(real>best)best=real;
+    if(real>0){wS+=real;nW++;}else if(real<-0.05){lS+=real;nL++;}
+    if(stage>=2)c.tp2++;else if(stage===1)c.tp1++;else if(real<=-0.5)c.loss++;else c.flat++;
+  }
+  return{n:N,pLoss:c.loss/N,pFlat:c.flat/N,pTP1:c.tp1/N,pTP2:c.tp2/N,ev:sum/N,sd:Math.sqrt(Math.max(1e-6,sq/N-(sum/N)**2)),evS:evS/N-fee,best,avgW:nW?wS/nW:0,avgL:nL?lS/nL:0};
+}
 function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluencePct,vwapVal,sigmaVal,reliability,regime,highs,lows,driftPerBarRaw,assetClass,noCalib){
   // driftPerBarRaw是"原始方向"(即上涨为正)的已收缩漂移估计;转成"交易方向"坐标——
   // 正值=有利于本单方向(顺势),负值=不利(逆势),这样raceProbability不用关心多空,只看
@@ -8154,7 +8376,8 @@ function buildTradePlan(dirSign,price,atrVal,structure,intervalMinutes,confluenc
       rr:"–",sigma:sigmaVal,reliability,regime,regimeSlMult,regimeTpMult,ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote};
   }
   return{dir:dirSign,entry,entryInfo,marketPrice:price,sl:slPrice,slSources,slBasis,tps,rr,sigma:sigmaVal,driftPerBar:driftFav,reliability,regime,regimeSlMult,regimeTpMult,
-    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,slLadder:buildSlLadder(dirSign,entry,slPrice,tps,atrVal)};
+    ev:edge.ev,evTier:edge.evTier,evNote:edge.evNote,slLadder:buildSlLadder(dirSign,entry,slPrice,tps,atrVal),
+    payoff:noCalib?null:simulatePayoff(dirSign,entry,slPrice,tps,atrVal,sigmaVal,driftFav,intervalMinutes)};
 }
 /* ══════════════════════════════════════════════════════════════════════════════
    ── 2026-09-18 新增: 3档止损阶梯(SL LADDER),取代"只有一个固定SL"──
@@ -13072,10 +13295,15 @@ function lpCalc(d){
     // 前者是"要不要现在追",后者是"要不要提前离场,不必死扛到硬止损才知道情况已经变了"。
     // 用户明确要求过不要等到止损才反应,这里就是让已持仓的人在期望值转负的那一刻就被提醒,
     // 而不是必须等价格物理触及止损线。
-    if(liveEdge.evTier==="reject"){verdict="现价视角:不建议现在进场 · 若已持有,现价起继续持有的期望值也已转负,可考虑提前离场而非死扛到止损";vcls="warn";}
-    else if(rNow<=-0.5){verdict="现价视角:浮亏"+(-rNow).toFixed(1)+"R · 持仓论文承压,止损位即失效线;不加仓不摊平,也不要因为剩余R:R好看而追";vcls="warn";}
-     else if(liveEdge.evTier==="marginal"){verdict=rNow>0.3?"现价视角:边际机会 · 已有浮盈,可考虑部分止盈或上移止损锁定":"现价视角:边际机会 · 空间一般,按原计划持有,不追加";vcls="neutral";}
-    else{verdict="现价视角:条件仍然成立,继续持有/进场均可";vcls="ok";}
+    const prog=(d.tp!==d.entry)?(px-d.entry)/(d.tp-d.entry):0,pp=Math.round(prog*100),fp=fmtPrice;
+    const lv60=fp(d.entry+0.6*(d.tp-d.entry)),nums=`先达${liveWinProb}% · 剩余R:R ${remRR.toFixed(2)} · EV ${liveEdge.ev}`;
+    if(liveEdge.evTier==="reject"){verdict=`现价视角:此刻不值得进(${nums}) · 已持有则期望已转负,触及硬止损 ${fp(d.sl)} 前可主动减仓`;vcls="warn";}
+    else if(rNow<=-0.5){verdict=`现价视角:浮亏${(-rNow).toFixed(1)}R,距止损仅${toSL.toFixed(2)}% · 失效线 ${fp(d.sl)};不摊平,下一根收盘若仍在入场价 ${fp(d.entry)} 的不利侧先减半`;vcls="warn";}
+    else if(prog>=0.6){verdict=`现价视角:已走完${pp}%路程 · 现在的动作是把止损上移到保本 ${fp(d.entry)},下一目标 ${fp(d.tp)}(${nums})`;vcls="ok";}
+    else if(prog>=0.25){verdict=`现价视角:浮盈${rNow.toFixed(1)}R(${pp}%路程) · 到 ${lv60} 上移保本之前不加仓;${nums}`;vcls=liveEdge.evTier==="marginal"?"neutral":"ok";}
+    else if(prog<=-0.1){verdict=`现价视角:小幅逆行${(-rNow).toFixed(1)}R,仍在计划容差内 · 守住 ${fp(d.sl)};${nums}`;vcls="neutral";}
+    else if(liveEdge.evTier==="marginal"){verdict=`现价视角:边际机会(${nums}) · 贴近入场价但空间一般,只做试探仓,${lv60} 之前不追加`;vcls="neutral";}
+    else{verdict=`现价视角:刚起步(${pp}%) · ${nums};下一个观察点 ${lv60}(60%路程,到了就保本)`;vcls="ok";}
     live={winProb:liveWinProb,ev:liveEdge.ev,evNote:liveEdge.evNote,verdict,vcls};
     // v19新增: 把"先达胜率%"这种与时间无关的比例数字,换算成一个用户能直接对表、判断
     // "在我还愿意等的这段时间里,这单实不实际"的时间化数字。
@@ -13408,7 +13636,16 @@ function scUI(){const b=document.createElement("button");b.id="scBtn";b.textCont
   o.querySelector("#scX").onclick=()=>o.classList.remove("open");o.querySelector("#scRe").onclick=()=>go(true);
   o.querySelectorAll(".sc-tf button").forEach(x=>x.onclick=()=>{tf=x.dataset.tf;o.querySelectorAll(".sc-tf button").forEach(y=>y.classList.toggle("on",y===x));go(false);});
   o.querySelector("#scBody").onclick=e=>{const r=e.target.closest(".sc-row");if(r&&typeof openCryptoModal==="function"){o.classList.remove("open");openCryptoModal(r.dataset.s);}};}
-if(document.readyState!=="loading")scUI();else document.addEventListener("DOMContentLoaded",scUI);
+window.__pat={};
+async function patRefresh(){try{const list=[...market.values()].filter(m=>m.price>0&&m.quoteVolume>0).sort((a,b)=>b.quoteVolume-a.quoteVolume).slice(0,50).map(m=>m.symbol);if(!list.length){setTimeout(patRefresh,15000);return;}
+  const jobs=[];list.forEach(s=>["4h","1d"].forEach(tf=>jobs.push([s,tf])));let i=0;
+  async function w(){while(i<jobs.length){const [s,tf]=jobs[i++];try{const kl=await fetchJSON(REST+`/fapi/v1/klines?symbol=${s}&interval=${tf}&limit=220`);
+    const c=paClosed(kl.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]})));const r=window.paDetect(c);
+    (window.__pat[s]=window.__pat[s]||{})[tf]=r.length?{r:r[0],px:market.get(s)?market.get(s).price:null,t:Date.now()}:null;}catch(e){}}}
+  await Promise.all([w(),w(),w(),w()]);try{if(typeof renderOpportunityRadar==="function")renderOpportunityRadar();}catch(e){}}catch(e){}}
+window.patFor=function(sym,d){const o=window.__pat[sym];if(!o)return null;let best=null;
+  ["4h","1d"].forEach(tf=>{const x=o[tf];if(!x||x.r.q<60)return;const al=x.r.bias==="neutral"?0:(x.r.bias==="bull"?1:-1)*d;const sc=x.r.q+(al>0?15:0);if(!best||sc>best.sc)best={sc,tf,r:x.r,al};});return best;};
+setTimeout(patRefresh,8000);setInterval(patRefresh,600000);
 })();
 
 
