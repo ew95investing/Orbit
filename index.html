@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0b0e15">
-<title>ORBIT — Crypto Intelligence Terminal v23</title>
+<title>ORBIT — Crypto Intelligence Terminal v36 · Structure Engine</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Fraunces:ital,opsz,wght@1,9..144,500&display=swap');
@@ -1567,6 +1567,1277 @@
   </div>
 </div>
 
+<style>
+#seLayerBar{display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding:6px 12px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.se-lb-t{font-size:10.5px;color:var(--dim2);margin-right:4px}
+.se-lb{font-size:10.5px;padding:2px 9px;border-radius:12px;background:var(--panel3);border:1px solid var(--line2);color:var(--dim);cursor:pointer;font-family:var(--mono)}
+.se-lb.on{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
+#seBox{font-size:12px;line-height:1.55}
+.se-card{border:1px solid var(--line2);border-radius:6px;padding:9px 11px;margin:4px 0 8px;background:var(--panel2)}
+.se-card.se-nt{border-color:var(--line)}
+.se-h{font-weight:600;font-size:13px;margin-bottom:6px;color:var(--text)}
+.se-h .up,.se-kv .up,.up{color:var(--up)}.se-h .dn,.se-kv .dn,.dn{color:var(--down)}
+.se-kv{display:flex;justify-content:space-between;gap:10px;padding:2px 0;border-bottom:1px dotted var(--line)}
+.se-kv span{color:var(--dim);flex-shrink:0}.se-kv b{font-weight:500;text-align:right}.se-kv i{color:var(--dim2);font-style:normal;font-size:11px}
+.se-sub{margin:10px 0 3px;font-size:11.5px;color:var(--amber);font-weight:600}
+.se-r{padding:2px 0;color:var(--text)}.se-r.dim,.dim{color:var(--dim2)}
+.se-b{display:inline-block;font-size:10px;padding:0 6px;border-radius:9px;border:1px solid var(--line2);margin-right:3px;color:var(--dim)}
+.se-b-g{color:var(--up);border-color:var(--up)}.se-b-r{color:var(--down);border-color:var(--down)}.se-b-a{color:var(--amber);border-color:var(--amber)}.se-b-w{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
+.se-tl{padding:5px 0;border-bottom:1px dotted var(--line)}
+.se-hist{margin:6px 0;padding:5px 8px;border-left:2px solid var(--amber);background:var(--amber-bg);font-size:11.5px}
+.se-scroll{overflow-x:auto;max-width:100%}.se-t{border-collapse:collapse;width:100%;font-size:11.5px}.se-t th,.se-t td{padding:3px 7px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}.se-t th{color:var(--dim2);font-weight:500}
+.se-btn{font-size:11px;padding:4px 11px;border-radius:14px;background:var(--panel3);border:1px solid var(--line2);color:var(--amber);cursor:pointer;font-family:var(--mono);margin:3px 4px 3px 0}.se-btn:disabled{opacity:.5}
+.se-stat{margin:6px 0;padding:6px 8px;border:1px solid var(--line);border-radius:5px}
+</style>
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   ORBIT · STRUCTURE ENGINE (SE) — 结构引擎 / 趋势线 / 条件化策略 / 历史追踪与回测
+   规则版本见 SE.VERSION。本模块是纯确定性计算:不含任何 AI 生成的价格、坐标或指标数值。
+   五层: Data → Structure → Validation → Strategy → Backtest & Tracking
+   无未来函数: 所有分析函数只接收"截止当前已收盘K线"的切片;Pivot 带 confirmedIdx(确认延迟 k 根)。
+   ══════════════════════════════════════════════════════════════════════════ */
+(function(root){
+'use strict';
+const VERSION='SE-1.0.0';
+const TF_SEC={'1m':60,'3m':180,'5m':300,'15m':900,'30m':1800,'1h':3600,'2h':7200,'4h':14400,'6h':21600,'8h':28800,'12h':43200,'1d':86400,'3d':259200,'1w':604800};
+const HTF_MAP={'1m':'15m','5m':'1h','15m':'1h','1h':'4h','4h':'1d','8h':'1d','1d':'1w','1w':'1w'};
+const CFG={
+  atrN:14,
+  pivot:{k:3,minSwingAtr:1.0},
+  tl:{lookbackBars:400,maxPivots:10,minSpanBars:12,tolAtr:0.25,tolPct:0.0008,dedupBars:3,minScore:60,candScore:45,
+      maxBodyCrossAfter:0,maxSlopeAtrPerBar:0.35,minTotalSlopeAtr:0.5,breakAtr:0.35,staleAtr:10},
+  zone:{tolAtr:0.6,minIndep:2,minReact:2,reactAtr:0.8,reactBars:6,lookbackBars:300},
+  ev:{window:60,breakAtr:0.2,fakeoutBars:3,retestBars:8},
+  strat:{minRR:1.5,slAtrMin:0.6,slAtrMax:3.5,slBufAtr:0.25,pullbackReachAtr:1.5,breakoutReachAtr:1.5,triggerBufAtr:0.15,
+         lateExtAtr:0.8,breakoutLateExtAtr:1.0,minTargetGapAtr:0.5,targetFrontRunAtr:0.1,expiryBars:8,maxHoldBars:48,
+         maxRiskPct:1.0,minStructQuality:50,minObstacleQuality:45,fillRrTolerance:0.8},
+  cost:{feePct:0.05,slipPct:0.02},
+  stats:{minN:30},
+  dq:{minBars:60,minBarsStructure:120,maxGapRecent:3,recentWindow:200,outlierRangeAtr:15}
+};
+const clone=o=>JSON.parse(JSON.stringify(o));
+const isNum=x=>typeof x==='number'&&isFinite(x);
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function fnv(str){let h=0x811c9dc5;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}return h.toString(16).padStart(8,'0');}
+function wilson(w,n,z){z=z||1.96;if(!n)return{lo:null,hi:null,p:null};const p=w/n,d=1+z*z/n,c=p+z*z/(2*n),a=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n));return{p,lo:(c-a)/d,hi:(c+a)/d};}
+function tfSec(tf){return TF_SEC[tf]||null;}
+function higherTf(tf){return HTF_MAP[tf]||tf;}
+
+/* ── Data Layer ────────────────────────────────────────────────────────── */
+/* 输入可以是 Binance 原始数组或 {time,open,high,low,close,volume};输出为清洗后的已收盘K线 + 数据质量报告。
+   不补造任何数据: 无效K线直接剔除并计数,缺口只报告不填补。 */
+function normalizeRaw(arr){
+  return (arr||[]).map(k=>Array.isArray(k)?{time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}:{time:k.time,open:+k.open,high:+k.high,low:+k.low,close:+k.close,volume:+(k.volume||0)});
+}
+function checkCandles(raw,tf,nowSec,minBarsOverride){
+  const sec=tfSec(tf),issues=[];
+  let c=normalizeRaw(raw);
+  const total=c.length;
+  const bad=c.filter(x=>!(isNum(x.time)&&isNum(x.open)&&isNum(x.high)&&isNum(x.low)&&isNum(x.close))||x.open<=0||x.high<=0||x.low<=0||x.close<=0);
+  if(bad.length){issues.push({code:'INVALID_VALUES',count:bad.length,detail:'非数值/非正价格K线已剔除'});c=c.filter(x=>!bad.includes(x));}
+  const inc=c.filter(x=>x.high<Math.max(x.open,x.close)-1e-12||x.low>Math.min(x.open,x.close)+1e-12||x.high<x.low);
+  if(inc.length){issues.push({code:'OHLC_INCONSISTENT',count:inc.length,detail:'OHLC 自相矛盾的K线已剔除'});c=c.filter(x=>!inc.includes(x));}
+  let sorted=true;for(let i=1;i<c.length;i++)if(c[i].time<c[i-1].time){sorted=false;break;}
+  if(!sorted){issues.push({code:'UNSORTED',count:1,detail:'时间乱序,已按时间升序重排'});c=c.slice().sort((a,b)=>a.time-b.time);}
+  const dd=[];let dup=0;for(const x of c){if(dd.length&&dd[dd.length-1].time===x.time){dup++;dd[dd.length-1]=x;}else dd.push(x);}
+  if(dup){issues.push({code:'DUPLICATE_BARS',count:dup,detail:'重复时间戳K线已去重(保留后者)'});}
+  c=dd;
+  let forming=false;
+  if(sec&&nowSec&&c.length&&c[c.length-1].time+sec>nowSec){c=c.slice(0,-1);forming=true;}
+  let gaps=0,gapsRecent=0,maxGap=0;
+  if(sec){const rs=Math.max(0,c.length-CFG.dq.recentWindow);for(let i=1;i<c.length;i++){const d=c[i].time-c[i-1].time;if(d>sec*1.5){gaps++;if(i>=rs)gapsRecent++;maxGap=Math.max(maxGap,Math.round(d/sec)-1);}
+    else if(d<sec*0.5){issues.push({code:'IRREGULAR_SPACING',count:1,detail:'K线间隔小于周期,时间连续性异常'});break;}}}
+  if(gaps)issues.push({code:'TIME_GAPS',count:gaps,detail:`缺失K线缺口 ${gaps} 处(最大缺 ${maxGap} 根),近期窗口内 ${gapsRecent} 处;不补造`});
+  let outliers=0;
+  if(c.length>30){const rg=c.map(x=>x.high-x.low),med=median(rg)||0;if(med>0)outliers=rg.filter(r=>r>med*CFG.dq.outlierRangeAtr).length;}
+  if(outliers)issues.push({code:'RANGE_OUTLIERS',count:outliers,detail:`${outliers} 根K线振幅超过中位数 ${CFG.dq.outlierRangeAtr} 倍(已标记,未剔除)`});
+  let status='ok';
+  if(c.length<(minBarsOverride!=null?minBarsOverride:CFG.dq.minBars)||(total&&(total-c.length-(forming?1:0))/total>0.05)||gapsRecent>CFG.dq.maxGapRecent)status='invalid';
+  else if(issues.length)status='degraded';
+  return{candles:c,status,issues,forming,total,kept:c.length,sufficientForStructure:c.length>=CFG.dq.minBarsStructure&&status!=='invalid'};
+}
+/* 把低周期K线聚合成高周期(仅用于回测的点时间一致性: 只输出"已完整收盘"的桶,绝不使用未来K线) */
+function bucketStart(t,targetSec){if(targetSec===604800){const off=345600;return Math.floor((t-off)/targetSec)*targetSec+off;}return Math.floor(t/targetSec)*targetSec;}
+function aggregate(c,srcSec,dstSec){
+  if(!c.length||dstSec<=srcSec)return c.slice();
+  const out=[];let cur=null;
+  for(const x of c){
+    const b=bucketStart(x.time,dstSec);
+    if(!cur||cur.time!==b){if(cur)out.push(cur);cur={time:b,open:x.open,high:x.high,low:x.low,close:x.close,volume:x.volume||0,_n:1,_last:x.time};}
+    else{cur.high=Math.max(cur.high,x.high);cur.low=Math.min(cur.low,x.low);cur.close=x.close;cur.volume+=x.volume||0;cur._n++;cur._last=x.time;}
+  }
+  if(cur)out.push(cur);
+  const need=Math.round(dstSec/srcSec),lastSrc=c[c.length-1].time;
+  const res=out.filter((b,i)=>i<out.length-1?b._n>=need*0.99||b._n>=need:(b.time+dstSec<=lastSrc+srcSec&&b._n>=need));
+  return res.map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume}));
+}
+
+/* ── 指标基元 ─────────────────────────────────────────────────────────── */
+function atrWilder(c,n){n=n||CFG.atrN;const out=new Array(c.length),tr=[];
+  for(let i=0;i<c.length;i++){tr.push(i?Math.max(c[i].high-c[i].low,Math.abs(c[i].high-c[i-1].close),Math.abs(c[i].low-c[i-1].close)):c[i].high-c[i].low);
+    out[i]=i<n?tr.reduce((s,x)=>s+x,0)/tr.length:(out[i-1]*(n-1)+tr[i])/n;}
+  return out;}
+function rsiArr(closes,n){n=n||14;const out=new Array(closes.length).fill(null);if(closes.length<=n)return out;let g=0,l=0;
+  for(let i=1;i<=n;i++){const d=closes[i]-closes[i-1];if(d>=0)g+=d;else l-=d;}g/=n;l/=n;out[n]=l===0?100:100-100/(1+g/l);
+  for(let i=n+1;i<closes.length;i++){const d=closes[i]-closes[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n;out[i]=l===0?100:100-100/(1+g/l);}
+  return out;}
+
+/* ── Structure Engine · Pivot ─────────────────────────────────────────── */
+/* 分形 k + ATR 过滤的 zigzag。pivot 在 i+k 根K线收盘时才"已知"(confirmedIdx);
+   候选(尚未确认)单独返回,绝不进入趋势线拟合。 */
+function findPivots(c,atr,tf,k,minSwingAtr){
+  k=k||CFG.pivot.k;minSwingAtr=minSwingAtr==null?CFG.pivot.minSwingAtr:minSwingAtr;
+  const n=c.length,raw=[];
+  const mk=(type,i)=>({id:`${tf}:${type}:${c[i].time}`,type,i,time:c[i].time,price:type==='H'?c[i].high:c[i].low,tf,k,
+    confirmedIdx:i+k,confirmedTime:c[i+k].time,status:'confirmed',source:`fractal(k=${k})+zigzag(${minSwingAtr}ATR)`});
+  for(let i=k;i<n-k;i++){
+    let h=true,l=true;
+    for(let j=1;j<=k;j++){
+      if(!(c[i].high>c[i-j].high)||!(c[i].high>=c[i+j].high))h=false;
+      if(!(c[i].low<c[i-j].low)||!(c[i].low<=c[i+j].low))l=false;
+    }
+    if(h&&l)continue; // 外包K线:高低点同时成立,归属不明,不取
+    if(h)raw.push(mk('H',i));
+    if(l)raw.push(mk('L',i));
+  }
+  const out=[];
+  for(const p of raw){
+    const last=out[out.length-1];
+    if(!last){out.push(p);continue;}
+    if(last.type===p.type){
+      if((p.type==='H'&&p.price>last.price)||(p.type==='L'&&p.price<last.price))out[out.length-1]=p;
+    }else if(Math.abs(p.price-last.price)>=minSwingAtr*atr[p.i])out.push(p);
+  }
+  // 标注 HH/HL/LH/LL
+  let lh=null,ll=null;
+  for(const p of out){
+    const eps=0.1*atr[p.i];
+    if(p.type==='H'){p.label=lh?(p.price>lh.price+eps?'HH':p.price<lh.price-eps?'LH':'EH'):'H0';lh=p;}
+    else{p.label=ll?(p.price>ll.price+eps?'HL':p.price<ll.price-eps?'LL':'EL'):'L0';ll=p;}
+  }
+  // 候选(未确认): 右侧不足 k 根的极值
+  const candidates=[];
+  const lastHi=out.filter(p=>p.type==='H').pop(),lastLo=out.filter(p=>p.type==='L').pop();
+  let bestH=null,bestL=null;
+  for(let i=Math.max(k,n-k);i<n;i++){
+    let h=true,l=true;
+    for(let j=1;j<=k;j++){if(!(c[i].high>c[i-j].high))h=false;if(!(c[i].low<c[i-j].low))l=false;}
+    for(let j=i+1;j<n;j++){if(c[j].high>c[i].high)h=false;if(c[j].low<c[i].low)l=false;}
+    if(h&&(!bestH||c[i].high>c[bestH].high))bestH=i;
+    if(l&&(!bestL||c[i].low<c[bestL].low))bestL=i;
+  }
+  if(bestH!=null&&!(lastHi&&lastHi.i>=bestH))candidates.push({id:`${tf}:H:${c[bestH].time}`,type:'H',i:bestH,time:c[bestH].time,price:c[bestH].high,tf,status:'candidate',confirmedIdx:null,barsToConfirm:bestH+k-(n-1)});
+  if(bestL!=null&&!(lastLo&&lastLo.i>=bestL))candidates.push({id:`${tf}:L:${c[bestL].time}`,type:'L',i:bestL,time:c[bestL].time,price:c[bestL].low,tf,status:'candidate',confirmedIdx:null,barsToConfirm:bestL+k-(n-1)});
+  return{confirmed:out,candidates};
+}
+function structureState(c,piv,atr){
+  const n=c.length,H=piv.filter(p=>p.type==='H'),L=piv.filter(p=>p.type==='L');
+  if(H.length<2||L.length<2)return{trend:'unknown',reason:'已确认 Pivot 不足(需 ≥2 高点与 ≥2 低点)',basis:[],bos:false};
+  const h1=H[H.length-1],h0=H[H.length-2],l1=L[L.length-1],l0=L[L.length-2];
+  const close=c[n-1].close,a=atr[n-1];
+  let trend,reason;
+  if(h1.label==='HH'&&l1.label==='HL'){trend='up';reason='最近高点 HH + 最近低点 HL';}
+  else if(h1.label==='LH'&&l1.label==='LL'){trend='down';reason='最近高点 LH + 最近低点 LL';}
+  else if(h1.label==='HH'&&l1.label==='LL'){trend='range';reason='高点抬高但低点下移:扩张型震荡';}
+  else if(h1.label==='LH'&&l1.label==='HL'){trend='range';reason='高点下移且低点抬高:收敛型震荡';}
+  else{trend='range';reason=`高点${h1.label}/低点${l1.label}:无明确方向`;}
+  let bos=false;
+  if(trend==='up'){if(close<l1.price-0.1*a){trend='transition_down';reason='上升结构中收盘跌破最近 HL(CHoCH)';}else if(close>h1.price)bos=true;}
+  else if(trend==='down'){if(close>h1.price+0.1*a){trend='transition_up';reason='下降结构中收盘突破最近 LH(CHoCH)';}else if(close<l1.price)bos=true;}
+  return{trend,reason,bos,basis:[h0.id,h1.id,l0.id,l1.id],lastHigh:{id:h1.id,price:h1.price,label:h1.label},lastLow:{id:l1.id,price:l1.price,label:l1.label}};
+}
+const biasOf=t=>t==='up'?1:t==='down'?-1:t==='transition_up'?0.5:t==='transition_down'?-0.5:0;
+
+/* ── Structure Engine · 趋势线: 候选生成 → 稳健拟合 → 去重触碰 → 独立验证 → 质量评分 ───────────── */
+function theilSen(pts){ // pts:[{i,price}]
+  const sl=[];for(let a=0;a<pts.length;a++)for(let b=a+1;b<pts.length;b++)if(pts[b].i!==pts[a].i)sl.push((pts[b].price-pts[a].price)/(pts[b].i-pts[a].i));
+  return sl.length?median(sl):null;
+}
+function evalLine(c,atr,line,a,b,side,piv,cfg,roleOf){
+  // line:{slope,i0,p0}; price(i)=p0+slope*(i-i0)
+  const n=c.length,sgn=side==='support'?1:-1,L=i=>line.p0+line.slope*(i-line.i0);
+  const m={crossesBetween:0,bodyCrossAfter:0,wickCrossAfter:0,brokenAt:null,rawTouch:[]};
+  for(let i=a.i;i<n;i++){
+    const tol=Math.max(cfg.tolAtr*atr[i],cfg.tolPct*c[i].close);
+    const ext=side==='support'?c[i].low:c[i].high,bodyExt=side==='support'?Math.min(c[i].open,c[i].close):Math.max(c[i].open,c[i].close);
+    const d=(ext-L(i))*sgn,bd=(bodyExt-L(i))*sgn,cd=(c[i].close-L(i))*sgn;
+    const bodyCross=bd<-tol,wickCross=!bodyCross&&d<-tol;
+    if(i<=b.i){if(bodyCross)m.crossesBetween++;}
+    else{
+      if(bodyCross)m.bodyCrossAfter++;
+      if(wickCross)m.wickCrossAfter++;
+      if(m.brokenAt==null&&cd<-cfg.breakAtr*atr[i])m.brokenAt=i;
+    }
+    if(Math.abs(d)<=tol&&!bodyCross)m.rawTouch.push({i,d,tol});
+  }
+  // 触碰去重: 连续/相邻 dedupBars 内的K线只计一次独立触碰(取偏差最小者)
+  const cl=[];
+  for(const t of m.rawTouch){const last=cl[cl.length-1];if(last&&t.i-last.lastI<=cfg.dedupBars){last.items.push(t);last.lastI=t.i;}else cl.push({items:[t],lastI:t.i});}
+  m.touches=cl.map(g=>{
+    const best=g.items.reduce((x,y)=>Math.abs(y.d)<Math.abs(x.d)?y:x);
+    const hasA=g.items.some(t=>t.i===a.i),hasB=g.items.some(t=>t.i===b.i);
+    const role=hasA||hasB?'anchor':(best.i<=b.i?'fit':'validation');
+    return{i:best.i,time:c[best.i].time,price:L(best.i)+best.d*sgn,devAbs:Math.abs(best.d),tol:best.tol,role};
+  });
+  // 保证锚点作为 anchor 出现各一次
+  ['a','b'].forEach(k=>{const p=k==='a'?a:b;if(!m.touches.some(t=>t.role==='anchor'&&Math.abs(t.i-p.i)<=cfg.dedupBars))m.touches.push({i:p.i,time:c[p.i].time,price:p.price,devAbs:Math.abs(p.price-L(p.i)),tol:Math.max(cfg.tolAtr*atr[p.i],cfg.tolPct*c[p.i].close),role:'anchor'});});
+  m.touches.sort((x,y)=>x.i-y.i);
+  // 锚点计为 2 次触碰(去重后可能与锚点同簇)
+  const anchorCount=Math.min(2,m.touches.filter(t=>t.role==='anchor').length);
+  m.nAnchor=2;m.nFit=m.touches.filter(t=>t.role==='fit').length;m.nValidation=m.touches.filter(t=>t.role==='validation').length;
+  m.nTotal=2+m.nFit+m.nValidation;
+  // 残差: 落在线附近的已确认同类 Pivot
+  const inl=piv.filter(p=>p.i>=a.i&&Math.abs(p.price-L(p.i))<=1.5*Math.max(cfg.tolAtr*atr[p.i],cfg.tolPct*c[p.i].close));
+  m.inliers=inl;
+  const res=inl.map(p=>(p.price-L(p.i))/atr[p.i]);
+  m.rmsRes=res.length?Math.sqrt(res.reduce((s,x)=>s+x*x,0)/res.length):0;
+  m.lastTouchIdx=m.touches.length?m.touches[m.touches.length-1].i:b.i;
+  m.L=L;
+  return m;
+}
+function scoreLine(m,a,n,cfg){
+  const span=n-1-a.i;
+  const indep=Math.min(1,m.nValidation/3);
+  const touchClose=clamp(1-(m.touches.reduce((s,t)=>s+t.devAbs/t.tol,0)/Math.max(1,m.touches.length)),0,1);
+  const fit=1-Math.min(1,m.rmsRes/cfg.tolAtr);
+  const since=n-1-m.lastTouchIdx;
+  const recency=Math.exp(-since/Math.max(20,0.5*span));
+  const brk=1-Math.min(1,m.bodyCrossAfter*0.5+m.wickCrossAfter*0.15+m.crossesBetween*0.5);
+  const sample=Math.min(1,(m.nTotal-2)/2)*0.5+Math.min(1,span/60)*0.5;
+  const score=100*(0.28*indep+0.12*touchClose+0.18*fit+0.14*recency+0.16*brk+0.12*sample);
+  return{score:Math.round(score*10)/10,parts:{indep,touchClose,fit,recency,break:brk,sample},since,span};
+}
+function fitTrendlines(c,atr,piv,tf,cfgIn){
+  const cfg=Object.assign({},CFG.tl,cfgIn||{}),n=c.length;
+  const out={valid:[],candidate:[],broken:[],rejected:0,reasons:{}};
+  const lastAtr=atr[n-1];
+  for(const side of ['support','resistance']){
+    const type=side==='support'?'L':'H';
+    const pts=piv.filter(p=>p.type===type&&p.i>=n-cfg.lookbackBars).slice(-cfg.maxPivots);
+    if(pts.length<2){out.reasons[side]={code:'INSUFFICIENT_PIVOTS',text:`有效 ${type==='L'?'低':'高'}点 Pivot 仅 ${pts.length} 个(需 ≥2)`};continue;}
+    const found=[];let tried=0;
+    for(let x=0;x<pts.length;x++)for(let y=x+1;y<pts.length;y++){
+      const a=pts[x],b=pts[y];
+      if(b.i-a.i<cfg.minSpanBars)continue;
+      const slope=(b.price-a.price)/(b.i-a.i);
+      if(Math.abs(slope)>cfg.maxSlopeAtrPerBar*lastAtr)continue;
+      if(Math.abs(slope*(b.i-a.i))<cfg.minTotalSlopeAtr*lastAtr)continue; // 近乎水平→交给水平区间
+      tried++;
+      let line={slope,i0:a.i,p0:a.price};
+      let m=evalLine(c,atr,line,a,b,side,pts,cfg);
+      if(m.crossesBetween>0){out.rejected++;continue;}
+      // 稳健重拟合(Theil–Sen): 在线附近 ≥3 个已确认 Pivot 时,用中位斜率替代两点斜率,抗单点异常
+      if(m.inliers.length>=3){
+        const s2=theilSen(m.inliers.map(p=>({i:p.i,price:p.price})));
+        if(s2!=null&&Math.abs(s2)<=cfg.maxSlopeAtrPerBar*lastAtr){
+          const p0=median(m.inliers.map(p=>p.price-s2*(p.i-a.i)));
+          const line2={slope:s2,i0:a.i,p0};
+          const m2=evalLine(c,atr,line2,a,b,side,pts,cfg);
+          if(m2.crossesBetween===0){line=line2;m=m2;}
+        }
+      }
+      const sc=scoreLine(m,a,n,cfg);
+      found.push({a,b,line,m,sc,side});
+    }
+    // 去重近似相同的线
+    found.sort((p,q)=>q.sc.score-p.sc.score);
+    const kept=[];
+    for(const f of found){
+      const dup=kept.some(k=>Math.abs(k.line.p0+k.line.slope*(n-1-k.line.i0)-(f.line.p0+f.line.slope*(n-1-f.line.i0)))<0.3*lastAtr&&Math.abs(k.line.p0+k.line.slope*(f.a.i-k.line.i0)-f.line.p0)<0.3*lastAtr);
+      if(!dup)kept.push(f);else out.rejected++;
+    }
+    let anyValid=false;
+    for(const f of kept){
+      const {a,b,line,m,sc}=f,priceNow=m.L(n-1);
+      if(!(priceNow>0)||Math.abs(priceNow-c[n-1].close)>cfg.staleAtr*lastAtr){out.rejected++;continue;}
+      let status;
+      if(m.brokenAt!=null)status='broken';
+      else if(sc.score>=cfg.minScore&&m.nTotal>=3&&m.nValidation>=1&&m.bodyCrossAfter<=cfg.maxBodyCrossAfter)status='valid';
+      else if(m.nTotal>=3&&sc.score>=cfg.candScore)status='candidate';
+      else if(m.nTotal>=2&&sc.score>=cfg.candScore)status='candidate';
+      else{out.rejected++;continue;}
+      const tolNow=Math.max(cfg.tolAtr*atr[n-1],cfg.tolPct*c[n-1].close);
+      const rec={
+        id:`TL:${tf}:${side[0]}:${a.id}>${b.id}`,kind:'trendline',side,tf,status,
+        anchors:[{pivotId:a.id,time:a.time,price:a.price,i:a.i},{pivotId:b.id,time:b.time,price:b.price,i:b.i}],
+        slopePerBar:line.slope,slopeAtrPerBar:line.slope/lastAtr,i0:line.i0,p0:line.p0,
+        priceNow,priceNext:m.L(n),tolNow,
+        touches:m.touches.map(t=>({i:t.i,time:t.time,price:t.price,devAtr:t.devAbs/atr[t.i],role:t.role})),
+        nTouches:m.nTotal,nFit:m.nFit,nValidation:m.nValidation,
+        bodyCrossAfter:m.bodyCrossAfter,wickCrossAfter:m.wickCrossAfter,crossesBetween:m.crossesBetween,
+        brokenAt:m.brokenAt,brokenTime:m.brokenAt!=null?c[m.brokenAt].time:null,
+        rmsResAtr:m.rmsRes,spanBars:sc.span,lastTouchIdx:m.lastTouchIdx,barsSinceTouch:sc.since,
+        score:sc.score,scoreParts:sc.parts,
+        points:[{time:c[a.i].time,price:m.L(a.i)},{time:c[n-1].time,price:priceNow}],
+        invalidation:{rule:`收盘实体穿越趋势线 ${cfg.breakAtr}×ATR 以上`,levelNow:priceNow+(side==='support'?-1:1)*cfg.breakAtr*lastAtr},
+        source:'两点候选 → 去重触碰 → Theil–Sen 稳健重拟合(≥3 个线附近已确认 Pivot) → 多因子评分(非 R²/触碰数单一指标)',
+        params:{tolAtr:cfg.tolAtr,dedupBars:cfg.dedupBars,minScore:cfg.minScore,atrAtGen:lastAtr}
+      };
+      if(status==='valid'){out.valid.push(rec);anyValid=true;}
+      else if(status==='candidate')out.candidate.push(rec);
+      else out.broken.push(rec);
+    }
+    if(!anyValid)out.reasons[side]={code:'NO_QUALIFIED_TRENDLINE',text:`${side==='support'?'支撑':'阻力'}趋势线:试算 ${tried} 条,无一达到质量门槛(≥${cfg.minScore}分且 ≥1 个独立验证触碰)`};
+  }
+  out.valid.sort((x,y)=>y.score-x.score);out.candidate.sort((x,y)=>y.score-x.score);
+  out.broken=out.broken.sort((x,y)=>(y.brokenAt||0)-(x.brokenAt||0)).slice(0,2);
+  // 每侧最多保留 1 条有效 + 1 条候选
+  const keepBest=(arr)=>{const seen={};return arr.filter(r=>{if(seen[r.side])return false;seen[r.side]=1;return true;});};
+  out.valid=keepBest(out.valid);out.candidate=keepBest(out.candidate.filter(r=>!out.valid.some(v=>v.side===r.side&&Math.abs(v.priceNow-r.priceNow)<0.3*lastAtr)));
+  return out;
+}
+
+/* ── 水平结构 + 技术工具整合(含证据独立性) ───────────────────────────────────
+   每条证据 = {family, kind, price, roots[], params, source}。roots 是它所依赖的原始锚点(Pivot ID 或数据窗口标签)。
+   共享任一 root 的证据属于同一"依赖组件"(union-find),共振只按独立组件数计分,
+   即同一组 Pivot 衍生的趋势线/斐波那契/江恩不会被当成三个独立证据。 */
+function uf(){const p={};const f=x=>{if(p[x]==null)p[x]=x;while(p[x]!==x){p[x]=p[p[x]];x=p[x];}return x;};return{find:f,union:(a,b)=>{p[f(a)]=f(b);}};}
+function reactionTouches(c,atr,lo,hi,cfg){
+  const n=c.length,from=Math.max(0,n-cfg.lookbackBars),hits=[];
+  for(let i=from;i<n;i++)if(c[i].high>=lo&&c[i].low<=hi)hits.push(i);
+  const cl=[];for(const i of hits){const l=cl[cl.length-1];if(l&&i-l.last<=3){l.last=i;l.idx.push(i);}else cl.push({first:i,last:i,idx:[i]});}
+  let react=0;const mid=(lo+hi)/2;
+  for(const g of cl){const i=g.last;if(i>=n-1)continue;const a=atr[i];
+    let up=0,dn=0;for(let j=i+1;j<=Math.min(n-1,i+cfg.reactBars);j++){up=Math.max(up,c[j].high-hi);dn=Math.max(dn,lo-c[j].low);}
+    if(up>=cfg.reactAtr*a||dn>=cfg.reactAtr*a)react++;}
+  return{touches:cl.length,reactions:react,lastTouchIdx:cl.length?cl[cl.length-1].last:null};
+}
+const FAM_W={swing:1.0,volume:1.1,vwap:0.8,trend:1.0,fib:0.6,gann:0.4,band:0.7};
+function buildEvidence(c,atr,piv,trend,H,tf){
+  const n=c.length,a=atr[n-1],price=c[n-1].close,ev=[];
+  const cfg=CFG.zone;
+  const confirmed=piv.confirmed;
+  confirmed.slice(-12).forEach(p=>ev.push({family:'swing',kind:'pivot',price:p.price,roots:[p.id],params:{label:p.label},source:`已确认 Pivot ${p.label||p.type}`}));
+  const hi=confirmed.filter(p=>p.type==='H').pop(),lo=confirmed.filter(p=>p.type==='L').pop();
+  // Fibonacci(沿用现有 fibLevels): 取最近一段已确认摆动
+  if(hi&&lo&&H&&H.fibLevels){
+    const top=Math.max(hi.price,lo.price),bot=Math.min(hi.price,lo.price);
+    if(top-bot>=1.5*a){
+      H.fibLevels(top,bot).filter(f=>f.price>0&&Math.abs(f.price-price)<=8*a&&((f.kind==='retr'&&[0.382,0.5,0.618,0.786].includes(f.r))||(f.kind==='ext'&&[1.272,1.618].includes(f.r))))
+        .forEach(f=>ev.push({family:'fib',kind:f.kind,price:f.price,roots:[hi.id,lo.id],params:{ratio:f.r,swingHigh:top,swingLow:bot},source:`Fib ${(f.r*100).toFixed(1)}% ${f.kind==='ext'?'扩展':'回撤'}(摆动 ${hi.id.split(':')[2]}→${lo.id.split(':')[2]})`}));
+    }
+  }
+  // Gann Fan(沿用 computeGannFan): 价格-时间缩放 = 1 单位 = 1×ATR14 / 每根K线(见该函数注释);仅作确认级证据(低权重)
+  if(H&&H.computeGannFan){
+    [lo,hi].forEach(anc=>{if(!anc)return;
+      try{H.computeGannFan(c,a,{i:anc.i,price:anc.price}).filter(g=>Math.abs(g.price-price)<=6*a)
+        .forEach(g=>ev.push({family:'gann',kind:'gann',price:g.price,roots:[anc.id],params:{scale:'1单位=1×ATR14/bar',atr:a,label:g.label},source:`江恩 ${g.label}(锚 ${anc.type==='L'?'低':'高'}点,1单位=1×ATR/bar)`}));}catch(e){}
+    });
+  }
+  // Volume Profile(沿用 buildVolumeProfile): POC / VAH / VAL / HVN
+  if(H&&H.buildVolumeProfile){
+    try{
+      const vp=H.buildVolumeProfile(c.slice(-300),24);
+      if(vp&&vp.poc!=null){
+        const root=`VP:${tf}:300`;
+        ev.push({family:'volume',kind:'poc',price:vp.poc,roots:[root],params:{pocPct:vp.pocPct},source:'POC 成交成本中枢(近300根)'});
+        if(vp.valueAreaHigh!=null)ev.push({family:'volume',kind:'vah',price:vp.valueAreaHigh,roots:[root],params:{},source:'价值区上沿 VAH'});
+        if(vp.valueAreaLow!=null)ev.push({family:'volume',kind:'val',price:vp.valueAreaLow,roots:[root],params:{},source:'价值区下沿 VAL'});
+        (vp.hvns||[]).forEach(h=>ev.push({family:'volume',kind:'hvn',price:h.price,roots:[root],params:{pct:h.pct},source:'高成交密集区 HVN'}));
+        var vpOut={poc:vp.poc,vah:vp.valueAreaHigh,val:vp.valueAreaLow,hvns:(vp.hvns||[]).map(h=>h.price)};
+      }
+    }catch(e){}
+  }
+  // 锚定 VWAP(沿用 computeAnchoredVWAP): 以已确认 Pivot 为锚
+  let avwapOut=null;
+  if(H&&H.computeAnchoredVWAP){
+    try{
+      const hs=confirmed.filter(p=>p.type==='H').map(p=>({i:p.i,price:p.price})),ls=confirmed.filter(p=>p.type==='L').map(p=>({i:p.i,price:p.price}));
+      const av=H.computeAnchoredVWAP(c,hs,ls,150),last=av&&av.series&&av.series[n-1];
+      if(last){
+        const anc=confirmed.find(p=>p.i===av.anchorIdx),root=anc?anc.id:`AVWAP:${tf}:auto`;
+        ev.push({family:'vwap',kind:'vwap',price:last.vwap,roots:[root],params:{anchorIdx:av.anchorIdx},source:'锚定VWAP'});
+        ev.push({family:'vwap',kind:'vwap+1s',price:last.upper1,roots:[root],params:{},source:'锚定VWAP +1σ'});
+        ev.push({family:'vwap',kind:'vwap-1s',price:last.lower1,roots:[root],params:{},source:'锚定VWAP -1σ'});
+        avwapOut={price:last.vwap,upper1:last.upper1,lower1:last.lower1,anchorId:anc?anc.id:null,anchorIdx:av.anchorIdx};
+      }
+    }catch(e){}
+  }
+  // 趋势线(有效): 当前价格位
+  trend.valid.forEach(t=>ev.push({family:'trend',kind:'trendline',price:t.priceNow,roots:t.anchors.map(x=>x.pivotId),params:{id:t.id,score:t.score},source:`趋势线 ${t.side==='support'?'支撑':'阻力'}(${t.score}分)`,refId:t.id}));
+  return{evidence:ev.filter(e=>isNum(e.price)&&e.price>0),volume:typeof vpOut==='undefined'?null:vpOut,avwap:avwapOut};
+}
+function buildZones(c,atr,ev,price,includeInvalid){
+  const n=c.length,a=atr[n-1],cfg=CFG.zone,tol=cfg.tolAtr*a;
+  const sorted=ev.slice().sort((x,y)=>x.price-y.price),cls=[];
+  for(const e of sorted){const l=cls[cls.length-1];
+    if(l&&Math.abs(e.price-l.avg)<=tol){l.items.push(e);l.avg=l.items.reduce((s,x)=>s+x.price,0)/l.items.length;}
+    else cls.push({avg:e.price,items:[e]});}
+  const zones=[];
+  for(const cl of cls){
+    const u=uf();
+    cl.items.forEach(it=>{it.roots.forEach(r=>u.find(r));for(let k=1;k<it.roots.length;k++)u.union(it.roots[0],it.roots[k]);});
+    // 不同 root 但同一 family 且本身同源(如 VP 窗口)已由 root 标签合并
+    cl.items.forEach(x=>cl.items.forEach(y=>{if(x!==y&&x.roots.some(r=>y.roots.includes(r)))u.union(x.roots[0],y.roots[0]);}));
+    const comps={};cl.items.forEach(it=>{const k=u.find(it.roots[0]);(comps[k]=comps[k]||[]).push(it);});
+    const compList=Object.values(comps);
+    const indep=compList.length;
+    const fams=[...new Set(cl.items.map(i=>i.family))];
+    const lo=Math.min(...cl.items.map(i=>i.price))-0.1*a,hi=Math.max(...cl.items.map(i=>i.price))+0.1*a;
+    const rt=reactionTouches(c,atr,lo,hi,cfg);
+    const weight=compList.reduce((s,comp)=>s+Math.max(...comp.map(i=>FAM_W[i.family]||0.5)),0);
+    const recency=rt.lastTouchIdx==null?0:Math.exp(-(n-1-rt.lastTouchIdx)/80);
+    const quality=Math.round(100*(0.5*Math.min(1,indep/3)+0.35*Math.min(1,rt.reactions/3)+0.15*recency));
+    const valid=(indep>=cfg.minIndep&&(rt.reactions>=1||fams.includes('volume')))||rt.reactions>=cfg.minReact;
+    zones.push({
+      id:`Z:${fnv(cl.items.map(i=>i.source+'|'+Math.round(i.price*1e6)).sort().join(';')).slice(0,6)}:${Math.round((lo+hi)/2*1e4)}`,
+      kind:'zone',lo,hi,mid:(lo+hi)/2,rawCount:cl.items.length,independent:indep,families:fams,
+      sources:cl.items.map(i=>i.source),roots:[...new Set(cl.items.flatMap(i=>i.roots))],refs:cl.items.filter(i=>i.refId).map(i=>i.refId),
+      touches:rt.touches,reactions:rt.reactions,weight,quality,valid,
+      side:price<lo?'resistance':price>hi?'support':'inside',
+      invalidation:{rule:'收盘实体穿越区间边界 0.5×ATR 以上',lo:lo-0.5*a,hi:hi+0.5*a},
+      note:cl.items.length>indep?`${cl.items.length} 条证据按依赖关系合并为 ${indep} 个独立来源`:null
+    });
+  }
+  return zones.filter(z=>includeInvalid||z.valid).sort((x,y)=>Math.abs(x.mid-price)-Math.abs(y.mid-price));
+}
+
+/* ── 突破 / 跌破 / 回踩 / 假突破 事件 ───────────────────────────────────── */
+function breakEvents(c,atr,ref,startIdx){
+  const cfg=CFG.ev,n=c.length,evs=[];
+  const band=i=>ref.band(i); // {lo,hi}
+  let state='intact',breakIdx=null,dir=0;
+  for(let i=Math.max(1,startIdx);i<n;i++){
+    const b=band(i),a=atr[i],prevB=band(i-1);
+    if(state==='intact'){
+      if(c[i].close>b.hi+cfg.breakAtr*a&&c[i-1].close<=prevB.hi+cfg.breakAtr*a&&ref.allow.includes('up')){state='broken';dir=1;breakIdx=i;evs.push({type:'break_up',idx:i});}
+      else if(c[i].close<b.lo-cfg.breakAtr*a&&c[i-1].close>=prevB.lo-cfg.breakAtr*a&&ref.allow.includes('down')){state='broken';dir=-1;breakIdx=i;evs.push({type:'break_down',idx:i});}
+    }else if(state==='broken'){
+      const lvl=dir>0?b.hi:b.lo,closedBack=dir>0?c[i].close<lvl:c[i].close>lvl;
+      if(closedBack){const late=i-breakIdx>cfg.fakeoutBars;evs.push({type:late?'retest_fail':'fakeout',idx:i});state=late?'retest_fail':'fakeout';break;}
+      const touched=dir>0?c[i].low<=lvl+0.1*a:c[i].high>=lvl-0.1*a;
+      if(touched&&(dir>0?c[i].close>=lvl:c[i].close<=lvl)&&i>breakIdx){evs.push({type:'retest_success',idx:i});state='retested';break;}
+      if(i-breakIdx>=cfg.retestBars){state='broken_unretested';break;}
+    }
+  }
+  const last=evs[evs.length-1];
+  const lvl=breakIdx!=null?(dir>0?band(breakIdx).hi:band(breakIdx).lo):null;
+  return{state:state==='broken'&&breakIdx!=null?'broken_pending':state,dir,breakIdx,events:evs.map(e=>({id:`EV:${ref.id}:${e.type}:${c[e.idx].time}`,type:e.type,refId:ref.id,refKind:ref.kind,idx:e.idx,time:c[e.idx].time,price:c[e.idx].close,level:lvl,dir})),lastType:last?last.type:null};
+}
+function detectAllEvents(c,atr,trend,zones){
+  const n=c.length,start=n-CFG.ev.window,refs=[];
+  trend.valid.concat(trend.broken).forEach(t=>refs.push({id:t.id,kind:'trendline',allow:[t.side==='resistance'?'up':'down'],
+    band:i=>{const v=t.p0+t.slopePerBar*(i-t.i0),tl=Math.max(CFG.tl.tolAtr*atr[Math.min(i,n-1)],CFG.tl.tolPct*c[Math.min(i,n-1)].close);return{lo:v-tl,hi:v+tl};}}));
+  zones.filter(z=>z.quality>=40).slice(0,8).forEach(z=>refs.push({id:z.id,kind:'zone',allow:['up','down'],band:()=>({lo:z.lo,hi:z.hi})}));
+  const events=[],states={};
+  refs.forEach(r=>{const res=breakEvents(c,atr,r,start);res.events.forEach(e=>events.push(e));states[r.id]={state:res.state,dir:res.dir,breakIdx:res.breakIdx,lastType:res.lastType};});
+  events.sort((x,y)=>x.idx-y.idx);
+  return{events,states};
+}
+
+/* ── 市场状态 ──────────────────────────────────────────────────────────── */
+function classifyRegime(c,atr,state,evs,piv){
+  const n=c.length,closes=c.map(x=>x.close),reasons=[];
+  const w=20,net=Math.abs(closes[n-1]-closes[Math.max(0,n-1-w)]);let path=0;for(let i=Math.max(1,n-w);i<n;i++)path+=Math.abs(closes[i]-closes[i-1]);
+  const ER=path>0?net/path:0;
+  const aw=atr.slice(-100),atrRatio=atr[n-1]/(median(aw)||atr[n-1]);
+  const seg=c.slice(-40),rangeAtr=(Math.max(...seg.map(x=>x.high))-Math.min(...seg.map(x=>x.low)))/atr[n-1];
+  const rs=rsiArr(closes,14);
+  const recentEv=evs.events.filter(e=>e.idx>=n-6&&(e.type==='break_up'||e.type==='break_down'));
+  let exhaustion=false;
+  const H=piv.confirmed.filter(p=>p.type==='H'),L=piv.confirmed.filter(p=>p.type==='L');
+  if(state.trend==='up'&&H.length>=2){const h1=H[H.length-1],h0=H[H.length-2];
+    if(h1.price>h0.price&&rs[h1.i]!=null&&rs[h0.i]!=null&&rs[h1.i]<rs[h0.i]-3){exhaustion=true;reasons.push(`顶背离:新高 RSI ${rs[h1.i].toFixed(0)} < 前高 RSI ${rs[h0.i].toFixed(0)}`);}
+    const l1=L[L.length-1],l0=L[L.length-2];
+    if(l1&&l0&&(h1.price-l1.price)<0.6*(h0.price-l0.price)&&h0.i>l0.i){exhaustion=true;reasons.push('最近一波推动幅度不足前一波的 60%');}}
+  if(state.trend==='down'&&L.length>=2){const l1=L[L.length-1],l0=L[L.length-2];
+    if(l1.price<l0.price&&rs[l1.i]!=null&&rs[l0.i]!=null&&rs[l1.i]>rs[l0.i]+3){exhaustion=true;reasons.push(`底背离:新低 RSI ${rs[l1.i].toFixed(0)} > 前低 RSI ${rs[l0.i].toFixed(0)}`);}}
+  let regime;
+  if(state.trend==='unknown'){regime='unknown';reasons.push(state.reason);}
+  else if(state.trend.startsWith('transition')){regime='transition';reasons.push(state.reason);}
+  else if(recentEv.length&&!evs.events.some(e=>e.idx>=recentEv[0].idx&&(e.type==='fakeout'||e.type==='retest_fail'))){regime='breakout_attempt';reasons.push(`近 6 根内出现${recentEv[recentEv.length-1].type==='break_up'?'向上':'向下'}突破,尚待站稳/回踩确认`);}
+  else if(exhaustion){regime='exhaustion';}
+  else if((state.trend==='up'||state.trend==='down')&&ER>=0.3){regime='trend';reasons.push(`结构${state.trend==='up'?'上升':'下降'}且效率比 ER=${ER.toFixed(2)}≥0.30`);}
+  else{regime='range';reasons.push(`ER=${ER.toFixed(2)},近40根振幅 ${rangeAtr.toFixed(1)}×ATR,${state.reason}`);}
+  return{regime,reasons,metrics:{ER,atrRatio,rangeAtr,rsi:rs[n-1]}};
+}
+
+/* ── 单周期完整分析 ─────────────────────────────────────────────────────── */
+function analyzeTF(raw,tf,H,opts){
+  opts=opts||{};const t0=Date.now();
+  const out={tf,tfSec:tfSec(tf),status:'ok',statusReason:null,errors:[]};
+  const minBars=opts.minBars||CFG.dq.minBarsStructure;
+  let dq;try{dq=opts.alreadyClean?{candles:raw,status:raw.length<CFG.dq.minBars?'invalid':'ok',issues:[],kept:raw.length,total:raw.length}:checkCandles(raw,tf,opts.nowSec);}catch(e){out.status='invalid';out.statusReason='DATA_CHECK_FAILED: '+e.message;return out;}
+  dq.sufficientForStructure=dq.candles.length>=minBars&&dq.status!=='invalid';
+  out.dq={status:dq.status,issues:dq.issues,kept:dq.kept,total:dq.total,forming:dq.forming};
+  const c=dq.candles;
+  if(dq.status==='invalid'){out.status='invalid';out.statusReason=`DATA_MISSING_OR_INVALID: 有效K线 ${c.length} 根或缺口过多`;return out;}
+  if(!dq.sufficientForStructure){out.status='insufficient';out.statusReason=`STRUCTURE_INSUFFICIENT: 仅 ${c.length} 根已收盘K线(结构分析需 ≥${minBars})`;return out;}
+  const n=c.length,atr=atrWilder(c);
+  out.n=n;out.lastBarTime=c[n-1].time;out.price=c[n-1].close;out.atr=atr[n-1];out.candles=c;out.atrArr=atr;
+  try{
+    const piv=findPivots(c,atr,tf);out.pivots=piv;
+    out.state=structureState(c,piv.confirmed,atr);out.bias=biasOf(out.state.trend);
+    out.trendlines=fitTrendlines(c,atr,piv.confirmed,tf);
+    const ev=buildEvidence(c,atr,piv,out.trendlines,H,tf);
+    out.evidence=ev.evidence;out.volume=ev.volume;out.avwap=ev.avwap;
+    out.zones=buildZones(c,atr,ev.evidence,out.price);
+    out.events=detectAllEvents(c,atr,out.trendlines,out.zones);
+    out.regime=classifyRegime(c,atr,out.state,out.events,piv);
+    const reasons=[];
+    if(!out.trendlines.valid.length)reasons.push('NO_QUALIFIED_TRENDLINE');
+    out.diag=reasons;
+  }catch(e){out.status='error';out.statusReason='ENGINE_ERROR: '+e.message;out.errors.push({layer:'analyzeTF',message:e.message,stack:String(e.stack||'').split('\n').slice(0,4).join(' | ')});}
+  out.ms=Date.now()-t0;
+  return out;
+}
+
+/* ── 多周期 ─────────────────────────────────────────────────────────────── */
+function mtfAssess(L){
+  const avail=n=>!!(L[n]&&L[n].status==='ok');
+  const cov={high:avail('high'),mid:avail('mid'),low:avail('low')};
+  const strong=x=>x==null?0:(Math.abs(x)>=1?Math.sign(x):0);
+  const bias={high:cov.high?L.high.bias:null,mid:cov.mid?L.mid.bias:null,low:cov.low?L.low.bias:null};
+  const names={high:L.high&&L.high.tf,mid:L.mid&&L.mid.tf,low:L.low&&L.low.tf};
+  const conflicts=[];
+  const pairs=[['high','mid'],['high','low'],['mid','low']];
+  pairs.forEach(([x,y])=>{if(cov[x]&&cov[y]&&strong(bias[x])&&strong(bias[y])&&strong(bias[x])!==strong(bias[y]))
+    conflicts.push({a:x,b:y,text:`${names[x]}(${bias[x]>0?'上升':'下降'}) 与 ${names[y]}(${bias[y]>0?'上升':'下降'}) 结构方向相反`});});
+  ['high','mid'].forEach(x=>{if(cov[x]&&cov.low&&strong(bias[x])&&Math.abs(bias.low)===0.5&&Math.sign(bias.low)!==strong(bias[x]))
+    conflicts.push({a:x,b:'low',text:`${names[x]} 趋势方向与 ${names.low} 出现反向结构转换(CHoCH)`});});
+  // 方向基准: 高周期优先,其次中周期
+  let refDir=0,refFrom=null;
+  if(strong(bias.high)){refDir=strong(bias.high);refFrom='high';}
+  else if(strong(bias.mid)){refDir=strong(bias.mid);refFrom='mid';}
+  const blocking=conflicts.some(c=>(c.a==='high'&&c.b==='mid'));
+  const w={high:0.5,mid:0.3,low:0.2};let num=0,den=0;
+  ['high','mid','low'].forEach(k=>{if(!cov[k])return;den+=w[k];const d=strong(bias[k]);num+=w[k]*(refDir===0?(d===0?1:0.4):(d===refDir?1:d===0?0.4:0));});
+  const alignment=den?num/den:0;
+  const anyAvail=cov.high||cov.mid;
+  const text=!anyAvail?'高/中周期数据不可用,仅有低周期结构':
+    (conflicts.length?`周期冲突: ${conflicts.map(c=>c.text).join('; ')}`:(refDir?`${names[refFrom]} 主导${refDir>0?'多头':'空头'},周期一致`:'各周期均无明确趋势(震荡)'));
+  return{coverage:cov,bias,names,conflicts,refDir,refFrom,blocking,alignment,anyAvailable:anyAvail,text,
+    rangeMode:refDir===0&&anyAvail};
+}
+
+/* ── 条件化策略 ─────────────────────────────────────────────────────────── */
+const q7=x=>+Number(x).toPrecision(7);
+function lineBand(ref,offset){ // offset: 相对生成K线的根数(0=生成K线,1=下一根…)
+  if(ref.line){const v=ref.line.priceAtGen+ref.line.slopePerBar*offset;return{lo:v-ref.line.tol,hi:v+ref.line.tol};}
+  return{lo:ref.lo,hi:ref.hi};
+}
+function triggerHit(plan,bar,band){
+  const d=plan.dirSign;
+  if(plan.setup==='breakout')return d>0?bar.close>plan.triggerLevel:bar.close<plan.triggerLevel;
+  const touched=d>0?bar.low<=band.hi:bar.high>=band.lo,mid=(band.lo+band.hi)/2;
+  const conf=d>0?(bar.close>mid&&bar.close>bar.open):(bar.close<mid&&bar.close<bar.open);
+  return touched&&conf;
+}
+function buildRefs(low){
+  const S=CFG.strat,n=low.n,a=low.atr,price=low.price,refs=[];
+  const st=low.events.states;
+  low.zones.forEach(z=>{
+    const s=st[z.id]||{};
+    refs.push({id:z.id,kind:'zone',lo:z.lo,hi:z.hi,mid:z.mid,quality:z.quality,independent:z.independent,line:null,
+      retestDir:(s.dir&&s.breakIdx!=null&&s.breakIdx>=n-20&&(s.state==='broken_pending'||s.state==='retested'||s.state==='broken_unretested'))?s.dir:0,breakIdx:s.breakIdx,
+      evidence:[{id:z.id,text:`价格区 ${z.lo.toFixed(6).replace(/0+$/,'')}–${z.hi.toFixed(6).replace(/0+$/,'')}: ${z.sources.slice(0,6).join(' / ')}${z.sources.length>6?' …':''}`}].concat((z.refs||[]).map(r=>({id:r,text:'含趋势线 '+r}))),
+      note:z.note});
+  });
+  low.trendlines.valid.forEach(t=>{
+    const v=t.priceNext,tol=t.tolNow,s=st[t.id]||{};
+    refs.push({id:t.id,kind:'trendline',side:t.side,lo:v-tol,hi:v+tol,mid:v,quality:t.score,independent:1,
+      line:{slopePerBar:t.slopePerBar,priceAtGen:t.priceNow,tol},retestDir:0,
+      evidence:[{id:t.id,text:`趋势线(${t.side==='support'?'支撑':'阻力'}) ${t.score} 分,独立验证触碰 ${t.nValidation} 次,残差 ${t.rmsResAtr.toFixed(2)}ATR`}]});
+  });
+  // 刚被突破的趋势线 → 回踩参考
+  low.trendlines.broken.forEach(t=>{
+    if(t.brokenAt==null||t.brokenAt<n-20)return;
+    const s=st[t.id]||{};if(s.state==='fakeout'||s.state==='retest_fail')return;
+    const v=t.priceNext,tol=t.tolNow,dir=t.side==='resistance'?1:-1;
+    refs.push({id:t.id,kind:'trendline',side:t.side,lo:v-tol,hi:v+tol,mid:v,quality:Math.max(40,t.score),independent:1,line:{slopePerBar:t.slopePerBar,priceAtGen:t.priceNow,tol},
+      retestDir:dir,breakIdx:t.brokenAt,evidence:[{id:t.id,text:`已被${dir>0?'向上':'向下'}突破的趋势线(${t.side==='resistance'?'阻力':'支撑'}),转为回踩参考`}]});
+  });
+  // 已确认摆动点: 仅作为目标障碍,不作为入场参考
+  const pivs=[];
+  low.pivots.confirmed.slice(-8).forEach(p=>pivs.push({id:p.id,kind:'pivot',lo:p.price,hi:p.price,mid:p.price,quality:40,independent:1,line:null,retestDir:0,evidence:[{id:p.id,text:'已确认摆动 '+p.label}]}));
+  return{refs,pivs};
+}
+function pickTargets(d,entry,a,refs,pivs,leg){
+  const S=CFG.strat;
+  const obs=refs.filter(r=>r.kind==='zone'?r.quality>=S.minObstacleQuality:true).concat(pivs);
+  const ahead=obs.filter(r=>d>0?r.lo-entry>=S.minTargetGapAtr*a&&r.mid>entry:entry-r.hi>=S.minTargetGapAtr*a&&r.mid<entry);
+  ahead.sort((x,y)=>d>0?x.lo-y.lo:y.hi-x.hi);
+  const out=[];const seen=[];
+  for(const r of ahead){const edge=d>0?r.lo:r.hi;if(seen.some(e=>Math.abs(e-edge)<0.3*a))continue;seen.push(edge);
+    out.push({price:d>0?edge-S.targetFrontRunAtr*a:edge+S.targetFrontRunAtr*a,basis:`${r.kind==='pivot'?'前方摆动位':r.kind==='trendline'?'前方趋势线':'前方结构区'} ${r.id}`,refId:r.id});
+    if(out.length>=2)break;}
+  if(!out.length&&leg>=1.0*a)out.push({price:entry+d*leg,basis:'等幅推动(最近一段已确认摆动幅度)',refId:null});
+  return out;
+}
+function evaluateCandidate(d,setup,ref,env){
+  const S=CFG.strat,{low,price,a,n,c}=env,blockers=[],checks=[];
+  const mk=(id,pass,text)=>checks.push({id,pass,text});
+  let triggerLevel=null,state='pending',entryRef,entryBasis,lateBars=0,triggerBarOffset=null;
+  const band0=lineBand(ref,0);
+  const plan={dirSign:d,direction:d>0?'LONG':'SHORT',setup,ref:{id:ref.id,kind:ref.kind,lo:ref.lo,hi:ref.hi,mid:ref.mid,line:ref.line||null,quality:ref.quality,independent:ref.independent}};
+  if(setup==='breakout'){
+    const edge=d>0?ref.hi:ref.lo;
+    triggerLevel=edge+d*S.triggerBufAtr*a;plan.triggerLevel=triggerLevel;
+    const stt=low.events.states[ref.id]||{},ext=d*(price-edge);
+    const justBroke=stt.dir===d&&stt.breakIdx!=null&&stt.breakIdx>=n-3&&stt.state==='broken_pending';
+    if(justBroke&&d*(c[n-1].close-triggerLevel)>0){
+      if(ext>S.breakoutLateExtAtr*a){blockers.push({code:'EXTENDED',text:`突破后已延伸 ${ (ext/a).toFixed(2)}×ATR(>${S.breakoutLateExtAtr}),追价不合理,等回踩`});}
+      state='triggered';lateBars=n-1-stt.breakIdx;entryRef=price;entryBasis='market_after_confirm';
+    }else{
+      if(d*(edge-price)<-0.1*a){blockers.push({code:'ALREADY_BEYOND',text:'价格已越过该位但无新鲜的收盘突破事件'});}
+      if(d*(edge-price)>S.breakoutReachAtr*a)blockers.push({code:'TOO_FAR',text:`距突破位 ${(d*(edge-price)/a).toFixed(2)}×ATR,超出 ${S.breakoutReachAtr}×ATR 触发范围`});
+      entryRef=triggerLevel;entryBasis='stop_entry';
+    }
+    plan.triggerRule={type:'breakout_close',level:triggerLevel,text:`${d>0?'收盘价站上':'收盘价跌破'} ${q7(triggerLevel)}(位 ${q7(edge)} ${d>0?'+':'−'} ${S.triggerBufAtr}×ATR)`};
+    plan.entryZone={lo:Math.min(triggerLevel,triggerLevel+d*0.5*a),hi:Math.max(triggerLevel,triggerLevel+d*0.5*a)};
+  }else{ // pullback / retest
+    const away=d>0?price-ref.lo:ref.hi-price; // 价格仍在参考位正确一侧的距离
+    const gap=d>0?price-ref.hi:ref.lo-price;
+    if(away<0)blockers.push({code:'REF_BROKEN',text:'价格已收在参考位错误一侧(结构被破坏)'});
+    if(gap>S.pullbackReachAtr*a)blockers.push({code:'TOO_FAR',text:`距入场区 ${(gap/a).toFixed(2)}×ATR,超出 ${S.pullbackReachAtr}×ATR 触发范围`});
+    entryRef=d>0?ref.hi:ref.lo;entryBasis='zone_edge';
+    plan.triggerRule={type:'touch_and_confirm',text:`价格触及入场区并出现${d>0?'收阳且收于区间中点之上':'收阴且收于区间中点之下'}的收盘K线`};
+    plan.entryZone={lo:ref.lo,hi:ref.hi};
+    // 已触发? 最近两根已收盘K线
+    for(const off of [0,-1]){
+      const bar=c[n-1+off];if(!bar)continue;
+      if(triggerHit({dirSign:d,setup},bar,lineBand(ref,off))){
+        const ext=d>0?price-ref.hi:ref.lo-price;
+        if(ext<=S.lateExtAtr*a&&d*(price-(d>0?ref.lo:ref.hi))>0){state='triggered';lateBars=-off;entryRef=price;entryBasis='market_after_confirm';triggerBarOffset=off;break;}
+      }
+    }
+  }
+  // 止损
+  let sl=d>0?ref.lo-S.slBufAtr*a:ref.hi+S.slBufAtr*a,slBasis='参考位外侧 '+S.slBufAtr+'×ATR';
+  let stopDist=d*(entryRef-sl);
+  if(stopDist<S.slAtrMin*a){sl=entryRef-d*S.slAtrMin*a;stopDist=S.slAtrMin*a;slBasis=`距入场不足 ${S.slAtrMin}×ATR,按最小止损距离设置`;}
+  if(stopDist>S.slAtrMax*a)blockers.push({code:'STOP_TOO_WIDE',text:`止损距离 ${(stopDist/a).toFixed(2)}×ATR 超过 ${S.slAtrMax}×ATR 上限`});
+  mk('stop',stopDist<=S.slAtrMax*a,`止损距离 ${(stopDist/a).toFixed(2)}×ATR(区间 ${S.slAtrMin}–${S.slAtrMax})`);
+  // 目标
+  const piv=env.pivs.filter(p=>d>0?p.mid>entryRef:p.mid<entryRef);
+  const tgts=pickTargets(d,entryRef,a,env.refs.filter(r=>r.id!==ref.id),piv,env.leg);
+  let rr=null;
+  const tps=tgts.map(t=>({price:t.price,basis:t.basis,refId:t.refId,rr:stopDist>0?d*(t.price-entryRef)/stopDist:null}));
+  if(!tps.length)blockers.push({code:'NO_TARGET',text:'前方没有可用的结构目标位(也没有足够的推动幅度可作等幅目标)'});
+  else{rr=tps[0].rr;mk('rr',rr>=S.minRR,`风险回报 ${rr.toFixed(2)}R(门槛 ${S.minRR}R,TP1=${tps[0].basis})`);if(rr<S.minRR)blockers.push({code:'RR_BELOW_MIN',text:`到第一结构目标的风险回报 ${rr.toFixed(2)}R < ${S.minRR}R;不会改选更远目标来凑数`});}
+  mk('quality',ref.quality>=S.minStructQuality,`参考结构质量 ${ref.quality}(门槛 ${S.minStructQuality})`);
+  if(ref.quality<S.minStructQuality)blockers.push({code:'STRUCTURE_QUALITY_LOW',text:`结构质量 ${ref.quality} < ${S.minStructQuality}`});
+  Object.assign(plan,{state,entryRef,entryBasis,sl,slBasis,stopDist,stopAtr:stopDist/a,stopPct:stopDist/entryRef*100,tps,rr,lateBars,triggerBarOffset,
+    evidence:ref.evidence,structureQualityRef:ref.quality,checks,blockers});
+  plan.notionalPerEquity=(S.maxRiskPct/100)/(stopDist/entryRef);
+  plan.riskPct=S.maxRiskPct;
+  return plan;
+}
+function buildStrategy(ctx){
+  const S=CFG.strat,{symbol,tf,low,mtf}=ctx;
+  const base={ruleVersion:VERSION,symbol,tf,generatedBarTime:low&&low.lastBarTime||null};
+  const none=(reasons,waitFor,extra)=>Object.assign({},base,{direction:'NO_TRADE',dirSign:0,state:'no_trade',reasons,waitFor:waitFor||[],candidates:[],checks:[]},extra||{});
+  if(!low||low.status!=='ok'){
+    const code=low&&low.status==='insufficient'?'STRUCTURE_INSUFFICIENT':'DATA_MISSING_OR_INVALID';
+    return none([{code,text:low?low.statusReason:'无低周期数据'}],['等待有效、足量的行情数据']);
+  }
+  if(!mtf.anyAvailable)return none([{code:'MTF_UNAVAILABLE',text:'高/中周期数据都不可用,无法做自上而下验证,不生成交易计划'}],['等待高/中周期数据可用']);
+  if(mtf.blocking)return none([{code:'MTF_CONFLICT',text:mtf.text}],['等待高、中周期结构重新一致(不强行统一结论)'],{mtf:{text:mtf.text,conflicts:mtf.conflicts}});
+  const n=low.n,c=low.candles,a=low.atr,price=low.price,{refs,pivs}=buildRefs(low);
+  const Hs=low.pivots.confirmed.filter(p=>p.type==='H').pop(),Ls=low.pivots.confirmed.filter(p=>p.type==='L').pop();
+  const leg=Hs&&Ls?Math.abs(Hs.price-Ls.price):0;
+  const env={low,price,a,n,c,refs,pivs,leg};
+  const dirs=mtf.refDir?[mtf.refDir]:[1,-1];
+  const cands=[];
+  dirs.forEach(d=>{
+    refs.filter(r=>r.kind!=='pivot').forEach(r=>{
+      const supportish=r.mid<price,resistish=r.mid>price;
+      // 回踩/回测: 价格上方的结构做空 / 下方的结构做多
+      if((d>0&&supportish)||(d<0&&resistish)){
+        const isRetest=r.retestDir===d;
+        // 区间模式下只做区间边缘的回踩,不做回踩之外的追突破
+        cands.push(evaluateCandidate(d,isRetest?'retest':'pullback',r,env));
+      }
+      // 突破: 价格下方的阻力 / 上方的支撑被穿越
+      if(!mtf.rangeMode&&((d>0&&resistish)||(d<0&&supportish))){
+        if(r.retestDir===0&&(r.kind==='zone'||(r.kind==='trendline'&&r.side===(d>0?'resistance':'support'))))cands.push(evaluateCandidate(d,'breakout',r,env));
+      }
+      // 刚发生突破、价格已越过位的"已触发突破"
+      if(!mtf.rangeMode&&((d>0&&supportish)||(d<0&&resistish))&&r.retestDir===d&&r.breakIdx!=null&&r.breakIdx>=n-3)cands.push(evaluateCandidate(d,'breakout',r,env));
+    });
+  });
+  // MTF 方向门槛 + 区间模式限制
+  cands.forEach(p=>{
+    if(mtf.refDir&&p.dirSign!==mtf.refDir)p.blockers.push({code:'AGAINST_HTF',text:'与高/中周期主导方向相反'});
+    if(mtf.rangeMode&&p.setup==='breakout')p.blockers.push({code:'RANGE_NO_BREAKOUT',text:'震荡市不做未经确认的突破追单'});
+    const conf=mtf.conflicts.filter(x=>x.b==='low'||x.a==='low');
+    if(conf.length)p.mtfNote='低周期与大周期存在分歧: '+conf.map(x=>x.text).join('; ');
+  });
+  // 排序: 无阻断 > 已触发 > 近 > RR
+  const tradable=cands.filter(p=>!p.blockers.length);
+  tradable.sort((x,y)=>(y.state==='triggered')-(x.state==='triggered')||(y.rr||0)-(x.rr||0));
+  if(!tradable.length){
+    const top=cands.slice().sort((x,y)=>x.blockers.length-y.blockers.length||Math.abs(x.entryRef-price)-Math.abs(y.entryRef-price)).slice(0,3);
+    const reasons=top.length?top[0].blockers.map(b=>({code:b.code,text:b.text})):[{code:'NO_SETUP',text:'当前价格附近没有符合条件的已验证结构(支撑/阻力区或有效趋势线)'}];
+    const code=top.length?'NO_TRADE_RISK_CRITERIA':'NO_SETUP';
+    const wait=[];
+    if(top[0]&&top[0].ref)wait.push(`等待价格回到 ${top[0].ref.kind==='trendline'?'趋势线':'结构区'} ${top[0].ref.lo.toFixed(6).replace(/0+$/,'')}–${top[0].ref.hi.toFixed(6).replace(/0+$/,'')} 附近并出现收盘确认`);
+    return none([{code,text:'没有符合风险标准的交易机会'}].concat(reasons),wait,{candidates:top.map(p=>({setup:p.setup,direction:p.direction,blockers:p.blockers,rr:p.rr,refId:p.ref.id})),mtf:{text:mtf.text,conflicts:mtf.conflicts}});
+  }
+  const p=tradable[0],alts=tradable.slice(1,3);
+  // 结构质量(不是胜率): 参考结构 60% + 周期一致 25% + 低周期结构 15%
+  const lowState=Math.abs(low.bias)===1&&Math.sign(low.bias)===p.dirSign?1:Math.abs(low.bias)===0?0.5:0.3;
+  const structureQuality=Math.round(0.6*p.structureQualityRef+25*mtf.alignment+15*lowState);
+  const dataSufficiency=Math.round(100*Math.min(1,low.n/400)*(low.dq.status==='ok'?1:0.8));
+  const id=`SG-${fnv([symbol,tf,p.setup,p.dirSign,p.ref.id,p.state==='triggered'?low.lastBarTime:'p'].join('|'))}`;
+  return Object.assign({},base,p,{
+    id,dedupeKey:`${symbol}|${tf}|${p.setup}|${p.dirSign}|${p.ref.id}`,
+    structureQuality,dataSufficiency,historical:null,
+    mtf:{text:mtf.text,alignment:mtf.alignment,conflicts:mtf.conflicts,refDir:mtf.refDir,coverage:mtf.coverage,bias:mtf.bias},
+    regime:low.regime.regime,expiryBars:S.expiryBars,validUntil:low.lastBarTime+S.expiryBars*low.tfSec,
+    invalidations:[`收盘价越过止损 ${q7(p.sl)}`,'参考结构被收盘实体穿越 0.5×ATR 以上(触发前即取消)',`超过 ${S.expiryBars} 根K线仍未触发则失效`],
+    waitFor:p.state==='pending'?[p.triggerRule.text]:[],
+    alternatives:alts.map(x=>({setup:x.setup,direction:x.direction,rr:x.rr,refId:x.ref.id})),
+    status:p.state==='triggered'?'已触发(按收盘确认,下一根开盘介入)':'条件未触发 · 待确认'
+  });
+}
+
+/* ── 完整多周期分析 ─────────────────────────────────────────────────────── */
+function analyzeAll(a){
+  const H=a.helpers||{},tf=a.tf,mTf=higherTf(tf),hTf=mTf!==tf?higherTf(mTf):tf;
+  const cap=x=>x&&x.length>1600?x.slice(-1600):x;
+  const opts={nowSec:a.nowSec,alreadyClean:!!a.alreadyClean};
+  const levels={};
+  levels.low=analyzeTF(cap(a.low),tf,H,opts);
+  const hopts=Object.assign({},opts,{minBars:80});
+  levels.mid=(mTf!==tf&&a.mid)?analyzeTF(cap(a.mid),mTf,H,hopts):null;
+  levels.high=(hTf!==mTf&&mTf!==tf&&a.high)?analyzeTF(cap(a.high),hTf,H,hopts):null;
+  const mtf=mtfAssess(levels);
+  const plan=buildStrategy({symbol:a.symbol,tf,low:levels.low,mtf});
+  if(plan.direction!=='NO_TRADE'&&levels.low.atr)plan.atrGen=levels.low.atr;
+  const statusList=[];
+  const low=levels.low;
+  if(low.status==='invalid')statusList.push({code:'DATA_MISSING_OR_INVALID',level:'error',text:low.statusReason});
+  else if(low.status==='insufficient')statusList.push({code:'STRUCTURE_INSUFFICIENT',level:'warn',text:low.statusReason});
+  else if(low.status==='error')statusList.push({code:'ENGINE_ERROR',level:'error',text:low.statusReason});
+  else{
+    if(low.dq&&low.dq.status==='degraded')statusList.push({code:'DATA_DEGRADED',level:'warn',text:low.dq.issues.map(i=>i.detail).join('; ')});
+    if(!low.trendlines.valid.length)statusList.push({code:'NO_QUALIFIED_TRENDLINE',level:'info',text:'没有合格趋势线 — 仅使用水平结构/趋势状态等其它有效证据继续分析('+Object.values(low.trendlines.reasons).map(r=>r.text).join(';')+')'});
+    if(mtf.conflicts.length)statusList.push({code:'MTF_CONFLICT',level:'warn',text:mtf.text});
+    ['mid','high'].forEach(k=>{if(levels[k]&&levels[k].status!=='ok')statusList.push({code:'MTF_LEVEL_UNAVAILABLE',level:'warn',text:`${levels[k].tf}: ${levels[k].statusReason}`});});
+    if(plan.direction==='NO_TRADE')statusList.push({code:(plan.reasons[0]&&plan.reasons[0].code)||'NO_TRADE',level:'info',text:plan.reasons.map(r=>r.text).join(';')});
+    else if(plan.state==='pending')statusList.push({code:'STRATEGY_NOT_TRIGGERED',level:'info',text:'策略条件尚未触发 — 保持待确认,不视为已成立信号'});
+  }
+  return{version:VERSION,symbol:a.symbol,tf,generatedAtSec:a.nowSec||null,levels,mtf,plan,statusList,barTime:low.lastBarTime||null};
+}
+/* 可持久化的紧凑快照(不含完整K线数组) */
+function snapshot(an){
+  const low=an.levels.low;if(!low||low.status!=='ok')return{status:low&&low.status,statusList:an.statusList};
+  const tl=t=>({id:t.id,side:t.side,status:t.status,score:t.score,scoreParts:t.scoreParts,anchors:t.anchors,slopePerBar:t.slopePerBar,priceNow:t.priceNow,tolNow:t.tolNow,nTouches:t.nTouches,nValidation:t.nValidation,rmsResAtr:t.rmsResAtr,invalidation:t.invalidation,touches:t.touches});
+  const lvl=L=>L&&L.status==='ok'?{tf:L.tf,trend:L.state.trend,reason:L.state.reason,regime:L.regime.regime,price:L.price,atr:L.atr,lastBarTime:L.lastBarTime}:(L?{tf:L.tf,status:L.status,statusReason:L.statusReason}:null);
+  return{
+    barTime:low.lastBarTime,atr:low.atr,price:low.price,regime:low.regime,state:low.state,
+    pivots:low.pivots.confirmed.slice(-14).map(p=>({id:p.id,type:p.type,label:p.label,time:p.time,price:p.price,confirmedTime:p.confirmedTime})),
+    trendlines:{valid:low.trendlines.valid.map(tl),candidate:low.trendlines.candidate.map(tl),reasons:low.trendlines.reasons},
+    zones:low.zones.slice(0,10).map(z=>({id:z.id,lo:z.lo,hi:z.hi,quality:z.quality,independent:z.independent,rawCount:z.rawCount,reactions:z.reactions,sources:z.sources.slice(0,8)})),
+    events:low.events.events.slice(-8),
+    levels:{low:lvl(an.levels.low),mid:lvl(an.levels.mid),high:lvl(an.levels.high)},
+    mtf:{text:an.mtf.text,conflicts:an.mtf.conflicts,alignment:an.mtf.alignment,bias:an.mtf.bias},
+    dq:low.dq,statusList:an.statusList
+  };
+}
+
+/* ── 回放仿真(实盘追踪与历史回测共用同一份规则) ─────────────────────────────── */
+function simulatePlan(plan,fwd,cfgIn){
+  const cfg=cfgIn||CFG,S=cfg.strat,cost=cfg.cost,d=plan.dirSign;
+  const res={status:'pending',outcome:null,r:null,mfeR:null,maeR:null,ambiguous:0,reason:null};
+  const slip=cost.slipPct/100,fee=cost.feePct/100;
+  let fillIdx=-1;
+  if(plan.state==='triggered'){fillIdx=0;res.triggerTime=plan.generatedBarTime;}
+  else{
+    const lim=Math.min(fwd.length,plan.expiryBars);let trig=-1;
+    for(let k=0;k<lim;k++){
+      const bar=fwd[k],band=lineBand(plan.ref,k+1);
+      if(d*(bar.close-plan.sl)<=0){res.status='cancelled';res.reason='触发前收盘越过止损';res.endIdx=k;res.endTime=bar.time;return res;}
+      if(plan.setup!=='breakout'){const brk=d>0?Math.min(bar.open,bar.close)<band.lo-0.5*plan.atrGen:Math.max(bar.open,bar.close)>band.hi+0.5*plan.atrGen;
+        if(brk){res.status='cancelled';res.reason='触发前结构被收盘实体穿越';res.endIdx=k;res.endTime=bar.time;return res;}}
+      if(triggerHit(plan,bar,band)){trig=k;res.triggerTime=bar.time;break;}
+    }
+    if(trig<0){if(fwd.length>=plan.expiryBars){res.status='expired';res.reason='超过有效期仍未触发';res.endIdx=plan.expiryBars-1;return res;}return res;}
+    fillIdx=trig+1;
+    if(fillIdx>=fwd.length){res.reason='已触发,等待下一根开盘成交';return res;}
+  }
+  const fb=fwd[fillIdx],entry=fb.open*(1+d*slip),tp=plan.tps[0].price;
+  if(d*(plan.sl-entry)>=0){res.status='skipped';res.reason='开盘跳空越过止损,不成交';res.endIdx=fillIdx;return res;}
+  if(d*(tp-entry)<=0){res.status='skipped';res.reason='开盘跳空越过目标,不成交';res.endIdx=fillIdx;return res;}
+  const risk=Math.abs(entry-plan.sl),rrFill=d*(tp-entry)/risk;
+  if(rrFill<S.minRR*S.fillRrTolerance){res.status='skipped';res.reason=`成交价下风险回报 ${rrFill.toFixed(2)}R 已低于门槛的 ${S.fillRrTolerance*100}%,放弃`;res.endIdx=fillIdx;return res;}
+  Object.assign(res,{entryTime:fb.time,entryPrice:entry,entryIdx:fillIdx,risk,rrAtFill:rrFill});
+  let mfe=0,mae=0;
+  for(let j=fillIdx;j<fwd.length;j++){
+    const b=fwd[j],hold=j-fillIdx+1,fav=d>0?b.high:b.low,adv=d>0?b.low:b.high;
+    let exit=null,why=null;
+    if(j>fillIdx){
+      if(d*(plan.sl-b.open)>=0){exit=b.open*(1-d*slip);why='sl_gap';}
+      else if(d*(b.open-tp)>=0){exit=b.open;why='tp_gap';}
+    }
+    mfe=Math.max(mfe,d*(fav-entry)/risk);mae=Math.max(mae,d*(entry-adv)/risk);
+    if(exit==null){
+      const hitSL=d>0?b.low<=plan.sl:b.high>=plan.sl,hitTP=d>0?b.high>=tp:b.low<=tp;
+      if(hitSL&&hitTP){exit=plan.sl*(1-d*slip);why='ambiguous_sl_first';res.ambiguous++;}
+      else if(hitSL){exit=plan.sl*(1-d*slip);why='sl';}
+      else if(hitTP){exit=tp;why='tp';}
+      else if(hold>=S.maxHoldBars){exit=b.close*(1-d*slip);why='timeout';}
+    }
+    if(exit!=null){
+      const pnl=d*(exit-entry)-fee*(entry+exit),r=pnl/risk;
+      Object.assign(res,{status:'closed',outcome:why.startsWith('tp')?'win':why==='timeout'?'timeout':'loss',exitReason:why,r,exitPrice:exit,exitTime:b.time,exitIdx:j,bars:hold,mfeR:mfe,maeR:mae});
+      return res;
+    }
+  }
+  const last=fwd[fwd.length-1];
+  Object.assign(res,{status:'open',r:d*(last.close-entry)/risk,mfeR:mfe,maeR:mae,bars:fwd.length-fillIdx,reason:'持仓中(未实现,未计成本)'});
+  return res;
+}
+/* 结构后续有效性(与交易盈亏分开评估) */
+function evalStructureOutcome(snap,fwd,evFwd){
+  const out=[],S=CFG.tl,horizon=20,atr=snap.atr;
+  const tls=(snap.trendlines&&snap.trendlines.valid)||[];
+  tls.forEach(t=>{
+    let broken=null,touches=0,bounced=0;
+    for(let k=0;k<Math.min(fwd.length,horizon);k++){
+      const b=fwd[k],v=t.priceNow+t.slopePerBar*(k+1),sgn=t.side==='support'?1:-1;
+      if((b.close-v)*sgn<-S.breakAtr*atr){broken=k+1;break;}
+      const ext=t.side==='support'?b.low:b.high;
+      if(Math.abs(ext-v)<=Math.max(S.tolAtr*atr,S.tolPct*b.close)){
+        touches++;let fav=0;for(let j=k+1;j<=Math.min(fwd.length-1,k+6);j++)fav=Math.max(fav,sgn*((t.side==='support'?fwd[j].high:-fwd[j].low)-(t.side==='support'?ext:-ext)));
+        if(fav>=1*atr)bounced++;
+      }
+    }
+    out.push({kind:'trendline',id:t.id,status:broken?'broken':fwd.length>=horizon?'held':'tracking',barsToBreak:broken,touches,bounced,horizon});
+  });
+  (snap.events||[]).filter(e=>(e.type==='break_up'||e.type==='break_down')&&e.level!=null).forEach(e=>{
+    const d=e.type==='break_up'?1:-1,c0=e.price,fw=evFwd?evFwd(e):fwd;let res='tracking';
+    for(let k=0;k<Math.min(fw.length,10);k++){
+      const b=fw[k];
+      if(d*(b.close-e.level)<0){res='fakeout';break;}
+      if(d*((d>0?b.high:b.low)-c0)>=atr){res='continued';break;}
+    }
+    if(res==='tracking'&&fw.length>=10)res='stalled';
+    out.push({kind:'breakout',id:e.id,status:res,dir:d});
+  });
+  return out;
+}
+
+/* ── 统计 ───────────────────────────────────────────────────────────────── */
+function computeStats(trades){
+  const cl=trades.filter(t=>t.sim&&t.sim.status==='closed'),n=cl.length;
+  const rs=cl.map(t=>t.sim.r),wins=rs.filter(r=>r>0),loss=rs.filter(r=>r<=0);
+  const sum=a=>a.reduce((s,x)=>s+x,0);
+  const avgR=n?sum(rs)/n:null;
+  let eq=0,peak=0,dd=0;rs.forEach(r=>{eq+=r;peak=Math.max(peak,eq);dd=Math.max(dd,peak-eq);});
+  const sd=n>1?Math.sqrt(sum(rs.map(r=>(r-avgR)**2))/(n-1)):null;
+  const w=wilson(wins.length,n);
+  const st=s=>trades.filter(t=>t.sim&&t.sim.status===s).length;
+  const dist={'≤-1R':rs.filter(r=>r<=-1).length,'-1~0R':rs.filter(r=>r>-1&&r<=0).length,'0~1R':rs.filter(r=>r>0&&r<1).length,'1~2R':rs.filter(r=>r>=1&&r<2).length,'≥2R':rs.filter(r=>r>=2).length};
+  return{n,sampleOk:n>=CFG.stats.minN,plans:trades.length,triggered:n+st('open'),closed:n,open:st('open'),expired:st('expired'),cancelled:st('cancelled'),skipped:st('skipped'),pending:st('pending'),
+    wins:wins.length,losses:loss.length,winRate:w.p,winRateLo:w.lo,winRateHi:w.hi,avgR,expectancy:avgR,
+    avgWin:wins.length?sum(wins)/wins.length:null,avgLoss:loss.length?sum(loss)/loss.length:null,
+    profitFactor:sum(loss)<0?sum(wins)/-sum(loss):(wins.length?Infinity:null),maxDrawdownR:dd,totalR:sum(rs),
+    expectancyCI:(n>=CFG.stats.minN&&sd!=null)?{lo:avgR-1.96*sd/Math.sqrt(n),hi:avgR+1.96*sd/Math.sqrt(n)}:null,
+    ambiguous:cl.reduce((s,t)=>s+(t.sim.ambiguous||0),0),dist,
+    avgMfeR:n?sum(cl.map(t=>t.sim.mfeR))/n:null,avgMaeR:n?sum(cl.map(t=>t.sim.maeR))/n:null,
+    exits:cl.reduce((o,t)=>{o[t.sim.exitReason]=(o[t.sim.exitReason]||0)+1;return o;},{})};
+}
+function groupStats(trades,keyFn){
+  const g={};trades.forEach(t=>{const k=keyFn(t);(g[k]=g[k]||[]).push(t);});
+  const out={};Object.keys(g).forEach(k=>out[k]=computeStats(g[k]));return out;
+}
+
+/* ── 历史回测(点时间一致: 每一步只看截止当时的K线;高周期由低周期聚合,仅含已完整收盘的桶) ─────────── */
+async function runBacktest(o){
+  const H=o.helpers||{},tf=o.tf,sec=tfSec(tf),cfg=o.cfg||CFG;
+  const candles=o.candles,N=candles.length;
+  const mTf=higherTf(tf),hasMid0=mTf!==tf,hTf=hasMid0?higherTf(mTf):tf;
+  let hasMid=hasMid0,hasHigh=hasMid0&&hTf!==mTf;
+  const midR=hasMid0?tfSec(mTf)/sec:0,highR=hasHigh?tfSec(hTf)/sec:0;
+  let warmup=o.warmup||Math.max(260,hasMid?Math.ceil(90*midR):0,hasHigh?Math.ceil(85*highR):0);
+  const notes=[];
+  if(warmup>0.7*N&&hasHigh){hasHigh=false;warmup=Math.max(260,Math.ceil(90*midR));notes.push(`历史不足以预热 ${hTf} 周期,回测中去掉最高周期,仅用 ${mTf} 作大周期`);}
+  if(warmup>0.7*N&&hasMid){hasMid=false;warmup=260;notes.push('历史不足以预热中周期,回测退化为单周期结构');}
+  if(N<warmup+60)return{ok:false,reason:`历史K线仅 ${N} 根,不足以回测(至少 ${warmup+60})`,notes};
+  const step=o.step||4,trades=[],decisions={total:0,noTrade:0,byReason:{}},structSamples=new Map();
+  let t=warmup,iter=0,unfinished=null;
+  const t0=Date.now();
+  while(t<N-2){
+    if(o.shouldCancel&&o.shouldCancel())return{ok:false,reason:'已取消',notes};
+    const slice=candles.slice(0,t+1);
+    const L={low:analyzeTF(slice.slice(-1600),tf,H,{alreadyClean:true})};
+    L.mid=hasMid?analyzeTF(aggregate(slice,sec,tfSec(mTf)).slice(-1600),mTf,H,{alreadyClean:true,minBars:80}):null;
+    L.high=hasHigh?analyzeTF(aggregate(slice,sec,tfSec(hTf)).slice(-1600),hTf,H,{alreadyClean:true,minBars:80}):null;
+    const mtf=mtfAssess(L),plan=buildStrategy({symbol:o.symbol,tf,low:L.low,mtf});
+    decisions.total++;
+    if(L.low.status==='ok'){
+      const snap=snapshot({levels:L,mtf,statusList:[]});snap.tfSec=sec;
+      snap.trendlines.valid.forEach(x=>{if(!structSamples.has(x.id))structSamples.set(x.id,{t,snap:{atr:snap.atr,barTime:snap.barTime,tfSec:sec,trendlines:{valid:[x]},events:[]}});});
+      snap.events.filter(e=>(e.type==='break_up'||e.type==='break_down')&&snap.barTime-e.time<=step*sec).forEach(e=>{if(!structSamples.has(e.id))structSamples.set(e.id,{t,snap:{atr:snap.atr,barTime:snap.barTime,tfSec:sec,trendlines:{valid:[]},events:[e]}});});
+    }
+    if(plan.direction==='NO_TRADE'){decisions.noTrade++;const k=(plan.reasons&&plan.reasons[0]&&plan.reasons[0].code)||'NO_TRADE';decisions.byReason[k]=(decisions.byReason[k]||0)+1;t+=step;}
+    else{
+      plan.atrGen=L.low.atr;
+      const sim=simulatePlan(plan,candles.slice(t+1),cfg);
+      const rec={t,time:candles[t].time,setup:plan.setup,dirSign:plan.dirSign,regime:plan.regime,tf,structureQuality:plan.structureQuality,rr:plan.rr,state:plan.state,sim,
+        plan:{id:plan.id,setup:plan.setup,direction:plan.direction,entryRef:plan.entryRef,sl:plan.sl,tp1:plan.tps[0]&&plan.tps[0].price}};
+      if(sim.status==='open'||sim.status==='pending'){unfinished=rec;break;}
+      trades.push(rec);
+      t=sim.status==='closed'?Math.max(t+step,t+1+sim.exitIdx+1):t+step;
+    }
+    iter++;
+    if(o.onProgress&&iter%5===0)o.onProgress({t,N,pct:Math.round((t-warmup)/(N-warmup)*100),trades:trades.length});
+    if(typeof setTimeout!=='undefined'&&iter%6===0)await new Promise(r=>setTimeout(r,0));
+  }
+  // 结构后续有效性
+  const st={trendlines:{n:0,held:0,broken:0,tracking:0,touches:0,bounced:0},breakouts:{n:0,continued:0,fakeout:0,stalled:0,tracking:0}};
+  structSamples.forEach(s=>{
+    const outs=evalStructureOutcome(s.snap,candles.slice(s.t+1),e=>candles.filter(x=>x.time>e.time));
+    outs.forEach(r=>{
+      if(r.kind==='trendline'){st.trendlines.n++;st.trendlines[r.status]++;st.trendlines.touches+=r.touches;st.trendlines.bounced+=r.bounced;}
+      else{st.breakouts.n++;st.breakouts[r.status]++;}
+    });
+  });
+  const stats=computeStats(trades);
+  return{ok:true,meta:{symbol:o.symbol,tf,bars:N,warmup,step,mtfCoverage:{mid:hasMid?mTf:null,high:hasHigh?hTf:null},ruleVersion:VERSION,
+      cost:cfg.cost,minRR:cfg.strat.minRR,from:candles[warmup].time,to:candles[N-1].time,analyses:decisions.total,ms:Date.now()-t0,notes},
+    trades,stats,bySetup:groupStats(trades,t=>t.setup),byDir:groupStats(trades,t=>t.dirSign>0?'LONG':'SHORT'),byRegime:groupStats(trades,t=>t.regime),
+    structure:st,decisions,unfinished:unfinished?{time:unfinished.time,setup:unfinished.setup,status:unfinished.sim.status}:null};
+}
+
+/* ── 持久化: IndexedDB(浏览器) / 内存(测试) ─────────────────────────────────── */
+function memoryStore(){
+  const d={signals:new Map(),meta:new Map()};
+  return{kind:'memory',
+    async put(s,o){d[s].set(o.id||o.key,JSON.parse(JSON.stringify(o)));return true;},
+    async get(s,k){const v=d[s].get(k);return v?JSON.parse(JSON.stringify(v)):null;},
+    async all(s){return[...d[s].values()].map(v=>JSON.parse(JSON.stringify(v)));},
+    async del(s,k){d[s].delete(k);return true;},
+    async clear(s){d[s].clear();return true;}};
+}
+function idbStore(name){
+  name=name||'orbit-structure-engine';
+  const open=()=>new Promise((res,rej)=>{
+    const rq=indexedDB.open(name,1);
+    rq.onupgradeneeded=()=>{const db=rq.result;if(!db.objectStoreNames.contains('signals'))db.createObjectStore('signals',{keyPath:'id'});if(!db.objectStoreNames.contains('meta'))db.createObjectStore('meta',{keyPath:'key'});};
+    rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);
+  });
+  let dbp=null;const db=()=>dbp||(dbp=open());
+  const tx=async(s,mode,fn)=>{const d=await db();return new Promise((res,rej)=>{const t=d.transaction(s,mode),st=t.objectStore(s);const r=fn(st);t.oncomplete=()=>res(r&&r.result!==undefined?r.result:true);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error);});};
+  return{kind:'indexeddb',
+    put:(s,o)=>tx(s,'readwrite',st=>st.put(o)),
+    get:(s,k)=>tx(s,'readonly',st=>st.get(k)).then(v=>v===true?null:v),
+    all:(s)=>tx(s,'readonly',st=>st.getAll()).then(v=>v===true?[]:v),
+    del:(s,k)=>tx(s,'readwrite',st=>st.delete(k)),
+    clear:(s)=>tx(s,'readwrite',st=>st.clear())};
+}
+function openStore(name){try{if(typeof indexedDB!=='undefined'&&indexedDB)return idbStore(name);}catch(e){}return memoryStore();}
+
+/* ── 信号落库(冻结生成当时的证据与预测,事后不改) ────────────────────────────── */
+function compactTail(c,n){return c.slice(-(n||150)).map(x=>[x.time,x.open,x.high,x.low,x.close,x.volume]);}
+function makeRecord(an,plan,nowMs){
+  const low=an.levels.low,snap=snapshot(an);snap.tfSec=low.tfSec;
+  return{
+    id:`${plan.id}@${low.lastBarTime}`,source:'live',symbol:an.symbol,tf:an.tf,createdAt:nowMs,barTime:low.lastBarTime,ruleVersion:VERSION,
+    regime:plan.regime,setup:plan.setup,dirSign:plan.dirSign,dedupeKey:plan.dedupeKey,
+    plan:JSON.parse(JSON.stringify(plan)),evidence:snap,candlesTail:compactTail(low.candles,150),
+    cfg:{cost:CFG.cost,strat:CFG.strat},
+    tracking:{status:plan.state==='triggered'?'open_wait_fill':'pending',updatedAt:nowMs,lastCheckedBarTime:low.lastBarTime,structure:[],sim:null}
+  };
+}
+async function saveSignal(store,an,nowMs){
+  const plan=an.plan;if(!plan||plan.direction==='NO_TRADE')return{saved:false,reason:'no_trade'};
+  const all=await store.all('signals');
+  const sec=tfSec(an.tf),low=an.levels.low;
+  const same=all.filter(r=>r.dedupeKey===plan.dedupeKey);
+  const live=same.find(r=>['pending','open','open_wait_fill'].includes(r.tracking.status));
+  if(live)return{saved:false,reason:'duplicate_active',id:live.id};
+  const recent=same.find(r=>low.lastBarTime-r.barTime<=plan.expiryBars*2*sec);
+  if(recent)return{saved:false,reason:'duplicate_recent',id:recent.id};
+  const rec=makeRecord(an,plan,nowMs);
+  await store.put('signals',rec);
+  return{saved:true,id:rec.id};
+}
+async function bumpDecision(store,an){
+  const plan=an.plan,low=an.levels.low;if(!low||!low.lastBarTime)return;
+  const key=`dec:${an.symbol}|${an.tf}`;
+  const m=(await store.get('meta',key))||{key,symbol:an.symbol,tf:an.tf,total:0,noTrade:0,byReason:{},lastBar:0};
+  if(m.lastBar===low.lastBarTime)return;
+  m.lastBar=low.lastBarTime;m.total++;
+  if(plan.direction==='NO_TRADE'){m.noTrade++;const k=(plan.reasons&&plan.reasons[0]&&plan.reasons[0].code)||'NO_TRADE';m.byReason[k]=(m.byReason[k]||0)+1;}
+  await store.put('meta',m);
+}
+/* 追踪: 对每条未结束信号,用其后的真实已收盘K线,以与回测完全相同的规则重放 */
+async function trackSignals(store,fetchKlines,opts){
+  opts=opts||{};const nowSec=opts.nowSec||Math.floor(Date.now()/1000),max=opts.max||8;
+  const all=await store.all('signals');
+  const todo=all.filter(r=>!r.tracking.done).sort((a,b)=>(opts.symbol&&b.symbol===opts.symbol)-(opts.symbol&&a.symbol===opts.symbol)||a.createdAt-b.createdAt).slice(0,max);
+  let updated=0,errors=[];
+  for(const r of todo){
+    try{
+      const sec=tfSec(r.tf);
+      const raw=await fetchKlines(r.symbol,r.tf,(r.barTime+sec)*1000,1500);
+      const dq=checkCandles(raw,r.tf,nowSec,1);
+      if(dq.status==='invalid'&&dq.candles.length>0){errors.push({id:r.id,error:'行情数据无效: '+dq.issues.map(i=>i.code).join(',')});continue;}
+      const fwd=dq.candles.filter(x=>x.time>r.barTime);
+      const plan=Object.assign({},r.plan,{atrGen:r.plan.atrGen||r.evidence.atr});
+      const sim=simulatePlan(plan,fwd,r.cfg&&r.cfg.strat?{strat:r.cfg.strat,cost:r.cfg.cost}:CFG);
+      const tail=r.candlesTail.map(k=>({time:k[0],open:k[1],high:k[2],low:k[3],close:k[4],volume:k[5]}));
+      const struct=evalStructureOutcome(Object.assign({},r.evidence,{tfSec:sec}),fwd,e=>tail.filter(x=>x.time>e.time).concat(fwd));
+      const simDone=['closed','expired','cancelled','skipped'].includes(sim.status);
+      const structDone=struct.every(s=>s.status!=='tracking');
+      r.tracking={status:sim.status,sim,structure:struct,lastCheckedBarTime:fwd.length?fwd[fwd.length-1].time:r.barTime,updatedAt:Date.now(),
+        done:simDone&&(structDone||fwd.length>=40),barsObserved:fwd.length};
+      await store.put('signals',r);updated++;
+    }catch(e){errors.push({id:r.id,error:e.message});}
+  }
+  return{checked:todo.length,updated,errors};
+}
+/* 把实盘记录转成统计用结构(与回测同一份 computeStats) */
+function recordsToTrades(recs){return recs.filter(r=>r.tracking&&r.tracking.sim).map(r=>({setup:r.setup,dirSign:r.dirSign,regime:r.regime,tf:r.tf,symbol:r.symbol,sim:r.tracking.sim,time:r.barTime}));}
+function structureSummary(recs){
+  const s={trendlines:{n:0,held:0,broken:0,tracking:0},breakouts:{n:0,continued:0,fakeout:0,stalled:0,tracking:0}};
+  recs.forEach(r=>(r.tracking.structure||[]).forEach(x=>{if(x.kind==='trendline'){s.trendlines.n++;s.trendlines[x.status]++;}else{s.breakouts.n++;s.breakouts[x.status]++;}}));
+  return s;
+}
+/* 给当前计划附"历史表现"(只来自实盘追踪 + 同规则版本回测;样本不足明确标注;不由结构分数推导胜率) */
+async function historicalFor(store,plan){
+  const recs=(await store.all('signals')).filter(r=>r.ruleVersion===VERSION&&r.setup===plan.setup&&r.tf===plan.tf);
+  const live=computeStats(recordsToTrades(recs));
+  const bt=await store.get('meta',`bt:${plan.symbol}|${plan.tf}|${VERSION}`);
+  const pick=(st)=>st&&st.n?{n:st.n,sampleOk:st.sampleOk,winRate:st.sampleOk?st.winRate:null,winRateLo:st.sampleOk?st.winRateLo:null,winRateHi:st.sampleOk?st.winRateHi:null,expectancyR:st.sampleOk?st.expectancy:null}:{n:0,sampleOk:false};
+  return{live:pick(live),backtest:bt&&bt.stats?Object.assign(pick((bt.bySetup&&bt.bySetup[plan.setup])||null),{symbol:plan.symbol,runAt:bt.runAt}):{n:0,sampleOk:false}};
+}
+
+const SE={VERSION,CFG,TF_SEC,
+  util:{fnv,wilson,median,tfSec,higherTf},
+  checkCandles,aggregate,normalizeRaw,atrWilder,rsiArr,findPivots,structureState,fitTrendlines,buildEvidence,buildZones,detectAllEvents,breakEvents,classifyRegime,
+  analyzeTF,mtfAssess,buildStrategy,analyzeAll,snapshot,simulatePlan,evalStructureOutcome,computeStats,groupStats,runBacktest,triggerHit,lineBand,
+  memoryStore,openStore,saveSignal,bumpDecision,trackSignals,recordsToTrades,structureSummary,historicalFor,makeRecord};
+root.ORBIT_SE=SE;
+if(typeof module!=='undefined'&&module.exports)module.exports=SE;
+})(typeof globalThis!=='undefined'?globalThis:this);
+
+/* ORBIT · SE UI 胶水层: 面板 / 图层 / 图表绘制 / 追踪调度。所有数值来自 ORBIT_SE 的确定性计算。 */
+(function(root){
+'use strict';
+root.ORBIT_SE_UI=function(env){
+  const SE=root.ORBIT_SE;if(!SE)return null;
+  const store=SE.openStore();
+  const LKEY='orbitSeLayers';
+  const DEF={trend:true,sr:true,fib:false,gann:false,vol:false,plan:true,events:true,pivot:false};
+  let layers=Object.assign({},DEF);try{Object.assign(layers,JSON.parse(localStorage.getItem(LKEY)||'{}'));}catch(e){}
+  const S={an:null,hist:null,bt:null,btRunning:false,btPct:0,live:null,err:null,token:0,lastTrack:0,loading:false,drawn:[],series:[],cache:new Map()};
+  const esc=env.esc||(s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])));
+  const fp=v=>v==null||!isFinite(v)?'–':env.fmtPrice(v);
+  const pct=v=>v==null?'–':(v*100).toFixed(0)+'%';
+  const R=v=>v==null?'–':(v>=0?'+':'')+v.toFixed(2)+'R';
+  const tfLabel=t=>t||'–';
+  async function fetchKl(symbol,tf,startMs,limit){
+    let u=env.REST+`/fapi/v1/klines?symbol=${symbol}&interval=${tf}&limit=${limit||500}`;if(startMs)u+=`&startTime=${startMs}`;
+    return env.fetchJSON(u);
+  }
+  async function htf(symbol,tf){
+    const k=symbol+'|'+tf,c=S.cache.get(k);if(c&&Date.now()-c.at<60000)return c.data;
+    try{const d=await fetchKl(symbol,tf,null,500);S.cache.set(k,{at:Date.now(),data:d});return d;}catch(e){return c?c.data:null;}
+  }
+  /* ── 图表 ── */
+  function clearDraw(){
+    S.drawn.forEach(pl=>{try{env.candleSeries().removePriceLine(pl);}catch(e){}});S.drawn=[];
+    S.series.forEach(s=>{try{env.chart().removeSeries(s);}catch(e){}});S.series=[];
+    try{env.candleSeries().setMarkers([]);}catch(e){}
+  }
+  function pl(price,color,title,style,w){try{S.drawn.push(env.candleSeries().createPriceLine({price,color,lineWidth:w||1,lineStyle:style==null?2:style,axisLabelVisible:true,title}));}catch(e){}}
+  function draw(){
+    clearDraw();const an=S.an;if(!an||!an.levels.low||an.levels.low.status!=='ok')return;
+    const low=an.levels.low,ch=env.chart(),price=low.price,a=low.atr;
+    if(layers.trend){
+      low.trendlines.valid.concat(low.trendlines.broken.slice(0,0)).forEach(t=>{
+        try{const s=ch.addLineSeries({color:t.side==='support'?'#5a9b78':'#b8555f',lineWidth:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:`TL ${t.score}`});
+          s.setData(t.points.map(p=>({time:p.time,value:p.price})));S.series.push(s);}catch(e){}
+      });
+      low.trendlines.candidate.forEach(t=>{try{const s=ch.addLineSeries({color:'#756c5c',lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:`候选 ${t.score}`});s.setData(t.points.map(p=>({time:p.time,value:p.price})));S.series.push(s);}catch(e){}});
+    }
+    if(layers.sr){low.zones.filter(z=>z.quality>=50).slice(0,6).forEach(z=>{const col=z.mid<price?'rgba(90,155,120,.75)':'rgba(184,85,95,.75)';pl(z.hi,col,`Z×${z.independent} q${z.quality}`,3);pl(z.lo,col,'',3);});}
+    const evOf=f=>low.evidence.filter(e=>e.family===f&&Math.abs(e.price-price)<=6*a);
+    if(layers.fib)evOf('fib').slice(0,6).forEach(e=>pl(e.price,'#9c85b0',e.source.split('(')[0],2));
+    if(layers.gann)evOf('gann').sort((x,y)=>Math.abs(x.price-price)-Math.abs(y.price-price)).slice(0,4).forEach(e=>pl(e.price,'#7fa0c2',e.source.split('(')[0],1));
+    if(layers.vol&&low.volume){pl(low.volume.poc,'#c6a565','POC',0);if(low.volume.vah)pl(low.volume.vah,'#c6a565','VAH',2);if(low.volume.val)pl(low.volume.val,'#c6a565','VAL',2);}
+    const p=an.plan;
+    if(layers.plan&&p&&p.direction!=='NO_TRADE'){
+      const tag=p.state==='triggered'?'已触发':'待触发';
+      pl(p.entryZone.hi,'#c6a565',`入场区 ${tag}`,0);pl(p.entryZone.lo,'#c6a565','',0);
+      pl(p.sl,'#b8555f','止损',0,2);p.tps.forEach((t,i)=>pl(t.price,'#5a9b78',`TP${i+1} ${t.rr!=null?t.rr.toFixed(1)+'R':''}`,0,2));
+    }
+    const mk=[];
+    if(layers.events)low.events.events.filter(e=>e.time>=low.candles[Math.max(0,low.n-40)].time).forEach(e=>{
+      const up=e.type==='break_up'||e.type==='retest_success'&&e.dir>0;
+      const nm={break_up:'突破↑',break_down:'跌破↓',retest_success:'回踩✓',retest_fail:'回踩✗',fakeout:'假突破'}[e.type]||e.type;
+      mk.push({time:e.time,position:(e.dir>0)?'belowBar':'aboveBar',color:e.type==='fakeout'||e.type==='retest_fail'?'#b8555f':'#c6a565',shape:e.dir>0?'arrowUp':'arrowDown',text:nm});});
+    if(layers.pivot)low.pivots.confirmed.slice(-12).forEach(q=>mk.push({time:q.time,position:q.type==='H'?'aboveBar':'belowBar',color:'#7fa0c2',shape:'circle',text:q.label}));
+    if(p&&p.direction!=='NO_TRADE'&&p.state==='triggered'&&layers.plan)mk.push({time:low.lastBarTime,position:p.dirSign>0?'belowBar':'aboveBar',color:'#5a9b78',shape:p.dirSign>0?'arrowUp':'arrowDown',text:'触发'});
+    mk.sort((x,y)=>x.time-y.time);
+    const seen=new Set();const mk2=mk.filter(m=>{const k=m.time+m.text;if(seen.has(k))return false;seen.add(k);return true;});
+    try{env.candleSeries().setMarkers(mk2);}catch(e){}
+  }
+  function layerBar(){
+    let el=document.getElementById('seLayerBar');
+    if(!el){const top=document.getElementById('modalTop');if(!top)return;el=document.createElement('div');el.id='seLayerBar';top.parentNode.insertBefore(el,top.nextSibling);}
+    const L=[['trend','趋势线'],['sr','支撑阻力'],['fib','Fib'],['gann','江恩'],['vol','成交量结构'],['plan','交易计划'],['events','突破/回踩'],['pivot','Pivot']];
+    el.innerHTML='<span class="se-lb-t">结构图层</span>'+L.map(([k,t])=>`<button class="se-lb${layers[k]?' on':''}" data-se-layer="${k}">${t}</button>`).join('');
+  }
+  /* ── 面板 ── */
+  const STC={valid:'有效',candidate:'候选',broken:'已被突破'};
+  function badge(t,c){return`<span class="se-b se-b-${c||'n'}">${esc(t)}</span>`;}
+  function histHTML(h){
+    if(!h)return'';
+    const one=(lab,x)=>x&&x.n?`${lab}: n=${x.n}${x.sampleOk?` · 胜率 ${pct(x.winRate)} (95%CI ${pct(x.winRateLo)}–${pct(x.winRateHi)}) · 期望 ${R(x.expectancyR)}`:' · <b>样本不足</b>(<30,不显示胜率)'}`:`${lab}: 暂无样本`;
+    return`<div class="se-hist">${one('实盘追踪',h.live)}<br>${one('同规则回测'+(h.backtest&&h.backtest.runAt?'':''),h.backtest)}</div>`;
+  }
+  function planHTML(an){
+    const p=an.plan;if(!p)return'';
+    if(p.direction==='NO_TRADE'){
+      return`<div class="se-card se-nt"><div class="se-h">NO_TRADE · 当前没有符合风险标准的交易机会</div>${p.reasons.map(r=>`<div class="se-r">${badge(r.code,'w')} ${esc(r.text)}</div>`).join('')}${(p.waitFor||[]).map(w=>`<div class="se-r">⏳ ${esc(w)}</div>`).join('')}${p.mtf&&p.mtf.text?`<div class="se-r dim">周期: ${esc(p.mtf.text)}</div>`:''}</div>`;
+    }
+    const col=p.dirSign>0?'up':'dn',st=p.state==='triggered'?badge('已触发 · 收盘确认','g'):badge('条件未触发 · 待确认','a');
+    return`<div class="se-card"><div class="se-h"><span class="${col}">${p.direction}</span> · ${esc(({pullback:'回踩',retest:'突破回测',breakout:'突破'})[p.setup]||p.setup)} ${st}</div>
+      <div class="se-kv"><span>触发条件</span><b>${esc(p.triggerRule.text)}</b></div>
+      <div class="se-kv"><span>入场区间</span><b>${fp(p.entryZone.lo)} – ${fp(p.entryZone.hi)}</b></div>
+      <div class="se-kv"><span>参考入场价</span><b>${fp(p.entryRef)} <i>(${p.entryBasis==='market_after_confirm'?'确认后下一根开盘':p.entryBasis==='stop_entry'?'突破触发价':'区间边缘(保守)'})</i></b></div>
+      <div class="se-kv"><span>止损</span><b class="dn">${fp(p.sl)} <i>${(p.stopAtr).toFixed(2)}×ATR · ${p.stopPct.toFixed(2)}% · ${esc(p.slBasis)}</i></b></div>
+      ${p.tps.map((t,i)=>`<div class="se-kv"><span>目标 TP${i+1}</span><b class="up">${fp(t.price)} <i>${t.rr!=null?t.rr.toFixed(2)+'R':''} · ${esc(t.basis)}</i></b></div>`).join('')}
+      <div class="se-kv"><span>风险回报(TP1)</span><b>${p.rr.toFixed(2)}R <i>门槛 ${SE.CFG.strat.minRR}R</i></b></div>
+      <div class="se-kv"><span>风险约束</span><b>单笔 ≤${p.riskPct}% 权益 → 名义仓位 ≈ ${p.notionalPerEquity.toFixed(2)}× 权益</b></div>
+      <div class="se-kv"><span>结构质量 / 数据充分度</span><b>${p.structureQuality} / ${p.dataSufficiency} <i>(结构分,非胜率)</i></b></div>
+      ${histHTML(S.hist)}
+      <div class="se-sub">依据结构</div>${p.evidence.map(e=>`<div class="se-r dim">${esc(e.id)} — ${esc(e.text)}</div>`).join('')}
+      <div class="se-sub">周期一致性</div><div class="se-r">${esc(p.mtf.text)}${p.mtfNote?`<br>⚠ ${esc(p.mtfNote)}`:''}</div>
+      <div class="se-sub">风控检查</div>${p.checks.map(c=>`<div class="se-r">${c.pass?'✓':'✗'} ${esc(c.text)}</div>`).join('')}
+      <div class="se-sub">失效条件</div>${p.invalidations.map(x=>`<div class="se-r dim">• ${esc(x)}</div>`).join('')}
+      ${p.state==='pending'?`<div class="se-sub">需等待的确认</div>${p.waitFor.map(w=>`<div class="se-r">⏳ ${esc(w)}</div>`).join('')}`:''}
+      <div class="se-r dim">规则版本 ${esc(p.ruleVersion)} · ID ${esc(p.id)} · 有效至 ${new Date(p.validUntil*1000).toLocaleString()}</div></div>`;
+  }
+  function tfRows(an){
+    return['high','mid','low'].map(k=>{const L=an.levels[k];if(!L)return`<tr><td>${k==='high'?'高':k==='mid'?'中':'低'}</td><td colspan="4" class="dim">该档不存在(已处于周期阶梯顶部)</td></tr>`;
+      if(L.status!=='ok')return`<tr><td>${k==='high'?'高':k==='mid'?'中':'低'} ${tfLabel(L.tf)}</td><td colspan="4" class="dim">${esc(L.statusReason||L.status)}</td></tr>`;
+      const tn={up:'上升',down:'下降',range:'震荡',transition_up:'转多(CHoCH)',transition_down:'转空(CHoCH)',unknown:'未知'}[L.state.trend];
+      const rg={trend:'趋势',range:'震荡',breakout_attempt:'突破尝试',exhaustion:'趋势衰竭',transition:'结构转换',unknown:'未知'}[L.regime.regime];
+      return`<tr><td>${k==='high'?'高':k==='mid'?'中':'低'} ${tfLabel(L.tf)}</td><td>${tn}</td><td>${rg}</td><td>${L.trendlines.valid.length}条有效</td><td class="dim">${esc(L.state.reason)}</td></tr>`;}).join('');
+  }
+  function tlHTML(low){
+    const all=low.trendlines.valid.concat(low.trendlines.candidate,low.trendlines.broken);
+    if(!all.length)return`<div class="se-r">${badge('NO_QUALIFIED_TRENDLINE','w')} ${Object.values(low.trendlines.reasons).map(r=>esc(r.text)).join(';')||'证据不足,不强行画线'}</div>`;
+    return all.map(t=>{const p=t.scoreParts;return`<div class="se-tl"><div>${badge(STC[t.status],t.status==='valid'?'g':t.status==='candidate'?'a':'r')} ${t.side==='support'?'支撑':'阻力'}线 <b>${t.score}</b> 分 · 现价位 ${fp(t.priceNow)} · 斜率 ${t.slopeAtrPerBar.toFixed(3)}ATR/bar</div>
+      <div class="se-r dim">锚点 ${esc(t.anchors[0].pivotId)} → ${esc(t.anchors[1].pivotId)} · 触碰 ${t.nTouches}(锚2/拟合${t.nFit}/独立验证${t.nValidation}) · 实体穿越 ${t.bodyCrossAfter} 影线穿越 ${t.wickCrossAfter} · 残差 ${t.rmsResAtr.toFixed(2)}ATR · 跨度 ${t.spanBars} 根</div>
+      <div class="se-r dim">分项: 独立验证 ${(p.indep*100).toFixed(0)} · 触碰贴合 ${(p.touchClose*100).toFixed(0)} · 拟合 ${(p.fit*100).toFixed(0)} · 近期 ${(p.recency*100).toFixed(0)} · 无破坏 ${(p.break*100).toFixed(0)} · 样本 ${(p.sample*100).toFixed(0)} · 失效: ${esc(t.invalidation.rule)}</div></div>`;}).join('');
+  }
+  function zonesHTML(low){
+    return low.zones.slice(0,6).map(z=>`<div class="se-r">${badge(z.mid<low.price?'支撑':'阻力',z.mid<low.price?'g':'r')} ${fp(z.lo)}–${fp(z.hi)} · 质量 ${z.quality} · 独立来源 ${z.independent}${z.rawCount>z.independent?`(原始证据 ${z.rawCount},同源已合并)`:''} · 反应 ${z.reactions}/${z.touches}<div class="dim">${esc(z.sources.slice(0,5).join(' / '))}</div></div>`).join('')||'<div class="se-r dim">没有达到门槛的水平结构区</div>';
+  }
+  function statsBlock(label,st,extra){
+    if(!st||!st.n)return`<div class="se-r dim">${label}: 暂无已完结交易样本</div>`;
+    const ok=st.sampleOk;
+    return`<div class="se-stat"><b>${label}</b> · 成交 ${st.n} 笔 ${ok?'':badge('样本不足 <30','w')}
+      <div class="se-r">${ok?`胜率 ${pct(st.winRate)} (95%CI ${pct(st.winRateLo)}–${pct(st.winRateHi)})`:'胜率 不显示(样本不足)'} · 期望 ${ok?R(st.expectancy):'–'} · 平均盈 ${R(st.avgWin)} / 亏 ${R(st.avgLoss)} · 盈亏比因子 ${st.profitFactor==null?'–':st.profitFactor===Infinity?'∞':st.profitFactor.toFixed(2)} · 最大回撤 ${st.maxDrawdownR.toFixed(2)}R</div>
+      <div class="se-r dim">计划 ${st.plans}: 过期 ${st.expired} · 取消 ${st.cancelled} · 跳空放弃 ${st.skipped} · 持仓中 ${st.open} · 歧义K线(按止损先到) ${st.ambiguous} · R 分布 ${Object.entries(st.dist).map(([k,v])=>k+':'+v).join(' ')} · 平均MFE ${R(st.avgMfeR)} / MAE ${(st.avgMaeR==null?'–':'-'+st.avgMaeR.toFixed(2)+'R')}</div>${extra||''}</div>`;
+  }
+  function structStats(s,label){
+    if(!s)return'';const t=s.trendlines,b=s.breakouts;
+    const tr=t.n?`趋势线 ${t.n} 条: 守住 ${t.held} · 被破 ${t.broken} · 追踪中 ${t.tracking}${t.touches!=null&&t.touches?` · 触碰后反弹 ${t.bounced}/${t.touches}`:''}`:'趋势线: 无样本';
+    const br=b.n?`突破 ${b.n} 次: 延续 ${b.continued} · 假突破 ${b.fakeout} · 停滞 ${b.stalled} · 追踪中 ${b.tracking}`:'突破: 无样本';
+    return`<div class="se-r dim">${label}(结构判断是否正确,与交易盈亏分开): ${tr}；${br}</div>`;
+  }
+  function trackHTML(){
+    const l=S.live;if(!l)return'<div class="se-r dim">加载中…</div>';
+    const rows=l.recs.slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,12).map(r=>{const t=r.tracking,s=t.sim||{};
+      return`<tr><td>${esc(r.symbol.replace('USDT',''))} ${esc(r.tf)}</td><td>${r.dirSign>0?'多':'空'}/${esc(r.setup)}</td><td>${new Date(r.createdAt).toLocaleString()}</td><td>${esc(t.status)}</td><td>${s.r!=null?R(s.r):'–'}</td><td class="dim">${s.mfeR!=null?'MFE '+s.mfeR.toFixed(1)+' / MAE '+s.maeR.toFixed(1):''}</td></tr>`;}).join('');
+    const dec=l.dec;
+    return`${statsBlock('实盘追踪(全部标的/周期)',l.stats)}${structStats(l.struct,'实盘')}
+      ${dec?`<div class="se-r dim">${esc(dec.symbol)} ${esc(dec.tf)} 决策 ${dec.total} 次,其中 NO_TRADE ${dec.noTrade} 次 (${dec.total?Math.round(dec.noTrade/dec.total*100):0}%)</div>`:''}
+      <div class="se-scroll"><table class="se-t"><tr><th>标的</th><th>类型</th><th>生成时间</th><th>状态</th><th>结果</th><th></th></tr>${rows||'<tr><td colspan="6" class="dim">尚无落库信号 — 出现符合门槛的计划时自动记录</td></tr>'}</table></div>`;
+  }
+  function btHTML(){
+    const b=S.bt;
+    const run=`<button class="se-btn" data-se-act="bt" ${S.btRunning?'disabled':''}>${S.btRunning?`回测中 ${S.btPct}%…`:'▶ 运行本币种/本周期回测'}</button>`;
+    if(!b)return`${run}<div class="se-r dim">走步回放: 每一步只使用截止当时的K线(高周期由低周期聚合,仅含已收盘桶);成本 ${SE.CFG.cost.feePct}%/边手续费 + ${SE.CFG.cost.slipPct}%/边滑点;同K线止损止盈歧义按止损。</div>`;
+    if(!b.ok)return`${run}<div class="se-r">${badge('无法回测','w')} ${esc(b.reason)}</div>`;
+    const m=b.meta;
+    return`${run}<div class="se-r dim">${esc(m.symbol)} ${esc(m.tf)} · ${m.bars} 根 · 分析 ${m.analyses} 次 · 大周期: ${m.mtfCoverage.mid||'无'}${m.mtfCoverage.high?'/'+m.mtfCoverage.high:''} · 规则 ${esc(m.ruleVersion)} · 运行于 ${new Date(b.runAt).toLocaleString()}</div>${(m.notes||[]).map(n=>`<div class="se-r">⚠ ${esc(n)}</div>`).join('')}
+      ${statsBlock('回测总体',b.stats)}${structStats(b.structure,'回测')}
+      <div class="se-r dim">NO_TRADE ${b.decisions.noTrade}/${b.decisions.total} 次分析${b.unfinished?` · 末尾未完成样本 1 个(${esc(b.unfinished.status)})不计入统计`:''}</div>
+      ${['bySetup','byDir','byRegime'].map(k=>`<div class="se-r dim">${{bySetup:'按类型',byDir:'按方向',byRegime:'按市场状态'}[k]}: ${Object.entries(b[k]).map(([g,s])=>`${esc(g)} n=${s.n}${s.sampleOk?' 期望'+R(s.expectancy):'(样本不足)'}`).join(' · ')}</div>`).join('')}`;
+  }
+  function panelHTML(){
+    const an=S.an;
+    if(S.err)return`<div class="se-r">${badge('ERROR','r')} ${esc(S.err)}</div>`;
+    if(!an)return`<div class="se-r dim">${S.loading?'结构引擎计算中…':'等待K线数据…'}</div>`;
+    const low=an.levels.low;
+    const sl=an.statusList.map(s=>`<div class="se-r">${badge(s.code,s.level==='error'?'r':s.level==='warn'?'w':'n')} ${esc(s.text)}</div>`).join('');
+    const dq=low.dq?`<div class="se-r dim">数据质量 ${esc(low.dq.status)} · 有效K线 ${low.dq.kept}/${low.dq.total}${low.dq.forming?' · 已排除未收盘K线':''}${(low.dq.issues||[]).length?' · '+esc(low.dq.issues.map(i=>i.detail).join('; ')):''}</div>`:'';
+    if(low.status!=='ok')return`${sl}${dq}`;
+    const cand=low.pivots.candidates.map(c=>`${c.type==='H'?'高':'低'}点候选(再 ${c.barsToConfirm} 根确认)`).join('、');
+    return`${planHTML(an)}
+      <div class="se-sub">状态与提示</div>${sl||'<div class="se-r dim">无</div>'}${dq}
+      <div class="se-sub">多周期结构(高周期优先)</div><div class="se-scroll"><table class="se-t"><tr><th>周期</th><th>结构</th><th>市场状态</th><th>趋势线</th><th>依据</th></tr>${tfRows(an)}</table></div>
+      <div class="se-r">${esc(an.mtf.text)}</div><div class="se-r dim">低周期状态依据: ${esc(low.regime.reasons.join(';'))} · ER=${low.regime.metrics.ER.toFixed(2)} · 振幅 ${low.regime.metrics.rangeAtr.toFixed(1)}ATR</div>
+      <div class="se-sub">趋势线(程序拟合 · 去重触碰 · 独立验证)</div>${tlHTML(low)}
+      <div class="se-sub">支撑阻力区(按独立来源计分)</div>${zonesHTML(low)}
+      <div class="se-sub">已确认 Pivot(确认延迟 k=${SE.CFG.pivot.k} 根)</div><div class="se-r dim">${low.pivots.confirmed.slice(-8).map(p=>`${p.label}@${fp(p.price)}`).join(' → ')}${cand?` ｜ 未确认: ${cand}(不参与拟合)`:''}</div>
+      <div class="se-sub">历史信号追踪</div>${trackHTML()}
+      <div class="se-sub">历史回测</div>${btHTML()}
+      <div class="se-r"><button class="se-btn" data-se-act="export">导出信号库 JSON</button> <button class="se-btn" data-se-act="import">导入</button> <button class="se-btn" data-se-act="track">立即更新追踪</button></div>
+      <div class="se-r dim">本区全部价格/斜率/盈亏比由确定性程序计算;置信信息仅为结构质量,胜率只来自实盘追踪与回测并标注样本量。不构成投资建议。</div>`;
+  }
+  function rerenderBox(){const b=document.getElementById('seBox');if(b)b.innerHTML=panelHTML();}
+  /* ── 刷新 ── */
+  async function refreshLive(){
+    const recs=await store.all('signals');
+    S.live={recs,stats:SE.computeStats(SE.recordsToTrades(recs)),struct:SE.structureSummary(recs),dec:S.an?await store.get('meta',`dec:${S.an.symbol}|${S.an.tf}`):null};
+  }
+  async function refresh(symbol,force){
+    const tok=++S.token;S.loading=!S.an;
+    try{
+      const tf=env.interval(),cc=env.candles();if(!cc||cc.length<30){S.an=null;rerenderBox();return;}
+      const mTf=SE.util.higherTf(tf),hTf=mTf!==tf?SE.util.higherTf(mTf):tf;
+      const [mid,high]=await Promise.all([mTf!==tf?htf(symbol,mTf):null,hTf!==mTf&&mTf!==tf?htf(symbol,hTf):null]);
+      if(tok!==S.token||symbol!==env.symbol())return;
+      const now=Math.floor(Date.now()/1000);
+      const an=SE.analyzeAll({symbol,tf,low:cc.map(x=>({time:x.time,open:x.open,high:x.high,low:x.low,close:x.close,volume:x.volume})),mid,high,helpers:env.helpers,nowSec:now});
+      if(an.plan&&an.plan.direction!=='NO_TRADE'){try{S.hist=await SE.historicalFor(store,an.plan);an.plan.historical=S.hist;}catch(e){S.hist=null;}}else S.hist=null;
+      S.an=an;S.err=null;
+      try{await SE.bumpDecision(store,an);const r=await SE.saveSignal(store,an,Date.now());if(r.saved)console.info('[SE] 信号已落库',r.id);}catch(e){console.warn('[SE] 落库失败',e);}
+      if(force||Date.now()-S.lastTrack>300000){S.lastTrack=Date.now();try{await SE.trackSignals(store,fetchKl,{symbol,nowSec:now});}catch(e){console.warn('[SE] 追踪失败',e);}}
+      await refreshLive();
+      const bt=await store.get('meta',`bt:${symbol}|${tf}|${SE.VERSION}`);if(bt&&bt.result&&!S.btRunning)S.bt=Object.assign({},bt.result,{runAt:bt.runAt});else if(!S.btRunning)S.bt=null;
+      draw();rerenderBox();layerBar();
+    }catch(e){console.error('[SE]',e);S.err='结构引擎错误: '+e.message;rerenderBox();}
+    S.loading=false;
+  }
+  async function runBt(){
+    if(S.btRunning)return;S.btRunning=true;S.btPct=0;rerenderBox();
+    const symbol=env.symbol(),tf=env.interval();
+    try{
+      const cc=env.candles();const dq=SE.checkCandles(cc,tf,Math.floor(Date.now()/1000));
+      const res=await SE.runBacktest({symbol,tf,candles:dq.candles,helpers:env.helpers,onProgress:p=>{S.btPct=p.pct;const b=document.querySelector('[data-se-act="bt"]');if(b)b.textContent=`回测中 ${p.pct}%…`;}});
+      res.runAt=Date.now();S.bt=res;
+      if(res.ok)await store.put('meta',{key:`bt:${symbol}|${tf}|${SE.VERSION}`,runAt:res.runAt,stats:res.stats,bySetup:res.bySetup,result:res});
+    }catch(e){S.bt={ok:false,reason:'回测异常: '+e.message};}
+    S.btRunning=false;rerenderBox();
+  }
+  document.addEventListener('click',async e=>{
+    const lb=e.target.closest&&e.target.closest('[data-se-layer]');
+    if(lb){const k=lb.dataset.seLayer;layers[k]=!layers[k];try{localStorage.setItem(LKEY,JSON.stringify(layers));}catch(_){}layerBar();draw();return;}
+    const ab=e.target.closest&&e.target.closest('[data-se-act]');if(!ab)return;
+    const act=ab.dataset.seAct;
+    if(act==='bt')runBt();
+    else if(act==='track'){S.lastTrack=0;refresh(env.symbol(),true);}
+    else if(act==='export'){const recs=await store.all('signals'),meta=await store.all('meta');const blob=new Blob([JSON.stringify({version:SE.VERSION,exportedAt:Date.now(),signals:recs,meta},null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`orbit-se-signals-${new Date().toISOString().slice(0,10)}.json`;a.click();}
+    else if(act==='import'){const inp=document.createElement('input');inp.type='file';inp.accept='application/json';inp.onchange=async()=>{try{const j=JSON.parse(await inp.files[0].text());let n=0;for(const r of j.signals||[]){if(r&&r.id&&!(await store.get('signals',r.id))){await store.put('signals',r);n++;}}for(const m of j.meta||[]){if(m&&m.key&&!(await store.get('meta',m.key)))await store.put('meta',m);}alert(`已导入 ${n} 条新信号(已存在的保持不变)`);refresh(env.symbol(),true);}catch(err){alert('导入失败: '+err.message);}};inp.click();}
+  });
+  layerBar();
+  return{refresh,panelHTML,draw,reset(){S.an=null;S.hist=null;S.err=null;clearDraw();S.token++;},store,state:S};
+};
+})(typeof globalThis!=='undefined'?globalThis:this);
+
+</script>
 <script>
 (function(){
 "use strict";
@@ -7815,8 +9086,8 @@ function buildStructureLevels(candles,price,highs,lows,volProfile,anchoredVwap,a
     [[mag/2,0.8],[mag/10,0.4]].forEach(([st,w])=>{const b=Math.floor(price/st);[b-1,b,b+1,b+2].forEach(k=>{const v=k*st;if(v>0&&Math.abs(v-price)/price<0.05)candidates.push({price:v,src:"整数关口(心理位)",w});});});
     const eq=(arr,label)=>{const a=arr.slice(-8);for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)if(Math.abs(a[i].price-a[j].price)/a[i].price<0.0015)candidates.push({price:(a[i].price+a[j].price)/2,src:`等${label}流动性池(止损扎堆区)`,w:0.9});};
     eq(highs,"高点");eq(lows,"低点");
-    if(volProfile.vah!=null)candidates.push({price:volProfile.vah,src:"价值区上沿 VAH",w:1.0});
-    if(volProfile.val!=null)candidates.push({price:volProfile.val,src:"价值区下沿 VAL",w:1.0});
+    {const vah=volProfile.vah!=null?volProfile.vah:volProfile.valueAreaHigh;if(vah!=null)candidates.push({price:vah,src:"价值区上沿 VAH",w:1.0});}
+    {const val=volProfile.val!=null?volProfile.val:volProfile.valueAreaLow;if(val!=null)candidates.push({price:val,src:"价值区下沿 VAL",w:1.0});}
   }catch(e){}
   candidates.sort((a,b)=>a.price-b.price);
   const tol=price*0.004;
@@ -10957,6 +12228,7 @@ async function loadCryptoDetail(symbol){
   // data once they resolve — resolution order isn't guaranteed to match call order.
   // Every await below re-checks this token before touching candleSeries/lastCandles/klineWs.
   const reqId=++loadDetailReqId;
+  try{if(window.__SE)window.__SE.reset();}catch(e){}
   const m=market.get(symbol);
   if(m&&m.price!=null)applyChartPricePrecision(m.price);
   renderDetailHeader(symbol);
@@ -11014,6 +12286,7 @@ async function loadCryptoDetail(symbol){
     lastSignalComputeAt=Date.now();
     renderChartBiasBadge(sig);renderModalScroll(sig);
     try{paRender(lastCandles,sig);}catch(pe){console.error("pattern",pe);}
+    try{if(window.__SE){window.__seLast=Date.now();window.__SE.refresh(symbol,true);}}catch(se){console.error("SE",se);}
   }catch(e){console.error("kline load failed",e);if(reqId===loadDetailReqId){renderChartBiasBadge(null);renderModalScroll(null);}}
   if(reqId!==loadDetailReqId)return;
   try{
@@ -11040,6 +12313,7 @@ async function loadCryptoDetail(symbol){
         updateEmaOverlays(lastCandles);
         const sig=computeSignal(lastCandles,chartInterval,symbol);
         renderChartBiasBadge(sig);renderModalScroll(sig);
+        try{if(window.__SE&&Date.now()-(window.__seLast||0)>20000){window.__seLast=Date.now();window.__SE.refresh(symbol);}}catch(se){}
       }
     }
   };
@@ -11983,11 +13257,12 @@ function renderModalScrollNow(sig){
   // → ② TP/SL 时间线与交易计划(含机会可信度评估、失效撤单价)→ ③ 其余明细信息。
   // 桌面便签(desk note)是最短的一句话摘要,放在最顶端合理;overview 紧随其后,
   // 而不是像之前那样被压到 TP/SL 计划之后才看到。
-  const OPEN=window.__slOpen||(window.__slOpen=new Set(["glance","plan"]));
+  const OPEN=window.__slOpen||(window.__slOpen=new Set(["se","glance","plan"]));
   const sec=(k,t,o,h)=>{if(!h||!h.replace(/<[^>]*>/g,"").trim()&&!/<canvas|id=/.test(h))return"";return`<details class="sl-sec" data-k="${k}"${OPEN.has(k)?" open":""}><summary>${t}</summary><div class="sl-in">${h}</div></details>`;};
   el.innerHTML=[
     sec("dpmBox","方向概率矩阵 · 走步样本外验证",0,`<div id="dpmBox">${dpmInnerHTML()}</div>`),
     sec("desk","交易台纪要(文字摘要)",0,`${buildDeskNote(sig)}`),
+    sec("se","结构引擎 · 趋势线/条件化策略/历史验证(v36)",1,`<div id="seBox">${window.__SE?window.__SE.panelHTML():""}</div>`),
     sec("glance","① 信号概览",1,`${renderSignalGlance(sig)}`),
     sec("strat","策略摘要",0,`${renderStrategySummary(sig)}`),
     sec("fund","基本面/事件清单",0,`<div id="fundSectionBox">${renderFundamentalsSection(sig)}</div>`),
@@ -13654,6 +14929,7 @@ setTimeout(patRefresh,8000);setInterval(patRefresh,600000);
   const apply=()=>{P.classList.toggle("opp-collapsed",c);A.textContent=c?"▸":"▾";};apply();
   T.addEventListener("click",()=>{c=!c;apply();try{localStorage.setItem(K,c?"1":"0");}catch(e){}});})();
 
+try{window.__SE=window.ORBIT_SE_UI({chart:()=>chart,candleSeries:()=>candleSeries,symbol:()=>selectedSymbol,interval:()=>chartInterval,candles:()=>lastCandles,REST:REST,fetchJSON:fetchJSON,fmtPrice:fmtPrice,esc:esc,helpers:{buildVolumeProfile,fibLevels,computeGannFan,computeAnchoredVWAP}});}catch(e){console.error("SE attach failed",e);}
 init();
 })();
 
